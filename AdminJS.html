@@ -1,9 +1,8 @@
 <script>
 // ============================================================
-// ADMIN PANEL — Pass 2B
+// ADMIN PANEL — Pass 2B (Task 1 fix: topbar ownership)
 // Roles: RO_ADMIN | DEPUTY_RO | TEM | SCRUTINEER | OBSERVER
 // ============================================================
-
 var AdminPanel = (function() {
 
   var _currentTab = '';
@@ -11,60 +10,48 @@ var AdminPanel = (function() {
   // Tab definitions per role
   var TAB_SETS = {
     RO_ADMIN: [
-      { id:'elections',    label:'Elections'   },
-      { id:'nominations',  label:'Nominations' },
-      { id:'scrutiny',     label:'Scrutiny'    },
-      { id:'candidates',   label:'Candidates'  },
-      { id:'voters',       label:'Voters'      },
-      { id:'tally',        label:'Tally'       },
-      { id:'handover',     label:'Handover'    },
-      { id:'admins',       label:'Admins'      },
-      { id:'adminlog',     label:'Log'         },
-      { id:'settings',     label:'Settings'    }
+      { id:'elections',   label:'Elections' },
+      { id:'nominations', label:'Nominations' },
+      { id:'scrutiny',    label:'Scrutiny' },
+      { id:'candidates',  label:'Candidates' },
+      { id:'voters',      label:'Voters' },
+      { id:'tally',       label:'Tally' },
+      { id:'handover',    label:'Handover' },
+      { id:'admins',      label:'Admins' },
+      { id:'adminlog',    label:'Log' },
+      { id:'settings',    label:'Settings' }
     ],
     DEPUTY_RO: [
-      { id:'elections',    label:'Elections'   },
-      { id:'nominations',  label:'Nominations' },
-      { id:'scrutiny',     label:'Scrutiny'    },
-      { id:'candidates',   label:'Candidates'  },
-      { id:'voters',       label:'Voters'      },
-      { id:'tally',        label:'Tally'       },
-      { id:'handover',     label:'Handover'    },
-      { id:'adminlog',     label:'Log'         }
+      { id:'elections',   label:'Elections' },
+      { id:'nominations', label:'Nominations' },
+      { id:'scrutiny',    label:'Scrutiny' },
+      { id:'candidates',  label:'Candidates' },
+      { id:'voters',      label:'Voters' },
+      { id:'tally',       label:'Tally' },
+      { id:'handover',    label:'Handover' },
+      { id:'adminlog',    label:'Log' }
     ],
     TEM: [
-      { id:'elections',    label:'Elections'   },
-      { id:'nominations',  label:'Nominations' },
-      { id:'scrutiny',     label:'Scrutiny'    },
-      { id:'candidates',   label:'Candidates'  },
-      { id:'voters',       label:'Voters'      },
-      { id:'tally',        label:'Tally'       },
-      { id:'adminlog',     label:'Log'         }
+      { id:'elections',   label:'Elections' },
+      { id:'nominations', label:'Nominations' },
+      { id:'scrutiny',    label:'Scrutiny' },
+      { id:'candidates',  label:'Candidates' },
+      { id:'voters',      label:'Voters' },
+      { id:'tally',       label:'Tally' },
+      { id:'adminlog',    label:'Log' }
     ],
     SCRUTINEER: [
-      { id:'tally',        label:'Tally'       },
-      { id:'handover',     label:'Handover'    },
-      { id:'scrutiny',     label:'Scrutiny'    },
-      { id:'votedlog',     label:'Voted Log'   },
-      { id:'adminlog',     label:'Log'         }
+      { id:'tally',     label:'Tally' },
+      { id:'handover',  label:'Handover' },
+      { id:'scrutiny',  label:'Scrutiny' },
+      { id:'votedlog',  label:'Voted Log' },
+      { id:'adminlog',  label:'Log' }
     ],
     OBSERVER: [
-      { id:'dashboard',    label:'Dashboard'   },
-      { id:'results',      label:'Results'     }
+      { id:'dashboard', label:'Dashboard' },
+      { id:'results',   label:'Results' }
     ]
   };
-
-  // Badge colour per role
-  function badgeClass(role) {
-    var map = {
-      RO_ADMIN:   'badge-red',
-      DEPUTY_RO:  'badge-navy',
-      TEM:        'badge-gray',
-      SCRUTINEER: 'badge-navy',
-      OBSERVER:   'badge-gray'
-    };
-    return map[role] || 'badge-gray';
-  }
 
   function roleLabel(role) {
     var map = {
@@ -81,37 +68,43 @@ var AdminPanel = (function() {
     var role = (App.role || '').toUpperCase();
     var tabs = TAB_SETS[role] || TAB_SETS['OBSERVER'];
 
-    // Build shell
-    document.getElementById('app').innerHTML =
-      '<header class="header" style="flex-wrap:wrap;gap:8px;padding:10px 14px;">' +
-        '<div class="header-logo-placeholder">OBA</div>' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div class="header-title" style="font-size:14px;">SSKZM OBA Elections</div>' +
-          '<div class="header-sub">' + escHtml(roleLabel(role)) + ' Panel</div>' +
-        '</div>' +
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-          '<span class="badge ' + badgeClass(role) + '">' + escHtml(role.replace('_',' ')) + '</span>' +
-          '<div class="header-user"><strong>' + escHtml(App.name || App.identity) + '</strong></div>' +
-          '<button class="btn btn-outline btn-sm" onclick="AdminPanel.logout()">Sign out</button>' +
-        '</div>' +
-      '</header>' +
+    // DO NOT touch #app or #topbar — Index.html owns those.
+    // App.showPanel() has already populated topbar-name,
+    // topbar-subtitle, and topbar-user before calling init().
 
-      // TEM AuthID bar — shown for TEM only
-      (role === 'TEM' ?
-        '<div id="tem-authbar" style="background:#fefce8;border-bottom:1px solid #fde047;padding:8px 16px;display:flex;align-items:center;gap:10px;">' +
-          '<span style="font-size:0.8rem;color:#854d0e;font-weight:600;">TEM AuthorisationID required for write actions:</span>' +
-          '<input id="tem-authid" type="text" placeholder="Enter AuthID" style="font-size:0.8rem;padding:4px 8px;border:1px solid #fde047;border-radius:4px;width:240px;" />' +
-          '<span id="tem-authstatus" style="font-size:0.75rem;color:#6b7280;">Not validated</span>' +
-        '</div>'
-        : '') +
+    // TEM AuthID bar — insert between topbar and #main if TEM
+    var temBar = document.getElementById('tem-authbar');
+    if (role === 'TEM') {
+      if (!temBar) {
+        var bar = document.createElement('div');
+        bar.id = 'tem-authbar';
+        bar.style.cssText = 'background:#fefce8;border-bottom:1px solid #fde047;' +
+          'padding:8px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+        bar.innerHTML =
+          '<span style="font-size:0.8rem;color:#854d0e;font-weight:600;">' +
+            'TEM Authorisation ID required for write actions:</span>' +
+          '<input id="tem-authid" type="text" placeholder="Enter AuthID" ' +
+            'style="font-size:0.8rem;padding:4px 8px;border:1px solid #fde047;' +
+            'border-radius:4px;width:220px;" />' +
+          '<span id="tem-authstatus" style="font-size:0.75rem;color:#6b7280;">' +
+            'Not validated</span>';
+        var mainEl = document.getElementById('main');
+        mainEl.parentNode.insertBefore(bar, mainEl);
+      }
+    } else {
+      if (temBar) temBar.parentNode.removeChild(temBar);
+    }
 
-      '<main class="main">' +
-        '<div class="tab-bar" id="admin-tabs" style="overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;display:flex;flex-wrap:nowrap;"></div>' +
-        '<div id="admin-content" style="padding:16px;"></div>' +
-      '</main>';
+    // Render tab bar + content area into #main
+    setMain(
+      '<div class="tab-bar" id="admin-tab-bar" ' +
+        'style="overflow-x:auto;-webkit-overflow-scrolling:touch;' +
+        'white-space:nowrap;flex-wrap:nowrap;max-width:100%;"></div>' +
+      '<div id="admin-content" style="overflow-x:hidden;"></div>'
+    );
 
-    // Build tab bar
-    var tabBar = document.getElementById('admin-tabs');
+    // Build tab buttons
+    var tabBar = document.getElementById('admin-tab-bar');
     tabs.forEach(function(t) {
       var btn = document.createElement('button');
       btn.className = 'tab-btn';
@@ -127,25 +120,27 @@ var AdminPanel = (function() {
 
   function switchTab(tabId) {
     _currentTab = tabId;
-
-    // Update tab button active state
     var role = (App.role || '').toUpperCase();
     var tabs = TAB_SETS[role] || [];
     tabs.forEach(function(t) {
       var btn = document.getElementById('tab-btn-' + t.id);
       if (btn) btn.className = 'tab-btn' + (t.id === tabId ? ' active' : '');
     });
-
-    // Render tab content
     var content = document.getElementById('admin-content');
     content.innerHTML = _renderTab(tabId, role);
   }
 
   function _renderTab(tabId, role) {
-    // Coming soon placeholder for all tabs in Pass 2B
-    // Pass 3 will replace each case with live content
+    if (tabId === 'elections') {
+      _loadElections(role);
+      return '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading elections…</div>' +
+        '</div>';
+    }
+
+    // Coming soon — all other tabs
     var labels = {
-      elections:   'Elections',
       nominations: 'Nominations',
       scrutiny:    'Scrutiny',
       candidates:  'Candidates',
@@ -162,22 +157,124 @@ var AdminPanel = (function() {
     var label = labels[tabId] || tabId;
     return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
       '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
-      '<div style="font-size:1.1rem;font-weight:600;color:#374151;margin-bottom:6px;">' + escHtml(label) + '</div>' +
+      '<div style="font-size:1.1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+        escHtml(label) + '</div>' +
       '<div style="font-size:0.85rem;">This tab is being built. Check back soon.</div>' +
-    '</div>';
+      '</div>';
+  }
+
+function _loadElections(role) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var content = document.getElementById('admin-content');
+        if (!content) return;
+
+        if (!res || !res.success) {
+          content.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load elections.') + '</div>';
+          return;
+        }
+
+        var elections = res.elections || [];
+        var isRO = role === 'RO_ADMIN';
+
+        // Status → badge class map
+        var badgeMap = {
+          draft:               'badge-draft',
+          nominations_open:    'badge-noms-open',
+          nominations_open_phase2: 'badge-noms-open',
+          scrutiny:            'badge-scrutiny',
+          candidates_published:'badge-scrutiny',
+          active:              'badge-active',
+          closed:              'badge-closed',
+          declared:            'badge-declared'
+        };
+
+        var html = '';
+
+        // Create button — RO_ADMIN only
+        if (isRO) {
+          html += '<div style="margin-bottom:16px;">' +
+            '<button class="btn btn-primary btn-sm" ' +
+              'onclick="AdminPanel.showCreateElection()" ' +
+              'style="width:100%;padding:12px;font-size:.95rem;">' +
+              '+ New Election' +
+            '</button>' +
+          '</div>';
+        }
+
+        if (elections.length === 0) {
+          html += '<div class="panel-card">' +
+            '<div class="panel-card-body" style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No elections yet</div>' +
+            (isRO ? '<div style="font-size:.85rem;">Use the button above to create one.</div>' : '') +
+            '</div></div>';
+        } else {
+          elections.forEach(function(el) {
+            var badge = badgeMap[el.status] || 'badge-draft';
+            var statusLabel = el.status.replace(/_/g, ' ');
+            var trialTag = el.isTrial
+              ? '<span class="status-badge badge-trial" style="margin-left:6px;">Trial</span>'
+              : '';
+
+            html += '<div class="panel-card" style="margin-bottom:12px;">' +
+              '<div class="panel-card-body" style="padding:14px 16px;">' +
+
+              // Title row
+              '<div style="font-weight:600;color:#1a3a5c;font-size:.95rem;margin-bottom:6px;">' +
+                escHtml(el.title) + trialTag +
+              '</div>' +
+
+              // Status + mode row
+              '<div style="margin-bottom:8px;">' +
+                '<span class="status-badge ' + badge + '">' + escHtml(statusLabel) + '</span>' +
+                '<span style="font-size:.78rem;color:#888;margin-left:8px;">' +
+                  escHtml(el.mode) +
+                '</span>' +
+              '</div>' +
+
+              // Dates row
+              '<div style="font-size:.82rem;color:#666;margin-bottom:10px;">' +
+                (el.startDate ? '📅 ' + escHtml(el.startDate) : 'No start date') +
+                (el.endDate   ? ' → ' + escHtml(el.endDate)   : '') +
+              '</div>' +
+
+              // Action button — RO only for now
+              (isRO ?
+                '<button class="btn btn-outline btn-sm" ' +
+                  'onclick="AdminPanel.manageElection(\'' + escHtml(el.id) + '\')" ' +
+                  'style="width:100%;padding:10px;font-size:.85rem;">' +
+                  'Manage' +
+                '</button>'
+              : '') +
+
+              '</div></div>';
+          });
+        }
+
+        content.innerHTML = html;
+      })
+      .withFailureHandler(function(err) {
+        var content = document.getElementById('admin-content');
+        if (content) {
+          content.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            'Error loading elections. Please try again.</div>';
+        }
+      })
+      .getAllElections(App.token);
   }
 
   function logout() {
-    google.script.run
-      .withSuccessHandler(function() {
-        App.token = null;
-        App.role  = null;
-        setMain('<div style="text-align:center;padding:48px;color:#6b7280;">Signed out. <a href="' + escHtml(App.deployUrl || '') + '">Return to home</a></div>');
-      })
-      .logout(App.token);
+    App.logout();
   }
 
-  return { init: init, switchTab: switchTab };
+  return {
+    init: init,
+    switchTab: switchTab,
+    showCreateElection: function() { showToast('Create election — coming soon.'); },
+    manageElection: function(id) { showToast('Manage election — coming soon.'); }
+  };
 
 })();
 </script>

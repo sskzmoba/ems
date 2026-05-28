@@ -243,6 +243,35 @@ function appendAdminLog(adminId, actionType, description, oldValue, newValue) {
 }
 
 // ============================================================
+// getAllElections — returns all elections for admin panel display
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER, OBSERVER
+// ============================================================
+function getAllElections(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var allowedRoles = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER', 'OBSERVER'];
+  if (allowedRoles.indexOf(sess.role) === -1) {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.ELECTIONS);
+  var elections = rows.map(function(r) {
+    return {
+      id:        r[COL.ELEC_ID].toString(),
+      title:     r[COL.ELEC_TITLE].toString(),
+      status:    r[COL.ELEC_STATUS].toString(),
+      startDate: r[COL.ELEC_START] ? new Date(r[COL.ELEC_START]).toLocaleDateString('en-IN') : '',
+      endDate:   r[COL.ELEC_END]   ? new Date(r[COL.ELEC_END]).toLocaleDateString('en-IN') : '',
+      mode:      r[COL.ELEC_MODE]  ? r[COL.ELEC_MODE].toString() : 'electronic',
+      isTrial:   r[COL.ELEC_TRIAL] ? r[COL.ELEC_TRIAL].toString() === 'true' : false
+    };
+  });
+
+  return { success: true, elections: elections };
+}
+
+// ============================================================
 // doGet — main entry point
 // 16 routes per Step 5 Routing Design document.
 // ============================================================

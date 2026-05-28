@@ -200,7 +200,6 @@ var SharedUI = {
   sessionStorage.setItem('ems_name',  res.name);
   setTimeout(function() {
     var defined = typeof AdminPanel !== 'undefined';
-    alert('role=' + App.role + ' | AdminPanel defined=' + defined);
     App.showPanel();
   }, 500);
 } else {

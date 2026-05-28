@@ -17,10 +17,11 @@
 
     /* ── APP SHELL ────────────────────────────────────────── */
     #app {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
 
     /* ── TOP BAR ──────────────────────────────────────────── */
     #topbar {
@@ -179,9 +180,12 @@
     .badge-trial     { background: #fef9c3; color: #854d0e; }
 
     @media (max-width: 600px) {
-      #main { padding: 12px 8px; }
-      .tab-btn { padding: 7px 10px; font-size: .82rem; }
-    }
+  #main { padding: 12px 8px; }
+  .tab-btn { padding: 7px 10px; font-size: .82rem; }
+}
+
+* { max-width: 100%; box-sizing: border-box; }
+body { overflow-x: hidden; }
   </style>
 </head>
 <body>
