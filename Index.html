@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SSKZM OBA Election Management System</title>
+  <style>
+    /* ── RESET & BASE ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      font-family: Arial, sans-serif;
+      font-size: 15px;
+      background: #f0f2f5;
+      color: #222;
+    }
+
+    /* ── APP SHELL ────────────────────────────────────────── */
+    #app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── TOP BAR ──────────────────────────────────────────── */
+    #topbar {
+      background: #1a3a5c;
+      border-top: 3px solid #b8960c;
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    #topbar-title {
+      color: #fff;
+      font-size: .95rem;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    #topbar-title span {
+      color: rgba(255,255,255,.5);
+      font-weight: 400;
+      font-size: .8rem;
+      margin-left: 8px;
+    }
+    #topbar-user {
+      color: rgba(255,255,255,.75);
+      font-size: .8rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    #topbar-user.hidden { display: none; }
+    #btn-logout {
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.25);
+      color: #fff;
+      padding: 4px 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: .78rem;
+      font-family: Arial, sans-serif;
+    }
+    #btn-logout:hover { background: rgba(255,255,255,.22); }
+
+    /* ── MAIN CONTENT AREA ────────────────────────────────── */
+    #main {
+      flex: 1;
+      padding: 24px 16px;
+      max-width: 880px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── LOADING SCREEN ───────────────────────────────────── */
+    #screen-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 14px;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #dde3ea;
+      border-top-color: #1a3a5c;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #screen-loading p { color: #888; font-size: .9rem; }
+
+    /* ── TOAST ────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1a3a5c;
+      color: #fff;
+      padding: 10px 22px;
+      border-radius: 4px;
+      font-size: .88rem;
+      transition: transform .25s ease;
+      z-index: 999;
+      max-width: 360px;
+      text-align: center;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.error { background: #c0392b; }
+
+    /* ── SHARED PANEL STYLES (used by all role panels) ────── */
+    .panel-card {
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .panel-card-header {
+      background: #f7f9fc;
+      border-bottom: 1px solid #e8edf2;
+      padding: 14px 20px;
+      font-weight: 600;
+      color: #1a3a5c;
+      font-size: .95rem;
+    }
+    .panel-card-body { padding: 20px; }
+
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      border-bottom: 2px solid #e8edf2;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: .88rem;
+      color: #666;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-family: Arial, sans-serif;
+      border-radius: 4px 4px 0 0;
+    }
+    .tab-btn:hover { color: #1a3a5c; background: #f0f4f8; }
+    .tab-btn.active {
+      color: #1a3a5c;
+      border-bottom-color: #1a3a5c;
+      font-weight: 600;
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .badge-active    { background: #d1fae5; color: #065f46; }
+    .badge-draft     { background: #fef3c7; color: #92400e; }
+    .badge-closed    { background: #fee2e2; color: #991b1b; }
+    .badge-declared  { background: #e0e7ff; color: #3730a3; }
+    .badge-noms-open { background: #dbeafe; color: #1e40af; }
+    .badge-scrutiny  { background: #fce7f3; color: #9d174d; }
+    .badge-trial     { background: #fef9c3; color: #854d0e; }
+
+    @media (max-width: 600px) {
+      #main { padding: 12px 8px; }
+      .tab-btn { padding: 7px 10px; font-size: .82rem; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Top bar — shown after login -->
+  <div id="topbar">
+    <div id="topbar-title">
+      SSKZM OBA
+      <span id="topbar-subtitle">Election Management System</span>
+    </div>
+    <div id="topbar-user" class="hidden">
+      <span id="topbar-name"></span>
+      <button id="btn-logout" onclick="App.logout()">Sign out</button>
+    </div>
+  </div>
+
+  <!-- Main content area — screens rendered here -->
+  <div id="main">
+    <div id="screen-loading">
+      <div class="spinner"></div>
+      <p>Loading…</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<!-- ── SHARED JS (login flow, OTP, session, utilities) ─── -->
+<?!= include('SharedJS'); ?>
+
+<!-- ── VOTER PANEL ──────────────────────────────────────── -->
+<?!= include('VoterJS'); ?>
+
+<!-- ── ADMIN PANEL ─────────────────────────────────────── -->
+<?!= include('AdminJS'); ?>
+
+<!-- ── EC OFFICER PANEL ────────────────────────────────── -->
+<?!= include('ECOfficerJS'); ?>
+
+<!-- ── APP BOOTSTRAP ───────────────────────────────────── -->
+<script>
+  var App = {
+    token:    null,
+    role:     null,
+    identity: null,
+    name:     null,
+
+    init: function() {
+      var saved = sessionStorage.getItem('ems_token');
+      if (saved) {
+        App.token = saved;
+        google.script.run
+          .withSuccessHandler(function(sess) {
+            if (sess && sess.role) {
+              App.role     = sess.role;
+              App.identity = sess.identity;
+              App.name     = sessionStorage.getItem('ems_name') || sess.identity;
+              App.showPanel();
+            } else {
+              sessionStorage.clear();
+              App.token = null;
+              SharedUI.showLogin();
+            }
+          })
+          .withFailureHandler(function() {
+            sessionStorage.clear();
+            App.token = null;
+            SharedUI.showLogin();
+          })
+          .getSession(saved);
+      } else {
+        SharedUI.showLogin();
+      }
+    },
+
+    showPanel: function() {
+  document.getElementById('topbar-name').textContent = App.name || App.identity;
+  document.getElementById('topbar-user').classList.remove('hidden');
+  document.getElementById('topbar-subtitle').textContent =
+    App.getRoleLabel(App.role);
+  var role = App.role;
+  if (role === 'voter') {
+    if (typeof VoterPanel !== 'undefined') VoterPanel.init();
+    else App.showComingSoon('Voter Panel');
+  } else if (role === 'RO_ADMIN' || role === 'DEPUTY_RO' || role === 'TEM'
+             || role === 'SCRUTINEER' || role === 'OBSERVER') {
+    if (typeof AdminPanel !== 'undefined') AdminPanel.init();
+    else App.showComingSoon('Admin Panel');
+  } else if (role === 'EC_OFFICER') {
+    if (typeof ECOfficerPanel !== 'undefined') ECOfficerPanel.init();
+    else App.showComingSoon('EC Officer Panel');
+  } else {
+    App.showComingSoon('Panel for role: ' + role);
+  }
+},
+
+    getRoleLabel: function(role) {
+      var labels = {
+        'voter':      'Voter Portal',
+        'RO_ADMIN':   'Returning Officer Panel',
+        'DEPUTY_RO':  'Deputy RO Panel',
+        'TEM':        'Technical Election Manager Panel',
+        'SCRUTINEER': 'Scrutineer Panel',
+        'OBSERVER':   'Observer Panel',
+        'EC_OFFICER': 'EC Officer Panel'
+      };
+      return labels[role] || 'Panel';
+    },
+
+    logout: function() {
+      var token = App.token;
+      sessionStorage.clear();
+      App.token    = null;
+      App.role     = null;
+      App.identity = null;
+      App.name     = null;
+      document.getElementById('topbar-user').classList.add('hidden');
+      document.getElementById('topbar-subtitle').textContent =
+        'Election Management System';
+      if (token) google.script.run.logout(token);
+      SharedUI.showLogin();
+    },
+
+    showComingSoon: function(label) {
+      setMain('<div style="text-align:center;padding:60px 20px;">'
+        + '<div style="font-size:2rem;margin-bottom:12px">🏗️</div>'
+        + '<p style="color:#1a3a5c;font-weight:600;font-size:1.1rem">'
+        + escHtml(label) + '</p>'
+        + '<p style="color:#888;margin-top:8px">This panel is being built.</p>'
+        + '</div>');
+    }
+  };
+
+  var setMain = function(html) {
+    document.getElementById('main').innerHTML = html;
+  };
+
+  var escHtml = function(str) {
+    return (str || '').toString()
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
+  };
+
+  var _toastTimer;
+  var showToast = function(msg, isError, duration) {
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className   = 'show' + (isError ? ' error' : '');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function() {
+      el.className = '';
+    }, duration || 3000);
+  };
+
+  App.init();
+</script>
+
+</body>
+</html>

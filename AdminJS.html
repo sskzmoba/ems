@@ -1,0 +1,183 @@
+<script>
+// ============================================================
+// ADMIN PANEL — Pass 2B
+// Roles: RO_ADMIN | DEPUTY_RO | TEM | SCRUTINEER | OBSERVER
+// ============================================================
+
+var AdminPanel = (function() {
+
+  var _currentTab = '';
+
+  // Tab definitions per role
+  var TAB_SETS = {
+    RO_ADMIN: [
+      { id:'elections',    label:'Elections'   },
+      { id:'nominations',  label:'Nominations' },
+      { id:'scrutiny',     label:'Scrutiny'    },
+      { id:'candidates',   label:'Candidates'  },
+      { id:'voters',       label:'Voters'      },
+      { id:'tally',        label:'Tally'       },
+      { id:'handover',     label:'Handover'    },
+      { id:'admins',       label:'Admins'      },
+      { id:'adminlog',     label:'Log'         },
+      { id:'settings',     label:'Settings'    }
+    ],
+    DEPUTY_RO: [
+      { id:'elections',    label:'Elections'   },
+      { id:'nominations',  label:'Nominations' },
+      { id:'scrutiny',     label:'Scrutiny'    },
+      { id:'candidates',   label:'Candidates'  },
+      { id:'voters',       label:'Voters'      },
+      { id:'tally',        label:'Tally'       },
+      { id:'handover',     label:'Handover'    },
+      { id:'adminlog',     label:'Log'         }
+    ],
+    TEM: [
+      { id:'elections',    label:'Elections'   },
+      { id:'nominations',  label:'Nominations' },
+      { id:'scrutiny',     label:'Scrutiny'    },
+      { id:'candidates',   label:'Candidates'  },
+      { id:'voters',       label:'Voters'      },
+      { id:'tally',        label:'Tally'       },
+      { id:'adminlog',     label:'Log'         }
+    ],
+    SCRUTINEER: [
+      { id:'tally',        label:'Tally'       },
+      { id:'handover',     label:'Handover'    },
+      { id:'scrutiny',     label:'Scrutiny'    },
+      { id:'votedlog',     label:'Voted Log'   },
+      { id:'adminlog',     label:'Log'         }
+    ],
+    OBSERVER: [
+      { id:'dashboard',    label:'Dashboard'   },
+      { id:'results',      label:'Results'     }
+    ]
+  };
+
+  // Badge colour per role
+  function badgeClass(role) {
+    var map = {
+      RO_ADMIN:   'badge-red',
+      DEPUTY_RO:  'badge-navy',
+      TEM:        'badge-gray',
+      SCRUTINEER: 'badge-navy',
+      OBSERVER:   'badge-gray'
+    };
+    return map[role] || 'badge-gray';
+  }
+
+  function roleLabel(role) {
+    var map = {
+      RO_ADMIN:   'Returning Officer',
+      DEPUTY_RO:  'Deputy RO',
+      TEM:        'Technical Election Manager',
+      SCRUTINEER: 'Scrutineer',
+      OBSERVER:   'Observer'
+    };
+    return map[role] || role;
+  }
+
+  function init() {
+    var role = (App.role || '').toUpperCase();
+    var tabs = TAB_SETS[role] || TAB_SETS['OBSERVER'];
+
+    // Build shell
+    document.getElementById('app').innerHTML =
+      '<header class="header" style="flex-wrap:wrap;gap:8px;padding:10px 14px;">' +
+        '<div class="header-logo-placeholder">OBA</div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="header-title" style="font-size:14px;">SSKZM OBA Elections</div>' +
+          '<div class="header-sub">' + escHtml(roleLabel(role)) + ' Panel</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<span class="badge ' + badgeClass(role) + '">' + escHtml(role.replace('_',' ')) + '</span>' +
+          '<div class="header-user"><strong>' + escHtml(App.name || App.identity) + '</strong></div>' +
+          '<button class="btn btn-outline btn-sm" onclick="AdminPanel.logout()">Sign out</button>' +
+        '</div>' +
+      '</header>' +
+
+      // TEM AuthID bar — shown for TEM only
+      (role === 'TEM' ?
+        '<div id="tem-authbar" style="background:#fefce8;border-bottom:1px solid #fde047;padding:8px 16px;display:flex;align-items:center;gap:10px;">' +
+          '<span style="font-size:0.8rem;color:#854d0e;font-weight:600;">TEM AuthorisationID required for write actions:</span>' +
+          '<input id="tem-authid" type="text" placeholder="Enter AuthID" style="font-size:0.8rem;padding:4px 8px;border:1px solid #fde047;border-radius:4px;width:240px;" />' +
+          '<span id="tem-authstatus" style="font-size:0.75rem;color:#6b7280;">Not validated</span>' +
+        '</div>'
+        : '') +
+
+      '<main class="main">' +
+        '<div class="tab-bar" id="admin-tabs" style="overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;display:flex;flex-wrap:nowrap;"></div>' +
+        '<div id="admin-content" style="padding:16px;"></div>' +
+      '</main>';
+
+    // Build tab bar
+    var tabBar = document.getElementById('admin-tabs');
+    tabs.forEach(function(t) {
+      var btn = document.createElement('button');
+      btn.className = 'tab-btn';
+      btn.id = 'tab-btn-' + t.id;
+      btn.textContent = t.label;
+      btn.onclick = function() { AdminPanel.switchTab(t.id); };
+      tabBar.appendChild(btn);
+    });
+
+    // Open first tab
+    AdminPanel.switchTab(tabs[0].id);
+  }
+
+  function switchTab(tabId) {
+    _currentTab = tabId;
+
+    // Update tab button active state
+    var role = (App.role || '').toUpperCase();
+    var tabs = TAB_SETS[role] || [];
+    tabs.forEach(function(t) {
+      var btn = document.getElementById('tab-btn-' + t.id);
+      if (btn) btn.className = 'tab-btn' + (t.id === tabId ? ' active' : '');
+    });
+
+    // Render tab content
+    var content = document.getElementById('admin-content');
+    content.innerHTML = _renderTab(tabId, role);
+  }
+
+  function _renderTab(tabId, role) {
+    // Coming soon placeholder for all tabs in Pass 2B
+    // Pass 3 will replace each case with live content
+    var labels = {
+      elections:   'Elections',
+      nominations: 'Nominations',
+      scrutiny:    'Scrutiny',
+      candidates:  'Candidates',
+      voters:      'Voters',
+      tally:       'Live Tally',
+      handover:    'Handover',
+      admins:      'Admin Accounts',
+      adminlog:    'Admin Log',
+      settings:    'Settings',
+      dashboard:   'Observer Dashboard',
+      results:     'Results',
+      votedlog:    'Voted Log'
+    };
+    var label = labels[tabId] || tabId;
+    return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
+      '<div style="font-size:1.1rem;font-weight:600;color:#374151;margin-bottom:6px;">' + escHtml(label) + '</div>' +
+      '<div style="font-size:0.85rem;">This tab is being built. Check back soon.</div>' +
+    '</div>';
+  }
+
+  function logout() {
+    google.script.run
+      .withSuccessHandler(function() {
+        App.token = null;
+        App.role  = null;
+        setMain('<div style="text-align:center;padding:48px;color:#6b7280;">Signed out. <a href="' + escHtml(App.deployUrl || '') + '">Return to home</a></div>');
+      })
+      .logout(App.token);
+  }
+
+  return { init: init, switchTab: switchTab };
+
+})();
+</script>
