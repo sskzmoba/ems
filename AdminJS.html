@@ -383,7 +383,279 @@ function _loadElections(role) {
         });
     },
 
-    manageElection: function(id) { showToast('Manage election — coming soon.'); }
+    manageElection: function(id) {
+  var content = document.getElementById('admin-content');
+  if (!content) return;
+
+  // Loading state
+  content.innerHTML =
+    '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+      '<div class="spinner"></div>' +
+      '<div style="font-size:.85rem;margin-top:12px;">Loading election…</div>' +
+    '</div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        content.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load election.') +
+          '</div>';
+        return;
+      }
+      AdminPanel._renderManageScreen(res.election);
+    })
+    .withFailureHandler(function() {
+      content.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          'Error loading election. Please try again.' +
+        '</div>';
+    })
+    .getElection(App.token, id);
+},
+
+_renderManageScreen: function(el) {
+  var content = document.getElementById('admin-content');
+  if (!content) return;
+
+  var isDraft = el.status === 'draft' || (el.isTrial && el.status !== 'active');
+
+  var statusBadgeMap = {
+    draft:                   'badge-draft',
+    nominations_open:        'badge-noms-open',
+    nominations_open_phase2: 'badge-noms-open',
+    scrutiny:                'badge-scrutiny',
+    candidates_published:    'badge-scrutiny',
+    active:                  'badge-active',
+    closed:                  'badge-closed',
+    declared:                'badge-declared'
+  };
+  var badge = statusBadgeMap[el.status] || 'badge-draft';
+  var statusLabel = el.status.replace(/_/g, ' ');
+  var trialTag = el.isTrial
+    ? '<span class="status-badge badge-trial" style="margin-left:6px;">Trial</span>'
+    : '';
+
+  // Next status label for advance button
+  var nextStatusMap = {
+    draft:            { next: 'nominations_open', label: 'Open Nominations' }
+  };
+  var advance = nextStatusMap[el.status] || null;
+
+  var html =
+    // Back button
+    '<div style="margin-bottom:12px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="AdminPanel.switchTab(\'elections\')" ' +
+        'style="width:100%;padding:12px;font-size:1rem;">← Back to Elections</button>' +
+    '</div>' +
+
+    // Header card — title + status (read-only)
+    '<div class="panel-card" style="margin-bottom:12px;">' +
+      '<div class="panel-card-body" style="padding:14px 16px;">' +
+        '<div style="font-weight:700;color:#1a3a5c;font-size:1rem;margin-bottom:8px;">' +
+          escHtml(el.title) + trialTag +
+        '</div>' +
+        '<div>' +
+          '<span class="status-badge ' + badge + '">' + escHtml(statusLabel) + '</span>' +
+          '<span style="font-size:.78rem;color:#888;margin-left:8px;">' +
+            escHtml(el.mode || '') +
+          '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    // Advance status — draft only
+    (advance ?
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Election Status</div>' +
+        '<div class="panel-card-body">' +
+          '<p style="font-size:.85rem;color:#374151;margin-bottom:14px;">' +
+            'Current status is <strong>Draft</strong>. ' +
+            'Advancing will open nominations and notify no one automatically — ' +
+            'you must communicate separately.' +
+          '</p>' +
+          '<button class="btn btn-primary" id="btn-advance-status" ' +
+            'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advance.next + '\')" ' +
+            'style="width:100%;padding:14px;font-size:1rem;">' +
+            '▶ ' + advance.label +
+          '</button>' +
+          '<div id="advance-status-error" ' +
+            'style="margin-top:10px;color:#c0392b;font-size:.85rem;display:none;"></div>' +
+        '</div>' +
+      '</div>'
+    : '') +
+
+    // Edit fields card
+    '<div class="panel-card" style="margin-bottom:12px;">' +
+      '<div class="panel-card-header">Election Details</div>' +
+      '<div class="panel-card-body">' +
+
+        '<label for="manage-desc">Description</label>' +
+        '<textarea id="manage-desc" rows="3" ' +
+          'style="width:100%;box-sizing:border-box;padding:10px;' +
+          'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;' +
+          'margin-bottom:16px;resize:vertical;">' +
+          escHtml(el.description || '') +
+        '</textarea>' +
+
+        '<label for="manage-eccontact">EC Contact Email</label>' +
+        '<input type="email" id="manage-eccontact" ' +
+          'value="' + escHtml(el.ecContact || '') + '" ' +
+          'placeholder="e.g. secretary@sskzmoba.org" ' +
+          'style="margin-bottom:16px;" />' +
+
+        '<label for="manage-vday">AGM Day (V-Day)</label>' +
+        '<input type="date" id="manage-vday" ' +
+          'value="' + escHtml(el.vDay || '') + '" ' +
+          'style="margin-bottom:16px;" />' +
+
+        '<label for="manage-vclose">Voting Close Date</label>' +
+        '<input type="date" id="manage-vclose" ' +
+          'value="' + escHtml(el.votingCloseDay || '') + '" ' +
+          'style="margin-bottom:16px;" />' +
+
+        '<label for="manage-declare">Declaration Day</label>' +
+        '<input type="date" id="manage-declare" ' +
+          'value="' + escHtml(el.declarationDay || '') + '" ' +
+          'style="margin-bottom:24px;" />' +
+
+        '<button class="btn btn-primary" id="btn-save-election" ' +
+          'onclick="AdminPanel._saveElection(\'' + escHtml(el.id) + '\')" ' +
+          'style="width:100%;padding:14px;font-size:1rem;">' +
+          'Save Changes' +
+        '</button>' +
+
+        '<div id="save-election-error" ' +
+          'style="margin-top:10px;color:#c0392b;font-size:.85rem;display:none;"></div>' +
+        '<div id="save-election-ok" ' +
+          'style="margin-top:10px;color:#16a34a;font-size:.85rem;display:none;"></div>' +
+
+      '</div>' +
+    '</div>' +
+
+    // Delete — draft only
+    (isDraft ?
+      '<div class="panel-card" style="margin-bottom:24px;border:1px solid #fca5a5;">' +
+        '<div class="panel-card-header" style="background:#fef2f2;color:#b91c1c;">Danger Zone</div>' +
+        '<div class="panel-card-body">' +
+          '<p style="font-size:.85rem;color:#374151;margin-bottom:14px;">' +
+            'Delete this election permanently. This cannot be undone. ' +
+            'Only draft elections may be deleted.' +
+          '</p>' +
+          '<div id="delete-confirm-box" style="display:none;margin-bottom:12px;' +
+            'background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;padding:12px;">' +
+            '<p style="font-size:.85rem;color:#b91c1c;margin-bottom:12px;">' +
+              '<strong>Are you sure?</strong> This will permanently delete ' +
+              '"' + escHtml(el.title) + '".' +
+            '</p>' +
+            '<div style="display:flex;gap:10px;">' +
+              '<button class="btn btn-outline" ' +
+                'onclick="document.getElementById(\'delete-confirm-box\').style.display=\'none\';' +
+                'document.getElementById(\'btn-delete-election\').style.display=\'block\';" ' +
+                'style="flex:1;padding:12px;">Cancel</button>' +
+              '<button ' +
+                'onclick="AdminPanel._deleteElection(\'' + escHtml(el.id) + '\')" ' +
+                'style="flex:1;padding:12px;font-size:.9rem;background:#b91c1c;color:#fff;' +
+                'border:none;border-radius:4px;cursor:pointer;">' +
+                'Yes, Delete' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<button id="btn-delete-election" ' +
+            'onclick="document.getElementById(\'delete-confirm-box\').style.display=\'block\';' +
+            'this.style.display=\'none\';" ' +
+            'style="width:100%;padding:14px;font-size:1rem;background:#fff;color:#b91c1c;' +
+            'border:2px solid #b91c1c;border-radius:4px;cursor:pointer;">' +
+            'Delete Election' +
+          '</button>' +
+        '</div>' +
+      '</div>'
+    : '') +
+    '';
+
+  content.innerHTML = html;
+},
+
+_advanceStatus: function(id, nextStatus) {
+  var btn = document.getElementById('btn-advance-status');
+  var errEl = document.getElementById('advance-status-error');
+  if (btn) { btn.textContent = 'Advancing…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Status updated.');
+        AdminPanel.switchTab('elections');
+      } else {
+        if (errEl) {
+          errEl.textContent = (res && res.message) || 'Failed to update status.';
+          errEl.style.display = 'block';
+        }
+        if (btn) { btn.textContent = '▶ Open Nominations'; btn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (errEl) {
+        errEl.textContent = 'Error — please try again.';
+        errEl.style.display = 'block';
+      }
+      if (btn) { btn.textContent = '▶ Open Nominations'; btn.disabled = false; }
+    })
+    .updateElectionStatus(App.token, id, nextStatus);
+},
+
+_saveElection: function(id) {
+  var btn = document.getElementById('btn-save-election');
+  var errEl = document.getElementById('save-election-error');
+  var okEl  = document.getElementById('save-election-ok');
+  errEl.style.display = 'none';
+  okEl.style.display  = 'none';
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  var data = {
+    description:   document.getElementById('manage-desc').value.trim(),
+    ecContact:     document.getElementById('manage-eccontact').value.trim(),
+    vDay:          document.getElementById('manage-vday').value,
+    votingCloseDay:document.getElementById('manage-vclose').value,
+    declarationDay:document.getElementById('manage-declare').value
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+  showToast('Saved.');
+  AdminPanel.manageElection(id);
+} else {
+        errEl.textContent = (res && res.message) || 'Failed to save.';
+        errEl.style.display = 'block';
+        if (btn) { btn.textContent = 'Save Changes'; btn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function() {
+      errEl.textContent = 'Error — please try again.';
+      errEl.style.display = 'block';
+      if (btn) { btn.textContent = 'Save Changes'; btn.disabled = false; }
+    })
+    .updateElection(App.token, id, data);
+},
+
+_deleteElection: function(id) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Election deleted.');
+        AdminPanel.switchTab('elections');
+      } else {
+        showToast((res && res.message) || 'Delete failed.');
+      }
+    })
+    .withFailureHandler(function() {
+      showToast('Error — delete failed.');
+    })
+    .deleteElection(App.token, id);
+},
   };
 
 })();

@@ -328,6 +328,189 @@ function createElection(token, data) {
 }
 
 // ============================================================
+// getElection — returns single election by ID
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER, OBSERVER
+// ============================================================
+function getElection(token, id) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var allowedRoles = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER', 'OBSERVER'];
+  if (allowedRoles.indexOf(sess.role) === -1) {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.ELECTIONS);
+  var row = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.ELEC_ID].toString() === id.toString()) {
+      row = rows[i];
+      break;
+    }
+  }
+  if (!row) return { success: false, message: 'Election not found.' };
+
+  return {
+    success: true,
+    election: {
+      id:            row[COL.ELEC_ID].toString(),
+      title:         row[COL.ELEC_TITLE].toString(),
+      description:   row[COL.ELEC_DESC]        ? row[COL.ELEC_DESC].toString()        : '',
+      status:        row[COL.ELEC_STATUS].toString(),
+      ecContact:     row[COL.ELEC_EC_CONTACT]  ? row[COL.ELEC_EC_CONTACT].toString()  : '',
+      minPosts:      row[COL.ELEC_MIN_POSTS]   ? row[COL.ELEC_MIN_POSTS].toString()   : '',
+      mode:          row[COL.ELEC_MODE]        ? row[COL.ELEC_MODE].toString()        : 'electronic',
+      isTrial:       row[COL.ELEC_TRIAL]       ? row[COL.ELEC_TRIAL].toString() === 'true' : false,
+      vDay:          row[COL.ELEC_VDAY]        ? _toDateInputVal(row[COL.ELEC_VDAY])        : '',
+      votingCloseDay:row[COL.ELEC_VOTE_CLOSE]  ? _toDateInputVal(row[COL.ELEC_VOTE_CLOSE])  : '',
+      declarationDay:row[COL.ELEC_DECLARE_DAY] ? _toDateInputVal(row[COL.ELEC_DECLARE_DAY]) : ''
+    }
+  };
+}
+
+// ============================================================
+// updateElection — saves editable fields on an election
+// Access: RO_ADMIN only
+// Allowed at any status — RO may correct details any time
+// ============================================================
+function updateElection(token, id, data) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.ELECTIONS);
+  if (!sh) return { success: false, message: 'Elections sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  var rowIndex = -1;
+  for (var i = 1; i < rows.length; i++) {   // row 0 = header
+    if (rows[i][COL.ELEC_ID].toString() === id.toString()) {
+      rowIndex = i + 1;                      // Sheets rows are 1-indexed
+      break;
+    }
+  }
+  if (rowIndex === -1) return { success: false, message: 'Election not found.' };
+
+  // Write only the editable columns — surgical, one cell at a time
+  if (data.description   !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_DESC        + 1).setValue(data.description.trim());
+  if (data.ecContact     !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_EC_CONTACT  + 1).setValue(data.ecContact.trim());
+  if (data.minPosts      !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_MIN_POSTS   + 1).setValue(
+      data.minPosts === '' ? 0 : parseInt(data.minPosts, 10) || 0
+    );
+  if (data.vDay          !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_VDAY        + 1).setValue(data.vDay.trim());
+  if (data.votingCloseDay !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_VOTE_CLOSE  + 1).setValue(data.votingCloseDay.trim());
+  if (data.declarationDay !== undefined)
+    sh.getRange(rowIndex, COL.ELEC_DECLARE_DAY + 1).setValue(data.declarationDay.trim());
+
+  appendAdminLog(sess.identity, 'election_updated',
+    'Election details updated', '', id);
+
+  return { success: true, message: 'Saved.' };
+}
+
+// ============================================================
+// deleteElection — hard delete, draft status only
+// Access: RO_ADMIN only
+// ============================================================
+function deleteElection(token, id) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.ELECTIONS);
+  if (!sh) return { success: false, message: 'Elections sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  var rowIndex = -1;
+  var title = '';
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ELEC_ID].toString() === id.toString()) {
+      var status = rows[i][COL.ELEC_STATUS].toString();
+var isTrial = rows[i][COL.ELEC_TRIAL].toString() === 'true';
+if (!isTrial && status !== 'draft') {
+  return { success: false, message: 'Only draft elections may be deleted.' };
+}
+if (isTrial && status === 'active') {
+  return { success: false, message: 'Cannot delete a trial election while voting is active.' };
+}
+      rowIndex = i + 1;
+      title = rows[i][COL.ELEC_TITLE].toString();
+      break;
+    }
+  }
+  if (rowIndex === -1) return { success: false, message: 'Election not found.' };
+
+  sh.deleteRow(rowIndex);
+
+  appendAdminLog(sess.identity, 'election_deleted',
+    'Draft election deleted: ' + title, '', id);
+
+  return { success: true, message: 'Election deleted.' };
+}
+
+// ============================================================
+// updateElectionStatus — advances election to a new status
+// Access: RO_ADMIN only
+// ============================================================
+function updateElectionStatus(token, electionId, newStatus, overrideNote) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var validStatuses = [
+    'draft', 'nominations_open', 'nominations_open_phase2',
+    'scrutiny', 'candidates_published', 'active',
+    'paused', 'closed', 'declared'
+  ];
+  if (validStatuses.indexOf(newStatus) === -1) {
+    return { success: false, message: 'Invalid status: ' + newStatus };
+  }
+
+  var sh = getSheet(SHEETS.ELECTIONS);
+  if (!sh) return { success: false, message: 'Elections sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      var currentStatus = rows[i][COL.ELEC_STATUS].toString();
+      if (currentStatus === newStatus) {
+        return { success: false, message: 'Election is already at that status.' };
+      }
+      sh.getRange(i + 1, COL.ELEC_STATUS + 1).setValue(newStatus);
+      appendAdminLog(sess.identity, 'election_status_changed',
+        'Status: ' + currentStatus + ' → ' + newStatus +
+        (overrideNote ? ' | ' + overrideNote : ''),
+        currentStatus, electionId);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Election not found.' };
+}
+
+// ============================================================
+// _toDateInputVal — converts a sheet date/string to YYYY-MM-DD
+// for HTML date input value attribute
+// ============================================================
+function _toDateInputVal(val) {
+  if (!val) return '';
+  try {
+    var d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    var yyyy = d.getFullYear();
+    var mm   = String(d.getMonth() + 1).padStart(2,'0');  // Apps Script: padStart args reversed
+    var dd   = String(d.getDate()).padStart(2,'0');
+    return yyyy + '-' + mm + '-' + dd;
+  } catch(e) {
+    return '';
+  }
+}
+
+// ============================================================
 // doGet — main entry point
 // 16 routes per Step 5 Routing Design document.
 // ============================================================
