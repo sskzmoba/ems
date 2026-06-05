@@ -272,6 +272,62 @@ function getAllElections(token) {
 }
 
 // ============================================================
+// createElection — creates a new election record
+// Access: RO_ADMIN only
+// ============================================================
+function createElection(token, data) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  if (!data.title || data.title.trim() === '') {
+    return { success: false, message: 'Election title is required.' };
+  }
+
+  var sh = getSheet(SHEETS.ELECTIONS);
+  if (!sh) return { success: false, message: 'Elections sheet not found.' };
+
+  var id = 'ELEC-' + Utilities.getUuid().substring(0, 8).toUpperCase();
+  var row = [];
+
+  // Build row — 27 columns (0–26)
+  row[COL.ELEC_ID]          = id;
+  row[COL.ELEC_TITLE]       = data.title.trim();
+  row[COL.ELEC_DESC]        = '';
+  row[COL.ELEC_STATUS]      = 'draft';
+  row[COL.ELEC_START]       = '';
+  row[COL.ELEC_END]         = '';
+  row[COL.ELEC_CREATED_BY]  = sess.identity;
+  row[COL.ELEC_CREATED_AT]  = now().toISOString();
+  row[COL.ELEC_ORGSECY_BATCH]         = '';
+  row[COL.ELEC_BATCHREP_RESTRICTED]   = false;
+  row[COL.ELEC_ORGSECY_RESTRICTED]    = false;
+  row[COL.ELEC_RESULT_VIS]            = 'post_declaration';
+  row[COL.ELEC_NOM_DEADLINE]          = '';
+  row[COL.ELEC_EC_CONTACT]            = '';
+  row[COL.ELEC_NOM_PHASE]             = '';
+  row[COL.ELEC_NOM_EXT_COUNT]         = 0;
+  row[COL.ELEC_NOM_EXT_DEADLINE]      = '';
+  row[COL.ELEC_MIN_POSTS]             = 0;
+  row[COL.ELEC_MODE]                  = data.mode || 'electronic';
+  row[COL.ELEC_TRIAL]                 = data.isTrial === true ? true : false;
+  row[COL.ELEC_BYPASS_FLOORS]         = false;
+  row[COL.ELEC_VDAY]                  = '';
+  row[COL.ELEC_VOTE_CLOSE]            = '';
+  row[COL.ELEC_DECLARE_DAY]           = '';
+  row[COL.ELEC_SGM_DATE]              = '';
+  row[COL.ELEC_CERTIFIED_AT]          = '';
+  row[COL.ELEC_SEAT_CONFIG]           = '';
+
+  sh.appendRow(row);
+
+  appendAdminLog(sess.identity, 'election_created',
+    'New election created: ' + data.title.trim(), '', id);
+
+  return { success: true, id: id, message: 'Election created successfully.' };
+}
+
+// ============================================================
 // doGet — main entry point
 // 16 routes per Step 5 Routing Design document.
 // ============================================================

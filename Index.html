@@ -5,187 +5,353 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SSKZM OBA Election Management System</title>
   <style>
-    /* ── RESET & BASE ─────────────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      height: 100%;
-      font-family: Arial, sans-serif;
-      font-size: 15px;
-      background: #f0f2f5;
-      color: #222;
-    }
+   /* ── RESET & BASE ─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ── APP SHELL ────────────────────────────────────────── */
-    #app {
+html, body {
+  height: 100%;
+  font-family: Arial, sans-serif;
+  font-size: 20px;
+  background: #f0f2f5;
+  color: #222;
+  overflow-x: hidden;
+}
+
+/* ── APP SHELL ────────────────────────────────────────── */
+#app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
 }
 
-    /* ── TOP BAR ──────────────────────────────────────────── */
-    #topbar {
-      background: #1a3a5c;
-      border-top: 3px solid #b8960c;
-      padding: 0 20px;
-      height: 52px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    #topbar-title {
-      color: #fff;
-      font-size: .95rem;
-      font-weight: 600;
-      letter-spacing: .02em;
-    }
-    #topbar-title span {
-      color: rgba(255,255,255,.5);
-      font-weight: 400;
-      font-size: .8rem;
-      margin-left: 8px;
-    }
-    #topbar-user {
-      color: rgba(255,255,255,.75);
-      font-size: .8rem;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    #topbar-user.hidden { display: none; }
-    #btn-logout {
-      background: rgba(255,255,255,.12);
-      border: 1px solid rgba(255,255,255,.25);
-      color: #fff;
-      padding: 4px 12px;
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: .78rem;
-      font-family: Arial, sans-serif;
-    }
-    #btn-logout:hover { background: rgba(255,255,255,.22); }
-
-    /* ── MAIN CONTENT AREA ────────────────────────────────── */
-    #main {
-      flex: 1;
-      padding: 24px 16px;
-      max-width: 880px;
-      width: 100%;
-      margin: 0 auto;
-    }
-
-    /* ── LOADING SCREEN ───────────────────────────────────── */
-    #screen-loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 60vh;
-      gap: 14px;
-    }
-    .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid #dde3ea;
-      border-top-color: #1a3a5c;
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #screen-loading p { color: #888; font-size: .9rem; }
-
-    /* ── TOAST ────────────────────────────────────────────── */
-    #toast {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(80px);
-      background: #1a3a5c;
-      color: #fff;
-      padding: 10px 22px;
-      border-radius: 4px;
-      font-size: .88rem;
-      transition: transform .25s ease;
-      z-index: 999;
-      max-width: 360px;
-      text-align: center;
-      pointer-events: none;
-    }
-    #toast.show { transform: translateX(-50%) translateY(0); }
-    #toast.error { background: #c0392b; }
-
-    /* ── SHARED PANEL STYLES (used by all role panels) ────── */
-    .panel-card {
-      background: #fff;
-      border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.1);
-      overflow: hidden;
-      margin-bottom: 16px;
-    }
-    .panel-card-header {
-      background: #f7f9fc;
-      border-bottom: 1px solid #e8edf2;
-      padding: 14px 20px;
-      font-weight: 600;
-      color: #1a3a5c;
-      font-size: .95rem;
-    }
-    .panel-card-body { padding: 20px; }
-
-    .tab-bar {
-      display: flex;
-      gap: 4px;
-      border-bottom: 2px solid #e8edf2;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-    .tab-btn {
-      padding: 8px 16px;
-      border: none;
-      background: none;
-      cursor: pointer;
-      font-size: .88rem;
-      color: #666;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -2px;
-      font-family: Arial, sans-serif;
-      border-radius: 4px 4px 0 0;
-    }
-    .tab-btn:hover { color: #1a3a5c; background: #f0f4f8; }
-    .tab-btn.active {
-      color: #1a3a5c;
-      border-bottom-color: #1a3a5c;
-      font-weight: 600;
-    }
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-
-    .status-badge {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 10px;
-      font-size: .75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-    }
-    .badge-active    { background: #d1fae5; color: #065f46; }
-    .badge-draft     { background: #fef3c7; color: #92400e; }
-    .badge-closed    { background: #fee2e2; color: #991b1b; }
-    .badge-declared  { background: #e0e7ff; color: #3730a3; }
-    .badge-noms-open { background: #dbeafe; color: #1e40af; }
-    .badge-scrutiny  { background: #fce7f3; color: #9d174d; }
-    .badge-trial     { background: #fef9c3; color: #854d0e; }
-
-    @media (max-width: 600px) {
-  #main { padding: 12px 8px; }
-  .tab-btn { padding: 7px 10px; font-size: .82rem; }
+/* ── TOP BAR ──────────────────────────────────────────── */
+#topbar {
+  background: #1a3a5c;
+  border-top: 3px solid #b8960c;
+  padding: 0 16px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 200;
 }
 
-* { max-width: 100%; box-sizing: border-box; }
-body { overflow-x: hidden; }
+#topbar-title {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+#topbar-title span {
+  color: rgba(255,255,255,.6);
+  font-weight: 400;
+  font-size: .85rem;
+  margin-left: 8px;
+}
+
+#topbar-user {
+  color: rgba(255,255,255,.85);
+  font-size: .85rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#topbar-user.hidden { display: none; }
+
+#btn-logout {
+  background: rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.3);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: .85rem;
+  font-family: Arial, sans-serif;
+  min-height: 36px;
+}
+
+#btn-logout:hover { background: rgba(255,255,255,.25); }
+
+/* ── HAMBURGER MENU ───────────────────────────────────── */
+#nav-bar {
+  background: #fff;
+  border-bottom: 2px solid #e8edf2;
+  position: sticky;
+  top: 56px;
+  z-index: 150;
+}
+
+#nav-hamburger {
+  display: none;
+  width: 100%;
+  padding: 12px 16px;
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #e8edf2;
+  font-size: 1rem;
+  font-family: Arial, sans-serif;
+  color: #1a3a5c;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+}
+
+#nav-hamburger-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+#nav-current-tab {
+  flex: 1;
+}
+
+#nav-arrow {
+  font-size: .9rem;
+  color: #888;
+  transition: transform .2s;
+}
+
+#nav-arrow.open { transform: rotate(180deg); }
+
+#nav-dropdown {
+  display: none;
+  flex-direction: column;
+  background: #fff;
+  border-bottom: 2px solid #e8edf2;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+#nav-dropdown.open { display: flex; }
+
+.nav-drop-btn {
+  padding: 16px 20px;
+  border: none;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fff;
+  font-size: 1.05rem;
+  font-family: Arial, sans-serif;
+  color: #333;
+  cursor: pointer;
+  text-align: left;
+  min-height: 54px;
+}
+
+.nav-drop-btn:hover { background: #f0f4f8; color: #1a3a5c; }
+
+.nav-drop-btn.active {
+  background: #eef3f8;
+  color: #1a3a5c;
+  font-weight: 700;
+  border-left: 4px solid #1a3a5c;
+}
+
+/* Desktop tab bar — hidden on mobile */
+#nav-tabbar {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── MAIN CONTENT AREA ────────────────────────────────── */
+#main {
+  flex: 1;
+  padding: 20px 16px;
+  max-width: 100%;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── LOADING SCREEN ───────────────────────────────────── */
+#screen-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 14px;
+}
+
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid #dde3ea;
+  border-top-color: #1a3a5c;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+#screen-loading p { color: #888; font-size: 1rem; }
+
+/* ── TOAST ────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: #1a3a5c;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: transform .25s ease;
+  z-index: 999;
+  max-width: 340px;
+  width: 90%;
+  text-align: center;
+  pointer-events: none;
+}
+
+#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.error { background: #c0392b; }
+
+/* ── SHARED PANEL STYLES ──────────────────────────────── */
+.panel-card {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.panel-card-header {
+  background: #f7f9fc;
+  border-bottom: 1px solid #e8edf2;
+  padding: 14px 20px;
+  font-weight: 600;
+  color: #1a3a5c;
+  font-size: 1rem;
+}
+
+.panel-card-body { padding: 20px; }
+
+/* Desktop tab bar styles */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid #e8edf2;
+  margin-bottom: 20px;
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: .95rem;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-family: Arial, sans-serif;
+  border-radius: 4px 4px 0 0;
+  white-space: nowrap;
+  min-height: 44px;
+}
+
+.tab-btn:hover { color: #1a3a5c; background: #f0f4f8; }
+
+.tab-btn.active {
+  color: #1a3a5c;
+  border-bottom-color: #1a3a5c;
+  font-weight: 600;
+}
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ── STATUS BADGES ────────────────────────────────────── */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: .82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.badge-active   { background: #d1fae5; color: #065f46; }
+.badge-draft    { background: #fef3c7; color: #92400e; }
+.badge-closed   { background: #fee2e2; color: #991b1b; }
+.badge-declared { background: #e0e7ff; color: #3730a3; }
+.badge-noms-open { background: #dbeafe; color: #1e40af; }
+.badge-scrutiny { background: #fce7f3; color: #9d174d; }
+.badge-trial    { background: #fef9c3; color: #854d0e; }
+
+/* ── BUTTONS ──────────────────────────────────────────── */
+.btn {
+  display: inline-block;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  min-height: 48px;
+  text-align: center;
+}
+
+.btn-primary  { background: #1a3a5c; color: #fff; }
+.btn-outline  { background: #fff; color: #1a3a5c; border: 1px solid #1a3a5c; }
+.btn-danger   { background: #c0392b; color: #fff; }
+.btn-sm       { padding: 8px 16px; font-size: .9rem; min-height: 40px; }
+
+.btn-primary:hover { background: #15304d; }
+.btn-outline:hover { background: #f0f4f8; }
+
+/* ── FORM ELEMENTS ────────────────────────────────────── */
+input[type=text], input[type=email],
+input[type=password], input[type=number],
+select, textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: .95rem;
+  color: #333;
+}
+
+/* ── MOBILE ───────────────────────────────────────────── */
+@media (max-width: 700px) {
+  html, body { font-size: 17px; }
+
+  #topbar { height: 52px; padding: 0 12px; }
+  #topbar-title { font-size: .95rem; }
+  #topbar-title span { display: none; }
+  #topbar-name { display: none; }
+
+  #main { padding: 14px 12px; }
+
+  /* Show hamburger, hide desktop tabbar */
+  #nav-hamburger { display: flex; }
+  #nav-tabbar    { display: none; }
+
+  .status-badge { font-size: .85rem; padding: 4px 12px; }
+}
+
+/* ── DESKTOP ──────────────────────────────────────────── */
+@media (min-width: 701px) {
+  #nav-hamburger { display: none; }
+  #nav-tabbar    { display: flex; }
+}
   </style>
 </head>
 <body>
@@ -201,6 +367,17 @@ body { overflow-x: hidden; }
       <span id="topbar-name"></span>
       <button id="btn-logout" onclick="App.logout()">Sign out</button>
     </div>
+  </div>
+
+  <!-- Nav bar — hamburger on mobile, tab bar on desktop -->
+  <div id="nav-bar">
+    <button id="nav-hamburger" onclick="NavMenu.toggle()">
+      <span id="nav-hamburger-icon">☰</span>
+      <span id="nav-current-tab">Menu</span>
+      <span id="nav-arrow">▼</span>
+    </button>
+    <div id="nav-dropdown"></div>
+    <div id="nav-tabbar"></div>
   </div>
 
   <!-- Main content area — screens rendered here -->
@@ -344,7 +521,84 @@ body { overflow-x: hidden; }
     }, duration || 3000);
   };
 
-  App.init();
+  var NavMenu = {
+  _tabs: [],
+  _onSelect: null,
+
+  build: function(tabs, currentId, onSelect) {
+    NavMenu._tabs = tabs;
+    NavMenu._onSelect = onSelect;
+
+    // Detect mobile using screen width, not window width
+    var isMobile = screen.width <= 700;
+    document.getElementById('nav-hamburger').style.display = isMobile ? 'flex' : 'none';
+    document.getElementById('nav-tabbar').style.display = isMobile ? 'none' : 'flex';
+
+    // Desktop tab bar
+    var tabbar = document.getElementById('nav-tabbar');
+    tabbar.innerHTML = '';
+    tabs.forEach(function(t) {
+      var btn = document.createElement('button');
+      btn.className = 'tab-btn' + (t.id === currentId ? ' active' : '');
+      btn.id = 'tab-btn-' + t.id;
+      btn.textContent = t.label;
+      btn.onclick = function() { NavMenu._select(t.id); };
+      tabbar.appendChild(btn);
+    });
+
+    // Hamburger dropdown
+    var dropdown = document.getElementById('nav-dropdown');
+    dropdown.innerHTML = '';
+    tabs.forEach(function(t) {
+      var btn = document.createElement('button');
+      btn.className = 'nav-drop-btn' + (t.id === currentId ? ' active' : '');
+      btn.id = 'nav-drop-' + t.id;
+      btn.textContent = t.label;
+      btn.onclick = function() { NavMenu._select(t.id); };
+      dropdown.appendChild(btn);
+    });
+
+    // Set current tab label in hamburger
+    var current = tabs.filter(function(t) { return t.id === currentId; })[0];
+    if (current) document.getElementById('nav-current-tab').textContent = current.label;
+  },
+
+  _select: function(tabId) {
+    // Update highlights
+    NavMenu._tabs.forEach(function(t) {
+      var btn = document.getElementById('tab-btn-' + t.id);
+      if (btn) btn.className = 'tab-btn' + (t.id === tabId ? ' active' : '');
+      var drop = document.getElementById('nav-drop-' + t.id);
+      if (drop) drop.className = 'nav-drop-btn' + (t.id === tabId ? ' active' : '');
+    });
+    // Update hamburger label
+    var current = NavMenu._tabs.filter(function(t) { return t.id === tabId; })[0];
+    if (current) document.getElementById('nav-current-tab').textContent = current.label;
+    // Close dropdown
+    NavMenu.close();
+    // Fire callback
+    if (NavMenu._onSelect) NavMenu._onSelect(tabId);
+  },
+
+  toggle: function() {
+    var dropdown = document.getElementById('nav-dropdown');
+    var arrow = document.getElementById('nav-arrow');
+    if (dropdown.classList.contains('open')) {
+      dropdown.classList.remove('open');
+      arrow.classList.remove('open');
+    } else {
+      dropdown.classList.add('open');
+      arrow.classList.add('open');
+    }
+  },
+
+  close: function() {
+    document.getElementById('nav-dropdown').classList.remove('open');
+    document.getElementById('nav-arrow').classList.remove('open');
+  }
+};
+
+App.init();
 </script>
 
 </body>

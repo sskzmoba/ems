@@ -15,36 +15,16 @@ var VoterPanel = (function() {
   ];
 
   function init() {
-    // DO NOT touch #app or #topbar — Index.html owns those.
-    // App.showPanel() has already populated topbar elements.
-
-    setMain(
-      '<div class="tab-bar" id="voter-tab-bar" ' +
-        'style="overflow-x:auto;-webkit-overflow-scrolling:touch;' +
-        'white-space:nowrap;flex-wrap:nowrap;max-width:100%;"></div>' +
-      '<div id="voter-content" style="overflow-x:hidden;"></div>'
-    );
-
-    var tabBar = document.getElementById('voter-tab-bar');
-    TABS.forEach(function(t) {
-      var btn = document.createElement('button');
-      btn.className = 'tab-btn';
-      btn.id = 'tab-btn-' + t.id;
-      btn.textContent = t.label;
-      btn.onclick = function() { VoterPanel.switchTab(t.id); };
-      tabBar.appendChild(btn);
+    NavMenu.build(TABS, TABS[0].id, function(tabId) {
+      _currentTab = tabId;
+      var content = document.getElementById('voter-content');
+      if (content) content.innerHTML = _renderTab(tabId);
     });
 
-    VoterPanel.switchTab(TABS[0].id);
-  }
+    setMain('<div id="voter-content"></div>');
 
-  function switchTab(tabId) {
-    _currentTab = tabId;
-    TABS.forEach(function(t) {
-      var btn = document.getElementById('tab-btn-' + t.id);
-      if (btn) btn.className = 'tab-btn' + (t.id === tabId ? ' active' : '');
-    });
-    document.getElementById('voter-content').innerHTML = _renderTab(tabId);
+    _currentTab = TABS[0].id;
+    document.getElementById('voter-content').innerHTML = _renderTab(TABS[0].id);
   }
 
   function _renderTab(tabId) {
@@ -67,7 +47,7 @@ var VoterPanel = (function() {
     App.logout();
   }
 
-  return { init: init, switchTab: switchTab };
+  return { init: init };
 
 })();
 </script>

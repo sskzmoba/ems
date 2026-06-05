@@ -68,66 +68,50 @@ var AdminPanel = (function() {
     var role = (App.role || '').toUpperCase();
     var tabs = TAB_SETS[role] || TAB_SETS['OBSERVER'];
 
-    // DO NOT touch #app or #topbar — Index.html owns those.
-    // App.showPanel() has already populated topbar-name,
-    // topbar-subtitle, and topbar-user before calling init().
-
-    // TEM AuthID bar — insert between topbar and #main if TEM
+    // TEM AuthID bar
     var temBar = document.getElementById('tem-authbar');
     if (role === 'TEM') {
       if (!temBar) {
         var bar = document.createElement('div');
         bar.id = 'tem-authbar';
         bar.style.cssText = 'background:#fefce8;border-bottom:1px solid #fde047;' +
-          'padding:8px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+          'padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
         bar.innerHTML =
-          '<span style="font-size:0.8rem;color:#854d0e;font-weight:600;">' +
+          '<span style="font-size:.9rem;color:#854d0e;font-weight:600;">' +
             'TEM Authorisation ID required for write actions:</span>' +
           '<input id="tem-authid" type="text" placeholder="Enter AuthID" ' +
-            'style="font-size:0.8rem;padding:4px 8px;border:1px solid #fde047;' +
-            'border-radius:4px;width:220px;" />' +
-          '<span id="tem-authstatus" style="font-size:0.75rem;color:#6b7280;">' +
+            'style="font-size:.9rem;padding:8px 10px;border:1px solid #fde047;' +
+            'border-radius:4px;width:200px;" />' +
+          '<span id="tem-authstatus" style="font-size:.85rem;color:#6b7280;">' +
             'Not validated</span>';
-        var mainEl = document.getElementById('main');
-        mainEl.parentNode.insertBefore(bar, mainEl);
+        var navBar = document.getElementById('nav-bar');
+        navBar.parentNode.insertBefore(bar, navBar.nextSibling);
       }
     } else {
       if (temBar) temBar.parentNode.removeChild(temBar);
     }
 
-    // Render tab bar + content area into #main
-    setMain(
-      '<div class="tab-bar" id="admin-tab-bar" ' +
-        'style="overflow-x:auto;-webkit-overflow-scrolling:touch;' +
-        'white-space:nowrap;flex-wrap:nowrap;max-width:100%;"></div>' +
-      '<div id="admin-content" style="overflow-x:hidden;"></div>'
-    );
-
-    // Build tab buttons
-    var tabBar = document.getElementById('admin-tab-bar');
-    tabs.forEach(function(t) {
-      var btn = document.createElement('button');
-      btn.className = 'tab-btn';
-      btn.id = 'tab-btn-' + t.id;
-      btn.textContent = t.label;
-      btn.onclick = function() { AdminPanel.switchTab(t.id); };
-      tabBar.appendChild(btn);
+    // Build nav via NavMenu
+    NavMenu.build(tabs, tabs[0].id, function(tabId) {
+      _currentTab = tabId;
+      var role = (App.role || '').toUpperCase();
+      var content = document.getElementById('admin-content');
+      if (content) content.innerHTML = _renderTab(tabId, role);
     });
 
-    // Open first tab
-    AdminPanel.switchTab(tabs[0].id);
+    // Content area
+    setMain('<div id="admin-content"></div>');
+
+    // Render first tab
+    _currentTab = tabs[0].id;
+    document.getElementById('admin-content').innerHTML = _renderTab(tabs[0].id, role);
   }
 
   function switchTab(tabId) {
     _currentTab = tabId;
     var role = (App.role || '').toUpperCase();
-    var tabs = TAB_SETS[role] || [];
-    tabs.forEach(function(t) {
-      var btn = document.getElementById('tab-btn-' + t.id);
-      if (btn) btn.className = 'tab-btn' + (t.id === tabId ? ' active' : '');
-    });
     var content = document.getElementById('admin-content');
-    content.innerHTML = _renderTab(tabId, role);
+    if (content) content.innerHTML = _renderTab(tabId, role);
   }
 
   function _renderTab(tabId, role) {
@@ -195,9 +179,9 @@ function _loadElections(role) {
         // Create button — RO_ADMIN only
         if (isRO) {
           html += '<div style="margin-bottom:16px;">' +
-            '<button class="btn btn-primary btn-sm" ' +
+            '<button class="btn btn-primary" ' +
               'onclick="AdminPanel.showCreateElection()" ' +
-              'style="width:100%;padding:12px;font-size:.95rem;">' +
+              'style="width:100%;padding:14px;font-size:1rem;">' +
               '+ New Election' +
             '</button>' +
           '</div>';
@@ -272,7 +256,133 @@ function _loadElections(role) {
   return {
     init: init,
     switchTab: switchTab,
-    showCreateElection: function() { showToast('Create election — coming soon.'); },
+    showCreateElection: function() {
+      var role = (App.role || '').toUpperCase();
+      var content = document.getElementById('admin-content');
+      if (!content) return;
+      content.innerHTML =
+        '<div style="margin-bottom:12px;">' +
+          '<button class="btn btn-outline" onclick="AdminPanel.switchTab(\'elections\')" ' +
+            'style="width:100%;padding:12px;font-size:1rem;">← Back to Elections</button>' +
+        '</div>' +
+        '<div class="panel-card">' +
+          '<div class="panel-card-header">Create New Election</div>' +
+          '<div class="panel-card-body">' +
+
+            '<label for="new-elec-title">Election Title</label>' +
+            '<input type="text" id="new-elec-title" placeholder="e.g. SSKZM OBA Elections 2026-27" ' +
+              'style="margin-bottom:20px;" />' +
+
+            '<label>Mode</label>' +
+            '<div style="display:flex;gap:12px;margin-bottom:20px;">' +
+              '<button id="mode-btn-electronic" ' +
+                'onclick="AdminPanel._setMode(\'electronic\')" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #1a3a5c;background:#1a3a5c;color:#fff;cursor:pointer;">' +
+                'Electronic' +
+              '</button>' +
+              '<button id="mode-btn-physical" ' +
+                'onclick="AdminPanel._setMode(\'physical\')" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #ccc;background:#fff;color:#333;cursor:pointer;">' +
+                'Physical' +
+              '</button>' +
+            '</div>' +
+
+            '<label>Trial Election?</label>' +
+            '<div style="display:flex;gap:12px;margin-bottom:24px;">' +
+              '<button id="trial-btn-no" ' +
+                'onclick="AdminPanel._setTrial(false)" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #1a3a5c;background:#1a3a5c;color:#fff;cursor:pointer;">' +
+                'No' +
+              '</button>' +
+              '<button id="trial-btn-yes" ' +
+                'onclick="AdminPanel._setTrial(true)" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #ccc;background:#fff;color:#333;cursor:pointer;">' +
+                'Yes' +
+              '</button>' +
+            '</div>' +
+
+            '<button class="btn btn-primary" ' +
+              'onclick="AdminPanel._submitCreateElection()" ' +
+              'style="width:100%;padding:14px;font-size:1rem;">' +
+              'Create Election' +
+            '</button>' +
+
+            '<div id="create-elec-error" ' +
+              'style="margin-top:12px;color:#c0392b;font-size:.9rem;display:none;">' +
+            '</div>' +
+
+          '</div>' +
+        '</div>';
+    },
+
+    _mode: 'electronic',
+    _trial: false,
+
+    _setMode: function(val) {
+      AdminPanel._mode = val;
+      var el = document.getElementById('mode-btn-electronic');
+      var ph = document.getElementById('mode-btn-physical');
+      if (val === 'electronic') {
+        el.style.background = '#1a3a5c'; el.style.color = '#fff'; el.style.borderColor = '#1a3a5c';
+        ph.style.background = '#fff';    ph.style.color = '#333'; ph.style.borderColor = '#ccc';
+      } else {
+        ph.style.background = '#1a3a5c'; ph.style.color = '#fff'; ph.style.borderColor = '#1a3a5c';
+        el.style.background = '#fff';    el.style.color = '#333'; el.style.borderColor = '#ccc';
+      }
+    },
+
+    _setTrial: function(val) {
+      AdminPanel._trial = val;
+      var yes = document.getElementById('trial-btn-yes');
+      var no  = document.getElementById('trial-btn-no');
+      if (val) {
+        yes.style.background = '#1a3a5c'; yes.style.color = '#fff'; yes.style.borderColor = '#1a3a5c';
+        no.style.background  = '#fff';    no.style.color  = '#333'; no.style.borderColor  = '#ccc';
+      } else {
+        no.style.background  = '#1a3a5c'; no.style.color  = '#fff'; no.style.borderColor  = '#1a3a5c';
+        yes.style.background = '#fff';    yes.style.color = '#333'; yes.style.borderColor = '#ccc';
+      }
+    },
+
+    _submitCreateElection: function() {
+      var title = document.getElementById('new-elec-title').value.trim();
+      var errEl = document.getElementById('create-elec-error');
+      if (!title) {
+        errEl.textContent = 'Please enter an election title.';
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      var btn = document.querySelector('[onclick="AdminPanel._submitCreateElection()"]');
+      if (btn) { btn.textContent = 'Creating…'; btn.disabled = true; }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            showToast('Election created successfully.');
+            AdminPanel.switchTab('elections');
+          } else {
+            errEl.textContent = (res && res.message) || 'Failed to create election.';
+            errEl.style.display = 'block';
+            if (btn) { btn.textContent = 'Create Election'; btn.disabled = false; }
+          }
+        })
+        .withFailureHandler(function() {
+          errEl.textContent = 'Error — please try again.';
+          errEl.style.display = 'block';
+          if (btn) { btn.textContent = 'Create Election'; btn.disabled = false; }
+        })
+        .createElection(App.token, {
+          title:   title,
+          mode:    AdminPanel._mode,
+          isTrial: AdminPanel._trial
+        });
+    },
+
     manageElection: function(id) { showToast('Manage election — coming soon.'); }
   };
 
