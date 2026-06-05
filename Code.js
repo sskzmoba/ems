@@ -147,11 +147,9 @@ var COL = {
 // tab's functions are built. Defined here so references don't error.
 // Full schemas: Step 3 BackendFunctionMap + Session 18 Handover.
 
-var COL_VRD   = {};  // VoterRollDraft — 13 cols
 var COL_CMP   = {};  // Complaints — 14 cols
 var COL_APL   = {};  // Appeals — 16 cols
 var COL_OBS   = {};  // Observations — 11 cols
-var COL_MSG   = {};  // Messages — 9 cols
 var COL_ECDB  = {};  // ECOfficerBoardDatabase — 9 cols
 var COL_SCHED = {};  // ElectionSchedule — 21 cols
 var COL_TEMA  = {};  // TEMAuth — 12 cols
@@ -490,6 +488,263 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
     }
   }
   return { success: false, message: 'Election not found.' };
+}
+
+// ============================================================
+// COL constants for new tabs — populate here for EC Officer pass
+// ============================================================
+
+var COL_VRD = {
+  ROLL:0, NAME:1, SURNAME:2, BATCH:3, EMAIL:4,
+  PHONE_CC:5, PHONE:6, PHONE2_CC:7, PHONE2:8,
+  UPLOADED_AT:9, OBJECTION_STATUS:10, OBJECTION_NOTES:11,
+  VERIFICATION_CAT:12
+};
+
+var COL_MSG = {
+  ID:0, ELEC_ID:1, FROM_ADMIN_ID:2, TO_ADMIN_ID:3,
+  SUBJECT:4, MESSAGE_TEXT:5, SENT_AT:6,
+  ACKNOWLEDGED_AT:7, ACKNOWLEDGED_BY:8
+};
+
+// ============================================================
+// getECOfficerPanel — overview data for EC Officer panel
+// Access: EC_OFFICER only
+// ============================================================
+function getECOfficerPanel(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied.' };
+
+  // Get most relevant election (highest priority non-declared)
+  var priority = [
+    'nominations_open', 'nominations_open_phase2', 'scrutiny',
+    'candidates_published', 'active', 'paused', 'draft', 'closed', 'declared'
+  ];
+  var elections = sheetData(SHEETS.ELECTIONS);
+  var best = null;
+  var bestP = priority.length;
+  for (var i = 0; i < elections.length; i++) {
+    var p = priority.indexOf(elections[i][COL.ELEC_STATUS].toString());
+    if (p !== -1 && p < bestP) { best = elections[i]; bestP = p; }
+  }
+
+  var election = null;
+  if (best) {
+    election = {
+      id:      best[COL.ELEC_ID].toString(),
+      title:   best[COL.ELEC_TITLE].toString(),
+      status:  best[COL.ELEC_STATUS].toString(),
+      isTrial: best[COL.ELEC_TRIAL].toString() === 'true'
+    };
+  }
+
+  // Handover checklist — hardcoded items for now (D.1 per SOP)
+  var checklist = [
+    { id: 'panel_published',    label: 'RO panel of 15 published to all members',        done: false },
+    { id: 'vr_uploaded',       label: 'Voter roll draft uploaded to EMS',                done: false },
+    { id: 'vr_app_deactivated',label: 'Voter verification app link deactivated',         done: false },
+    { id: 'tem_comms',         label: 'TEM communication recorded (if applicable)',      done: false },
+    { id: 'handover_submitted',label: 'Handover checklist submitted to RO',              done: false }
+  ];
+
+  // Check voter roll draft — mark done if rows exist
+  var vrRows = sheetData(SHEETS.VOTER_ROLL_DRAFT);
+  if (vrRows.length > 0) {
+    checklist[1].done = true;
+    checklist[1].note = vrRows.length + ' rows uploaded';
+  }
+
+  return { success: true, election: election, checklist: checklist };
+}
+
+// ============================================================
+// getVoterRollDraft — returns draft rows for EC Officer view
+// Access: EC_OFFICER, RO_ADMIN
+// ============================================================
+function getVoterRollDraft(token, page, search) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.VOTER_ROLL_DRAFT);
+
+  // Apply search filter if provided
+  if (search && search.trim() !== '') {
+    var s = search.trim().toLowerCase();
+    rows = rows.filter(function(r) {
+      return r[COL_VRD.ROLL].toString().toLowerCase().indexOf(s) !== -1 ||
+             r[COL_VRD.NAME].toString().toLowerCase().indexOf(s) !== -1 ||
+             r[COL_VRD.SURNAME].toString().toLowerCase().indexOf(s) !== -1;
+    });
+  }
+
+  return { success: true, rows: rows, total: rows.length };
+}
+
+// ============================================================
+// uploadVoterRollDraft — replaces all rows in VoterRollDraft
+// Access: EC_OFFICER, RO_ADMIN
+// Blocked if RO objection window is open (status = nominations_open
+// or later AND voter roll has been published)
+// ============================================================
+function uploadVoterRollDraft(token, rows) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  if (!rows || rows.length === 0) {
+    return { success: false, message: 'No data rows provided.' };
+  }
+Logger.log('uploadVoterRollDraft received ' + rows.length + ' rows');
+Logger.log('First row: ' + JSON.stringify(rows[0]));
+
+  var sh = getSheet(SHEETS.VOTER_ROLL_DRAFT);
+  if (!sh) return { success: false, message: 'VoterRollDraft sheet not found.' };
+
+  var ts = now().toISOString();
+
+  // Clear existing data rows (keep header)
+  var lastRow = sh.getLastRow();
+  if (lastRow > 1) {
+    sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).clearContent();
+  }
+
+  // Write new rows — pad/trim to 13 cols, inject UploadedAt
+  var writeRows = rows.map(function(r) {
+    var padded = new Array(13).fill('');
+    // Cols 0–8: voter data from CSV
+    for (var i = 0; i <= 8; i++) {
+      padded[i] = (r[i] !== undefined && r[i] !== null) ? r[i].toString().trim() : '';
+    }
+    // Col 9: system-set upload timestamp
+    padded[COL_VRD.UPLOADED_AT] = ts;
+    // Col 10: objection status — default none
+    padded[COL_VRD.OBJECTION_STATUS] = 'none';
+    // Col 11: objection notes — empty
+    padded[COL_VRD.OBJECTION_NOTES] = '';
+    // Col 12: VerificationCategory — from CSV col 9
+    padded[COL_VRD.VERIFICATION_CAT] =
+      (r[9] !== undefined && r[9] !== null) ? r[9].toString().trim() : '';
+    return padded;
+  });
+
+  if (writeRows.length > 0) {
+    sh.getRange(2, 1, writeRows.length, 13).setValues(writeRows);
+  }
+
+  appendAdminLog(sess.identity, 'voter_roll_draft_uploaded',
+    'Voter roll draft uploaded: ' + rows.length + ' rows', '', '');
+
+  return { success: true, message: rows.length + ' rows uploaded.' };
+}
+
+// ============================================================
+// getMessages — returns messages for EC Officer or RO
+// Access: EC_OFFICER, RO_ADMIN
+// ============================================================
+function getMessages(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.MESSAGES);
+
+  var messages = rows.map(function(r) {
+    return {
+      id:            r[COL_MSG.ID].toString(),
+      elecId:        r[COL_MSG.ELEC_ID].toString(),
+      fromAdminId:   r[COL_MSG.FROM_ADMIN_ID].toString(),
+      toAdminId:     r[COL_MSG.TO_ADMIN_ID].toString(),
+      subject:       r[COL_MSG.SUBJECT].toString(),
+      messageText:   r[COL_MSG.MESSAGE_TEXT].toString(),
+      sentAt:        r[COL_MSG.SENT_AT].toString(),
+      acknowledgedAt:r[COL_MSG.ACKNOWLEDGED_AT].toString(),
+      acknowledgedBy:r[COL_MSG.ACKNOWLEDGED_BY].toString()
+    };
+  });
+
+  // Sort newest first
+  messages.sort(function(a, b) {
+    return b.sentAt.localeCompare(a.sentAt);
+  });
+
+  return { success: true, messages: messages };
+}
+
+// ============================================================
+// sendHandoverMessage — EC sends message to RO
+// Access: EC_OFFICER, RO_ADMIN (RO can reply)
+// ============================================================
+function sendHandoverMessage(token, subject, messageText) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  if (!subject || subject.trim() === '') {
+    return { success: false, message: 'Subject is required.' };
+  }
+  if (!messageText || messageText.trim() === '') {
+    return { success: false, message: 'Message text is required.' };
+  }
+
+  var sh = getSheet(SHEETS.MESSAGES);
+  if (!sh) return { success: false, message: 'Messages sheet not found.' };
+
+  // Determine recipient
+  var toId = sess.role === 'EC_OFFICER' ? 'RO_ADMIN' : 'EC_OFFICER';
+
+  var id = 'MSG-' + Utilities.getUuid().substring(0, 8).toUpperCase();
+  var row = new Array(9).fill('');
+  row[COL_MSG.ID]           = id;
+  row[COL_MSG.ELEC_ID]      = '';   // not election-specific at this stage
+  row[COL_MSG.FROM_ADMIN_ID]= sess.identity;
+  row[COL_MSG.TO_ADMIN_ID]  = toId;
+  row[COL_MSG.SUBJECT]      = subject.trim();
+  row[COL_MSG.MESSAGE_TEXT] = messageText.trim();
+  row[COL_MSG.SENT_AT]      = now().toISOString();
+  row[COL_MSG.ACKNOWLEDGED_AT] = '';
+  row[COL_MSG.ACKNOWLEDGED_BY] = '';
+
+  sh.appendRow(row);
+
+  appendAdminLog(sess.identity, 'message_sent',
+    'Message sent to ' + toId + ': ' + subject.trim(), '', id);
+
+  return { success: true, message: 'Message sent.' };
+}
+
+// ============================================================
+// acknowledgeMessage — RO marks message as acknowledged
+// Access: RO_ADMIN
+// ============================================================
+function acknowledgeMessage(token, messageId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.MESSAGES);
+  if (!sh) return { success: false, message: 'Messages sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_MSG.ID].toString() === messageId.toString()) {
+      sh.getRange(i + 1, COL_MSG.ACKNOWLEDGED_AT + 1).setValue(now().toISOString());
+      sh.getRange(i + 1, COL_MSG.ACKNOWLEDGED_BY + 1).setValue(sess.identity);
+      appendAdminLog(sess.identity, 'message_acknowledged',
+        'Message acknowledged: ' + rows[i][COL_MSG.SUBJECT].toString(), '', messageId);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Message not found.' };
 }
 
 // ============================================================

@@ -1,3 +1,502 @@
 <script>
-// Panel stub — content coming in Pass 2B Part 2
+// ============================================================
+// EC OFFICER PANEL — ECOfficerJS.html
+// Role: EC_OFFICER (sub-roles: GS | PRESIDENT | VP)
+// Tabs: Overview | Voter Roll | Messages | Landing Page
+// ============================================================
+var ECOfficerPanel = (function() {
+
+  var _currentTab = '';
+
+  var TABS = [
+    { id: 'overview',     label: 'Overview' },
+    { id: 'voterroll',    label: 'Voter Roll' },
+    { id: 'messages',     label: 'Messages' },
+    { id: 'landingpage',  label: 'Landing Page' }
+  ];
+
+  // GS sees all tabs; PRESIDENT and VP see Overview + Messages only
+  function _getTabsForType(type) {
+    if (type === 'GS') return TABS;
+    return TABS.filter(function(t) {
+      return t.id === 'overview' || t.id === 'messages';
+    });
+  }
+
+  function init() {
+    var type = (App.type || 'GS').toUpperCase();
+    var tabs = _getTabsForType(type);
+
+    NavMenu.build(tabs, tabs[0].id, function(tabId) {
+      _currentTab = tabId;
+      var content = document.getElementById('ec-content');
+      if (content) content.innerHTML = _renderTab(tabId);
+    });
+
+    setMain('<div id="ec-content"></div>');
+
+    _currentTab = tabs[0].id;
+    document.getElementById('ec-content').innerHTML = _renderTab(tabs[0].id);
+  }
+
+  function _renderTab(tabId) {
+    if (tabId === 'overview')    { _loadOverview();    return _spinner(); }
+    if (tabId === 'voterroll')   return _renderVoterRoll();
+    if (tabId === 'messages')    { _loadMessages();    return _spinner(); }
+    if (tabId === 'landingpage') return _renderLandingPage();
+    return _comingSoon(tabId);
+  }
+
+  function _spinner() {
+    return '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+      '<div class="spinner"></div>' +
+      '<div style="font-size:.85rem;margin-top:12px;">Loading…</div>' +
+      '</div>';
+  }
+
+  function _comingSoon(label) {
+    return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
+      '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+        escHtml(label) + '</div>' +
+      '<div style="font-size:0.85rem;">This tab is being built.</div>' +
+      '</div>';
+  }
+
+  // ── OVERVIEW ─────────────────────────────────────────────────
+
+  function _loadOverview() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var content = document.getElementById('ec-content');
+        if (!content) return;
+
+        if (!res || !res.success) {
+          content.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load overview.') + '</div>';
+          return;
+        }
+
+        var el = res.election;
+        var checklist = res.checklist || [];
+
+        var html = '';
+
+        // Election status card
+        if (el) {
+          var statusBadgeMap = {
+            draft: 'badge-draft',
+            nominations_open: 'badge-noms-open',
+            nominations_open_phase2: 'badge-noms-open',
+            scrutiny: 'badge-scrutiny',
+            candidates_published: 'badge-scrutiny',
+            active: 'badge-active',
+            closed: 'badge-closed',
+            declared: 'badge-declared'
+          };
+          var badge = statusBadgeMap[el.status] || 'badge-draft';
+          html +=
+            '<div class="panel-card" style="margin-bottom:12px;">' +
+              '<div class="panel-card-header">Current Election</div>' +
+              '<div class="panel-card-body" style="padding:14px 16px;">' +
+                '<div style="font-weight:600;color:#1a3a5c;margin-bottom:8px;">' +
+                  escHtml(el.title) +
+                  (el.isTrial ? '<span class="status-badge badge-trial" style="margin-left:6px;">Trial</span>' : '') +
+                '</div>' +
+                '<span class="status-badge ' + badge + '">' +
+                  escHtml(el.status.replace(/_/g, ' ')) +
+                '</span>' +
+              '</div>' +
+            '</div>';
+        } else {
+          html +=
+            '<div class="panel-card" style="margin-bottom:12px;">' +
+              '<div class="panel-card-body" style="padding:16px;text-align:center;color:#6b7280;">' +
+                'No election is currently active.' +
+              '</div>' +
+            '</div>';
+        }
+
+        // Handover checklist card
+        html +=
+          '<div class="panel-card" style="margin-bottom:12px;">' +
+            '<div class="panel-card-header">Handover Checklist</div>' +
+            '<div class="panel-card-body" style="padding:14px 16px;">';
+
+        if (checklist.length === 0) {
+          html += '<div style="color:#6b7280;font-size:.85rem;">No checklist items loaded.</div>';
+        } else {
+          checklist.forEach(function(item) {
+            var done = item.done === true || item.done === 'true';
+            html +=
+              '<div style="display:flex;align-items:flex-start;gap:10px;' +
+                'padding:10px 0;border-bottom:1px solid #f3f4f6;">' +
+                '<span style="font-size:1.1rem;margin-top:1px;">' +
+                  (done ? '✅' : '⬜') +
+                '</span>' +
+                '<div>' +
+                  '<div style="font-size:.9rem;color:#374151;">' +
+                    escHtml(item.label) +
+                  '</div>' +
+                  (item.note ?
+                    '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">' +
+                      escHtml(item.note) + '</div>'
+                  : '') +
+                '</div>' +
+              '</div>';
+          });
+        }
+
+        html += '</div></div>';
+
+        content.innerHTML = html;
+      })
+      .withFailureHandler(function() {
+        var content = document.getElementById('ec-content');
+        if (content) content.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          'Error loading overview.</div>';
+      })
+      .getECOfficerPanel(App.token);
+  }
+
+  // ── VOTER ROLL ───────────────────────────────────────────────
+
+  function _renderVoterRoll() {
+  // Trigger summary load after render via setTimeout
+  setTimeout(function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var el = document.getElementById('vr-summary');
+        if (!el) return;
+        if (!res || !res.success || !res.rows || res.rows.length === 0) {
+          el.innerHTML = 'No voter roll draft uploaded yet.';
+          return;
+        }
+        var rows = res.rows;
+        var total        = rows.length;
+        var verified     = rows.filter(function(r) { return r[12] === 'verified'; }).length;
+        var unresponsive = rows.filter(function(r) { return r[12] === 'unresponsive'; }).length;
+        var undelivered  = rows.filter(function(r) { return r[12] === 'undelivered'; }).length;
+        el.innerHTML =
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+            _statBox('Total Voters', total) +
+            _statBox('Verified', verified) +
+            _statBox('Unresponsive', unresponsive) +
+            _statBox('Undelivered', undelivered) +
+          '</div>';
+      })
+      .withFailureHandler(function() {
+        var el = document.getElementById('vr-summary');
+        if (el) el.innerHTML = 'Could not load draft status.';
+      })
+      .getVoterRollDraft(App.token, 1, '');
+  }, 0);
+
+  return '<div class="panel-card" style="margin-bottom:12px;">' +
+    '<div class="panel-card-header">Voter Roll Draft</div>' +
+    '<div class="panel-card-body" style="padding:14px 16px;">' +
+      '<p style="font-size:.85rem;color:#374151;margin-bottom:12px;">' +
+        'Upload the verified voter roll CSV. Each upload replaces the previous draft. ' +
+        'Blocked once the RO objection window is open.' +
+      '</p>' +
+
+      // Format guide
+      '<div style="background:#f0f4f8;border:1px solid #d1d9e0;border-radius:4px;' +
+        'padding:12px 14px;margin-bottom:16px;">' +
+        '<div style="font-weight:600;font-size:.85rem;color:#1a3a5c;margin-bottom:8px;">' +
+          'Required CSV Format — 10 columns, no header row:' +
+        '</div>' +
+        '<div style="font-family:monospace;font-size:.78rem;color:#374151;' +
+          'background:#fff;border:1px solid #e5e7eb;border-radius:3px;' +
+          'padding:8px 10px;overflow-x:auto;white-space:nowrap;">' +
+          'RollNo, Name, Surname, Batch, Email, PhoneCC, Phone, Phone2CC, Phone2, VerificationCategory' +
+        '</div>' +
+        '<div style="font-size:.78rem;color:#6b7280;margin-top:8px;">' +
+          '<strong>VerificationCategory</strong> must be one of: ' +
+          '<code>verified</code>, <code>unresponsive</code>, <code>undelivered</code>. ' +
+          'Leave blank if unknown. Do not include a header row.' +
+        '</div>' +
+      '</div>' +
+      '<label for="vr-file" style="font-weight:600;display:block;margin-bottom:8px;">' +
+        'Select CSV File' +
+      '</label>' +
+      '<input type="file" id="vr-file" accept=".csv" ' +
+        'style="width:100%;margin-bottom:16px;font-size:.9rem;" />' +
+      '<button class="btn btn-primary" id="btn-upload-vr" ' +
+        'onclick="ECOfficerPanel._uploadVoterRoll()" ' +
+        'style="width:100%;padding:14px;font-size:1rem;">' +
+        'Upload Voter Roll Draft' +
+      '</button>' +
+      '<div id="vr-status" style="margin-top:12px;font-size:.85rem;display:none;"></div>' +
+    '</div>' +
+  '</div>' +
+  '<div class="panel-card">' +
+    '<div class="panel-card-header">Current Draft Status</div>' +
+    '<div class="panel-card-body" style="padding:14px 16px;">' +
+      '<div id="vr-summary" style="color:#6b7280;font-size:.85rem;">' +
+        '<div class="spinner"></div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+  function _statBox(label, value) {
+    return '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;' +
+      'padding:10px;text-align:center;">' +
+      '<div style="font-size:1.3rem;font-weight:700;color:#1a3a5c;">' + value + '</div>' +
+      '<div style="font-size:.75rem;color:#6b7280;margin-top:2px;">' + escHtml(label) + '</div>' +
+    '</div>';
+  }
+
+  // ── MESSAGES ─────────────────────────────────────────────────
+
+  function _loadMessages() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var content = document.getElementById('ec-content');
+        if (!content) return;
+
+        var messages = (res && res.success && res.messages) ? res.messages : [];
+
+        var html =
+          // Compose card
+          '<div class="panel-card" style="margin-bottom:12px;">' +
+            '<div class="panel-card-header">Send Message to RO</div>' +
+            '<div class="panel-card-body" style="padding:14px 16px;">' +
+              '<label for="msg-subject">Subject</label>' +
+              '<input type="text" id="msg-subject" placeholder="e.g. Voter roll uploaded" ' +
+                'style="margin-bottom:12px;" />' +
+              '<label for="msg-body">Message</label>' +
+              '<textarea id="msg-body" rows="4" ' +
+                'style="width:100%;box-sizing:border-box;padding:10px;' +
+                'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;' +
+                'margin-bottom:16px;resize:vertical;"></textarea>' +
+              '<button class="btn btn-primary" id="btn-send-msg" ' +
+                'onclick="ECOfficerPanel._sendMessage()" ' +
+                'style="width:100%;padding:14px;font-size:1rem;">' +
+                'Send Message' +
+              '</button>' +
+              '<div id="msg-error" style="margin-top:10px;color:#c0392b;' +
+                'font-size:.85rem;display:none;"></div>' +
+            '</div>' +
+          '</div>' +
+
+          // Messages list
+          '<div class="panel-card">' +
+            '<div class="panel-card-header">Message History</div>' +
+            '<div class="panel-card-body" style="padding:14px 16px;">';
+
+        if (messages.length === 0) {
+          html += '<div style="color:#6b7280;font-size:.85rem;text-align:center;padding:20px 0;">' +
+            'No messages yet.</div>';
+        } else {
+          messages.forEach(function(m) {
+            var isFromMe = m.fromAdminId === App.identity;
+            html +=
+              '<div style="padding:12px 0;border-bottom:1px solid #f3f4f6;">' +
+                '<div style="display:flex;justify-content:space-between;' +
+                  'align-items:flex-start;margin-bottom:4px;">' +
+                  '<div style="font-weight:600;font-size:.9rem;color:#1a3a5c;">' +
+                    escHtml(m.subject) +
+                  '</div>' +
+                  '<div style="font-size:.75rem;color:#9ca3af;white-space:nowrap;margin-left:8px;">' +
+                    escHtml(m.sentAt || '') +
+                  '</div>' +
+                '</div>' +
+                '<div style="font-size:.85rem;color:#374151;margin-bottom:6px;">' +
+                  escHtml(m.messageText || '') +
+                '</div>' +
+                '<div style="font-size:.75rem;color:#6b7280;">' +
+                  (m.fromAdminId === 'RO_ADMIN' ? 'From RO' :
+                   m.toAdminId   === 'RO_ADMIN' ? 'To RO' : 'Message') +
+                  (m.acknowledgedAt ?
+                    ' · <span style="color:#16a34a;">Acknowledged</span>' : '') +
+                '</div>' +
+              '</div>';
+          });
+        }
+
+        html += '</div></div>';
+        content.innerHTML = html;
+      })
+      .withFailureHandler(function() {
+        var content = document.getElementById('ec-content');
+        if (content) content.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          'Error loading messages.</div>';
+      })
+      .getMessages(App.token);
+  }
+
+  // ── LANDING PAGE ─────────────────────────────────────────────
+
+  function _renderLandingPage() {
+  return '<div class="panel-card">' +
+    '<div class="panel-card-header">Landing Page Content</div>' +
+    '<div class="panel-card-body" style="padding:48px 16px;text-align:center;color:#6b7280;">' +
+      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
+      '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+        'Landing Page Editor</div>' +
+      '<div style="font-size:.85rem;">Coming in next build pass.</div>' +
+    '</div>' +
+  '</div>';
+}
+
+  // ── ACTION HANDLERS ──────────────────────────────────────────
+
+  return {
+    init: init,
+
+    _uploadVoterRoll: function() {
+      var fileInput = document.getElementById('vr-file');
+      var statusEl  = document.getElementById('vr-status');
+      var btn       = document.getElementById('btn-upload-vr');
+
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        statusEl.textContent = 'Please select a CSV file first.';
+        statusEl.style.color = '#c0392b';
+        statusEl.style.display = 'block';
+        return;
+      }
+
+      var file = fileInput.files[0];
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        statusEl.textContent = 'Only CSV files are accepted.';
+        statusEl.style.color = '#c0392b';
+        statusEl.style.display = 'block';
+        return;
+      }
+
+      btn.textContent = 'Reading file…';
+      btn.disabled = true;
+      statusEl.style.display = 'none';
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var csv = e.target.result;
+        var lines = csv.split('\n').filter(function(l) { return l.trim() !== ''; });
+        if (lines.length < 2) {
+          statusEl.textContent = 'CSV appears empty or has no data rows.';
+          statusEl.style.color = '#c0392b';
+          statusEl.style.display = 'block';
+          btn.textContent = 'Upload Voter Roll Draft';
+          btn.disabled = false;
+          return;
+        }
+
+        // Parse CSV into rows array — no header row in this format
+        var rows = [];
+        for (var i = 0; i < lines.length; i++) {
+          var cols = lines[i].split(',').map(function(c) { return c.trim(); });
+          rows.push(cols);
+        }
+
+        btn.textContent = 'Uploading ' + rows.length + ' rows…';
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) {
+              statusEl.textContent = 'Uploaded ' + rows.length + ' rows successfully.';
+              statusEl.style.color = '#16a34a';
+              showToast('Voter roll draft uploaded.');
+              ECOfficerPanel._reloadVRSummary();
+            } else {
+              statusEl.textContent = (res && res.message) || 'Upload failed.';
+              statusEl.style.color = '#c0392b';
+            }
+            statusEl.style.display = 'block';
+            btn.textContent = 'Upload Voter Roll Draft';
+            btn.disabled = false;
+          })
+          .withFailureHandler(function() {
+            statusEl.textContent = 'Error during upload. Please try again.';
+            statusEl.style.color = '#c0392b';
+            statusEl.style.display = 'block';
+            btn.textContent = 'Upload Voter Roll Draft';
+            btn.disabled = false;
+          })
+          .uploadVoterRollDraft(App.token, rows);
+      };
+      reader.readAsText(file);
+    },
+
+    _reloadVRSummary: function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var el = document.getElementById('vr-summary');
+          if (!el) return;
+          if (!res || !res.success || !res.rows || res.rows.length === 0) {
+            el.innerHTML = 'No voter roll draft uploaded yet.';
+            return;
+          }
+          var rows = res.rows;
+          var total = rows.length;
+          var verified    = rows.filter(function(r) { return r[12] === 'verified'; }).length;
+          var unresponsive = rows.filter(function(r) { return r[12] === 'unresponsive'; }).length;
+          var undelivered  = rows.filter(function(r) { return r[12] === 'undelivered'; }).length;
+          el.innerHTML =
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+              _statBox('Total Voters', total) +
+              _statBox('Verified', verified) +
+              _statBox('Unresponsive', unresponsive) +
+              _statBox('Undelivered', undelivered) +
+            '</div>';
+        })
+        .withFailureHandler(function() {})
+        .getVoterRollDraft(App.token, 1, '');
+    },
+
+    _sendMessage: function() {
+      var subject = document.getElementById('msg-subject').value.trim();
+      var body    = document.getElementById('msg-body').value.trim();
+      var errEl   = document.getElementById('msg-error');
+      var btn     = document.getElementById('btn-send-msg');
+
+      errEl.style.display = 'none';
+
+      if (!subject) {
+        errEl.textContent = 'Please enter a subject.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (!body) {
+        errEl.textContent = 'Please enter a message.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.textContent = 'Sending…';
+      btn.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            showToast('Message sent.');
+            document.getElementById('msg-subject').value = '';
+            document.getElementById('msg-body').value = '';
+            // Reload messages list
+            ECOfficerPanel._reloadMessages();
+          } else {
+            errEl.textContent = (res && res.message) || 'Failed to send.';
+            errEl.style.display = 'block';
+          }
+          btn.textContent = 'Send Message';
+          btn.disabled = false;
+        })
+        .withFailureHandler(function() {
+          errEl.textContent = 'Error — please try again.';
+          errEl.style.display = 'block';
+          btn.textContent = 'Send Message';
+          btn.disabled = false;
+        })
+        .sendHandoverMessage(App.token, subject, body);
+    },
+
+    _reloadMessages: function() {
+      _loadMessages();
+    }
+  };
+
+})();
 </script>
