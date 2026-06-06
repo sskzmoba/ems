@@ -148,6 +148,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading log…</div>' +
         '</div></div>';
     }
+    if (tabId === 'nominations') {
+      setTimeout(function() { AdminPanel._loadNominations(); }, 0);
+      return '<div id="nominations-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
+        '</div></div>';
+    }
 
     // Coming soon — all other tabs
     var labels = {
@@ -1193,6 +1201,282 @@ _renderVoterList: function(res, role, search) {
   }
 
   return html;
+},
+
+// ── NOMINATIONS TAB ──────────────────────────────────────────
+
+_loadNominations: function() {
+  var c = document.getElementById('nominations-content');
+  if (!c) return;
+
+  // First load elections list for selector
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success || !res.elections || res.elections.length === 0) {
+        c.innerHTML = '<div class="panel-card"><div class="panel-card-body" ' +
+          'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+          '<div style="font-size:.85rem;margin-top:4px;">Create an election first.</div>' +
+          '</div></div>';
+        return;
+      }
+      var elections = res.elections;
+      // Default to first election
+      AdminPanel._nominationsSelectedElec = elections[0].id;
+      AdminPanel._renderNominationsShell(elections);
+      AdminPanel._loadNominationsList(elections[0].id);
+    })
+    .withFailureHandler(function() {
+      var c = document.getElementById('nominations-content');
+      if (c) c.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_nominationsSelectedElec: '',
+
+_renderNominationsShell: function(elections) {
+  var c = document.getElementById('nominations-content');
+  if (!c) return;
+
+  // Election selector
+  var selHtml = '<select id="nom-elec-select" ' +
+    'style="width:100%;box-sizing:border-box;padding:12px 10px;' +
+    'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;" ' +
+    'onchange="AdminPanel._onNomElecChange(this.value)">';
+  elections.forEach(function(el) {
+    selHtml += '<option value="' + escHtml(el.id) + '">' +
+      escHtml(el.title) + ' — ' + escHtml(el.status.replace(/_/g,' ')) +
+      '</option>';
+  });
+  selHtml += '</select>';
+
+  c.innerHTML = selHtml + '<div id="nom-list-area">' +
+    '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+    '<div class="spinner"></div></div></div>';
+},
+
+_onNomElecChange: function(elecId) {
+  AdminPanel._nominationsSelectedElec = elecId;
+  AdminPanel._loadNominationsList(elecId);
+},
+
+_loadNominationsList: function(elecId) {
+  var area = document.getElementById('nom-list-area');
+  if (!area) return;
+  area.innerHTML = '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+    '<div class="spinner"></div></div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area = document.getElementById('nom-list-area');
+      if (!area) return;
+      if (!res || !res.success) {
+        area.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load nominations.') + '</div>';
+        return;
+      }
+      area.innerHTML = AdminPanel._renderNominationsList(res.nominations || []);
+    })
+    .withFailureHandler(function() {
+      var area = document.getElementById('nom-list-area');
+      if (area) area.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading nominations.</div>';
+    })
+    .getNominations(App.token, elecId);
+},
+
+_renderNominationsList: function(noms) {
+  var role = (App.role || '').toUpperCase();
+
+  if (noms.length === 0) {
+    return '<div class="panel-card"><div class="panel-card-body" ' +
+      'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">📋</div>' +
+      '<div style="font-weight:600;color:#374151;">No nominations yet</div>' +
+      '</div></div>';
+  }
+
+  var statusBadge = {
+    pending:    'badge-draft',
+    confirmed:  'badge-noms-open',
+    accepted:   'badge-scrutiny',
+    rejected:   'badge-closed',
+    withdrawn:  'badge-closed',
+    declared:   'badge-declared'
+  };
+
+  // Group by post
+  var byPost = {};
+  var postOrder = [];
+  noms.forEach(function(n) {
+    if (!byPost[n.post]) { byPost[n.post] = []; postOrder.push(n.post); }
+    byPost[n.post].push(n);
+  });
+
+  var html = '<div style="font-size:.82rem;color:#6b7280;margin-bottom:12px;">' +
+    '<strong style="color:#374151;">' + noms.length + '</strong> nomination' +
+    (noms.length !== 1 ? 's' : '') + ' across ' +
+    '<strong style="color:#374151;">' + postOrder.length + '</strong> post' +
+    (postOrder.length !== 1 ? 's' : '') +
+  '</div>';
+
+  postOrder.forEach(function(post) {
+    html += '<div style="font-size:.8rem;font-weight:700;color:#6b7280;' +
+      'text-transform:uppercase;letter-spacing:.04em;' +
+      'padding:10px 14px 4px;margin-top:8px;">' + escHtml(post) + '</div>';
+
+    byPost[post].forEach(function(n) {
+      var badge    = statusBadge[n.status] || 'badge-draft';
+      var propTick = n.propConfirmed ? '✓' : '⏳';
+      var propCol  = n.propConfirmed ? '#16a34a' : '#d97706';
+      var secTick  = n.secRoll
+        ? (n.secConfirmed ? '✓' : '⏳')
+        : '—';
+      var secCol   = n.secConfirmed ? '#16a34a' : '#d97706';
+      var phase2Tag = n.phase2
+        ? '<span style="font-size:.72rem;background:#ede9fe;color:#5b21b6;' +
+            'border-radius:3px;padding:1px 5px;margin-left:5px;">Ph.2</span>'
+        : '';
+      var dupTag = n.dupDeclined
+        ? '<span style="font-size:.72rem;background:#fef2f2;color:#b91c1c;' +
+            'border-radius:3px;padding:1px 5px;margin-left:4px;">Dup↓</span>'
+        : '';
+
+      html +=
+        '<div class="panel-card" style="margin-bottom:8px;">' +
+        '<div class="panel-card-body" style="padding:12px 14px;">' +
+
+          // Name + badges
+          '<div style="display:flex;justify-content:space-between;' +
+            'align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+            '<div style="font-weight:700;color:#111827;font-size:.92rem;">' +
+              escHtml(n.candName) + phase2Tag + dupTag +
+            '</div>' +
+            '<span class="status-badge ' + badge + '" style="font-size:.75rem;">' +
+              escHtml(n.status) + '</span>' +
+          '</div>' +
+
+          // Roll + batch
+          '<div style="font-size:.8rem;color:#6b7280;margin-bottom:8px;">' +
+            'Roll: <strong>' + escHtml(n.candRoll) + '</strong>' +
+            ' &nbsp;·&nbsp; Batch ' + escHtml(n.candBatch) +
+            (n.submittedAt
+              ? ' &nbsp;·&nbsp; ' +
+                escHtml(n.submittedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC')
+              : '') +
+          '</div>' +
+
+          // Proposer / seconder
+          '<div style="font-size:.8rem;margin-bottom:10px;">' +
+            '<span style="color:' + propCol + ';font-weight:600;">' +
+              propTick + ' Proposer</span>' +
+            ' <span style="color:#6b7280;">' + escHtml(n.propRoll) + '</span>' +
+            ' &nbsp;&nbsp; ' +
+            '<span style="color:' + secCol + ';font-weight:600;">' +
+              secTick + ' Seconder</span>' +
+            (n.secRoll
+              ? ' <span style="color:#6b7280;">' + escHtml(n.secRoll) + '</span>'
+              : '') +
+          '</div>' +
+
+          // Rejection reason
+          (n.status === 'rejected' && n.rejectionReason
+            ? '<div style="font-size:.8rem;color:#b91c1c;margin-bottom:10px;">' +
+                'Reason: ' + escHtml(n.rejectionReason) + '</div>'
+            : '') +
+
+          // Action buttons — RO_ADMIN only
+          (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
+            ? '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+
+                // Resend proposer (only if not confirmed)
+                (!n.propConfirmed
+                  ? '<button onclick="AdminPanel._resendConfirm(\'' +
+                      escHtml(n.id) + '\',\'proposer\')" ' +
+                      'style="flex:1;min-width:110px;padding:9px 6px;font-size:.78rem;' +
+                      'background:#fff;color:#1d4ed8;border:1px solid #93c5fd;' +
+                      'border-radius:4px;cursor:pointer;">↺ Proposer</button>'
+                  : '') +
+
+                // Resend seconder (only if seconder exists and not confirmed)
+                (n.secRoll && !n.secConfirmed
+                  ? '<button onclick="AdminPanel._resendConfirm(\'' +
+                      escHtml(n.id) + '\',\'seconder\')" ' +
+                      'style="flex:1;min-width:110px;padding:9px 6px;font-size:.78rem;' +
+                      'background:#fff;color:#1d4ed8;border:1px solid #93c5fd;' +
+                      'border-radius:4px;cursor:pointer;">↺ Seconder</button>'
+                  : '') +
+
+                // Withdraw
+                '<button onclick="AdminPanel._confirmWithdraw(\'' +
+                  escHtml(n.id) + '\',\'' + escHtml(n.candName) + '\')" ' +
+                  'style="flex:1;min-width:110px;padding:9px 6px;font-size:.78rem;' +
+                  'background:#fff;color:#b91c1c;border:1px solid #fca5a5;' +
+                  'border-radius:4px;cursor:pointer;">Withdraw</button>' +
+
+              '</div>'
+            : '') +
+
+          // Confirm area
+          '<div id="nom-confirm-' + escHtml(n.id) + '" ' +
+            'style="display:none;margin-top:10px;background:#fef2f2;' +
+            'border:1px solid #fca5a5;border-radius:4px;padding:10px;"></div>' +
+
+        '</div></div>';
+    });
+  });
+
+  return html;
+},
+
+_resendConfirm: function(nomId, role) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Email resent to ' + role + '.');
+      } else {
+        showToast((res && res.message) || 'Resend failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — resend failed.'); })
+    .resendConfirmationEmail(App.token, nomId, role);
+},
+
+_confirmWithdraw: function(nomId, candName) {
+  var box = document.getElementById('nom-confirm-' + nomId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#b91c1c;margin-bottom:10px;">' +
+      '<strong>Withdraw nomination for ' + escHtml(candName) + '?</strong><br>' +
+      'This cannot be undone.' +
+    '</p>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="document.getElementById(\'nom-confirm-' + escHtml(nomId) +
+        '\').style.display=\'none\';" ' +
+        'style="flex:1;padding:10px;font-size:.85rem;">Cancel</button>' +
+      '<button onclick="AdminPanel._doWithdraw(\'' + escHtml(nomId) + '\')" ' +
+        'style="flex:1;padding:10px;font-size:.85rem;background:#b91c1c;' +
+        'color:#fff;border:none;border-radius:4px;cursor:pointer;">Yes, Withdraw</button>' +
+    '</div>';
+},
+
+_doWithdraw: function(nomId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Nomination withdrawn.');
+        AdminPanel._loadNominationsList(AdminPanel._nominationsSelectedElec);
+      } else {
+        showToast((res && res.message) || 'Withdraw failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — withdraw failed.'); })
+    .withdrawNomination(App.token, nomId);
 },
 
   // ── ADMIN LOG TAB ────────────────────────────────────────────

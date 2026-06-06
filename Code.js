@@ -2969,3 +2969,152 @@ function getAdminLogPaginated(token, page, filterAction) {
     pages:    Math.ceil(total / pageSize)
   };
 }
+
+// ============================================================
+// getNominations — all nominations for an election
+// Access: RO_ADMIN, DEPUTY_RO, TEM
+// ============================================================
+function getNominations(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var rows = sheetData(SHEETS.NOMINATIONS);
+  var results = [];
+
+  rows.forEach(function(r) {
+    if (electionId && r[COL.NOM_ELEC_ID].toString() !== electionId.toString()) return;
+    results.push({
+      id:               r[COL.NOM_ID].toString(),
+      elecId:           r[COL.NOM_ELEC_ID].toString(),
+      post:             r[COL.NOM_POST].toString(),
+      candRoll:         r[COL.NOM_CAND_ROLL].toString(),
+      candName:         r[COL.NOM_CAND_NAME].toString(),
+      candBatch:        r[COL.NOM_CAND_BATCH].toString(),
+      propRoll:         r[COL.NOM_PROP_ROLL].toString(),
+      propConfirmed:    r[COL.NOM_PROP_CONFIRMED].toString() === 'true',
+      secRoll:          r[COL.NOM_SEC_ROLL].toString(),
+      secConfirmed:     r[COL.NOM_SEC_CONFIRMED].toString() === 'true',
+      status:           r[COL.NOM_STATUS].toString(),
+      rejectionReason:  r[COL.NOM_REJECTION].toString(),
+      submittedAt:      r[COL.NOM_SUBMITTED_AT].toString(),
+      entryMethod:      r[COL.NOM_ENTRY_METHOD].toString(),
+      consentStatus:    r[COL.NOM_CONSENT_STATUS].toString(),
+      phase2:           r[COL.NOM_PHASE2_FLAG].toString() === 'true',
+      dupDeclined:      r[COL.NOM_DUP_DECLINED].toString() === 'true',
+      withdrawnAt:      r[COL.NOM_WITHDRAWN_AT].toString()
+    });
+  });
+
+  return { success: true, nominations: results };
+}
+
+// ============================================================
+// withdrawNomination — RO withdraws a nomination
+// Access: RO_ADMIN only. Blocked if status is accepted or later.
+// ============================================================
+function withdrawNomination(token, nomId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.NOMINATIONS);
+  if (!sh) return { success: false, message: 'Nominations sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.NOM_ID].toString() !== nomId.toString()) continue;
+
+    var status = rows[i][COL.NOM_STATUS].toString();
+    var blocked = ['accepted', 'candidates_published'];
+    if (blocked.indexOf(status) !== -1) {
+      return { success: false, message: 'Cannot withdraw a nomination at status: ' + status };
+    }
+    if (status === 'withdrawn') {
+      return { success: false, message: 'Nomination is already withdrawn.' };
+    }
+
+    sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('withdrawn');
+    sh.getRange(i + 1, COL.NOM_WITHDRAWN_AT + 1).setValue(now().toISOString());
+    appendAdminLog(sess.identity, 'nomination_withdrawn',
+      'Nomination withdrawn: ' + nomId + ' (' +
+      rows[i][COL.NOM_CAND_NAME].toString() + ' — ' +
+      rows[i][COL.NOM_POST].toString() + ')',
+      status, 'withdrawn');
+    return { success: true };
+  }
+  return { success: false, message: 'Nomination not found.' };
+}
+
+// ============================================================
+// resendConfirmationEmail — resend proposer or seconder email
+// Access: RO_ADMIN only
+// ============================================================
+function resendConfirmationEmail(token, nomId, role) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  if (role !== 'proposer' && role !== 'seconder') {
+    return { success: false, message: 'Role must be proposer or seconder.' };
+  }
+
+  var rows = sheetData(SHEETS.NOMINATIONS);
+  var nom = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.NOM_ID].toString() === nomId.toString()) { nom = rows[i]; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+
+  var roll  = role === 'proposer' ? nom[COL.NOM_PROP_ROLL].toString()
+                                  : nom[COL.NOM_SEC_ROLL].toString();
+  var confirmed = role === 'proposer'
+    ? nom[COL.NOM_PROP_CONFIRMED].toString() === 'true'
+    : nom[COL.NOM_SEC_CONFIRMED].toString() === 'true';
+
+  if (confirmed) {
+    return { success: false, message: 'Already confirmed — no resend needed.' };
+  }
+  if (!roll) {
+    return { success: false, message: 'No ' + role + ' on this nomination.' };
+  }
+
+  // Look up email from Voters sheet
+  var voters = sheetData(SHEETS.VOTERS);
+  var email = '';
+  for (var j = 0; j < voters.length; j++) {
+    if (voters[j][COL.VOTER_ROLL].toString() === roll) {
+      email = voters[j][COL.VOTER_EMAIL].toString();
+      break;
+    }
+  }
+  if (!email) return { success: false, message: 'Could not find email for roll: ' + roll };
+
+  var confirmToken = role === 'proposer'
+    ? nom[COL.NOM_PROP_TOKEN].toString()
+    : nom[COL.NOM_SEC_TOKEN].toString();
+
+  var confirmUrl = DEPLOY_URL + '?action=confirmNomination&nomId=' +
+    nom[COL.NOM_ID] + '&role=' + role + '&token=' + confirmToken;
+
+  var subject = 'Reminder: Please confirm your ' + role + ' role — SSKZM OBA Election';
+  var body = 'Dear ' + role + ',\n\n' +
+    'This is a reminder to confirm your role as ' + role + ' for the nomination of ' +
+    nom[COL.NOM_CAND_NAME].toString() + ' for the post of ' +
+    nom[COL.NOM_POST].toString() + '.\n\n' +
+    'Please click the link below to confirm:\n' + confirmUrl + '\n\n' +
+    'If you did not agree to be a ' + role + ', please ignore this email.\n\n' +
+    'SSKZM OBA Elections';
+
+  try {
+    sendEmailViaSendGrid(email, subject, body);
+  } catch(e) {
+    return { success: false, message: 'Email send failed: ' + e.toString() };
+  }
+
+  appendAdminLog(sess.identity, 'confirmation_resent',
+    'Confirmation email resent to ' + role + ': ' + roll + ' for nom: ' + nomId,
+    '', role);
+  return { success: true };
+}
