@@ -132,6 +132,15 @@ var AdminPanel = (function() {
         '</div></div>';
     }
 
+    if (tabId === 'voters') {
+      setTimeout(function() { AdminPanel._loadVoters(1, ''); }, 0);
+      return '<div id="voters-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading voter roll…</div>' +
+        '</div></div>';
+    }
+
     // Coming soon — all other tabs
     var labels = {
       nominations: 'Nominations',
@@ -1034,6 +1043,148 @@ _doDeactivateDeputyRO: function(adminId) {
     })
     .withFailureHandler(function() { showToast('Error — deactivation failed.'); })
     .deactivateDeputyRO(App.token, adminId, note);
+},
+
+// ── VOTERS TAB ───────────────────────────────────────────────
+
+_loadVoters: function(page, search) {
+  var role = (App.role || '').toUpperCase();
+  var c = document.getElementById('voters-content');
+  if (!c) return;
+
+  // Render search bar + spinner immediately
+  c.innerHTML =
+    '<div style="margin-bottom:14px;display:flex;gap:8px;">' +
+      '<input type="text" id="voter-search" placeholder="Search roll, name or batch…" ' +
+        'value="' + escHtml(search || '') + '" ' +
+        'style="flex:1;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+        'border-radius:4px;box-sizing:border-box;" inputmode="search" />' +
+      '<button onclick="AdminPanel._voterSearch()" ' +
+        'style="padding:12px 16px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">Search</button>' +
+    '</div>' +
+    '<div id="voter-list-area">' +
+      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+      '<div class="spinner"></div></div>' +
+    '</div>';
+
+  // Pre-fill search box with current query
+  var box = document.getElementById('voter-search');
+  if (box) box.value = search || '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area = document.getElementById('voter-list-area');
+      if (!area) return;
+      if (!res || !res.success) {
+        area.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load voter roll.') + '</div>';
+        return;
+      }
+      area.innerHTML = AdminPanel._renderVoterList(res, role, search || '');
+    })
+    .withFailureHandler(function() {
+      var area = document.getElementById('voter-list-area');
+      if (area) area.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading voter roll.</div>';
+    })
+    .getVoterList(App.token, page, search || '');
+},
+
+_voterSearch: function() {
+  var box = document.getElementById('voter-search');
+  var q = box ? box.value.trim() : '';
+  AdminPanel._loadVoters(1, q);
+},
+
+_renderVoterList: function(res, role, search) {
+  var showEmail = (role !== 'SCRUTINEER');
+  var voters    = res.voters || [];
+  var total     = res.total  || 0;
+  var page      = res.page   || 1;
+  var pages     = res.pages  || 1;
+
+  var html =
+    // Summary bar
+    '<div style="font-size:.82rem;color:#6b7280;margin-bottom:12px;padding:0 2px;">' +
+      '<strong style="color:#374151;">' + total + '</strong> voter' + (total !== 1 ? 's' : '') +
+      (search ? ' matching <em>' + escHtml(search) + '</em>' : ' on roll') +
+      ' &nbsp;·&nbsp; Page ' + page + ' of ' + pages +
+    '</div>';
+
+  if (voters.length === 0) {
+    html += '<div class="panel-card"><div class="panel-card-body" ' +
+      'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+      '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No voters found</div>' +
+      (search ? '<div style="font-size:.85rem;">Try a different search term.</div>' :
+                '<div style="font-size:.85rem;">The voter roll is empty.</div>') +
+      '</div></div>';
+    return html;
+  }
+
+  // Voter cards
+  voters.forEach(function(v) {
+    var lifeBadge = v.lifeMember
+      ? '<span style="font-size:.72rem;background:#fef3c7;color:#92400e;' +
+          'border:1px solid #fcd34d;border-radius:3px;padding:1px 5px;margin-left:6px;">Life</span>'
+      : '';
+    var verBadge = showEmail
+      ? (v.emailVerified === 'verified'
+          ? '<span style="font-size:.72rem;background:#dcfce7;color:#166534;' +
+              'border:1px solid #86efac;border-radius:3px;padding:1px 5px;margin-left:4px;">✓ Verified</span>'
+          : '<span style="font-size:.72rem;background:#fef2f2;color:#991b1b;' +
+              'border:1px solid #fca5a5;border-radius:3px;padding:1px 5px;margin-left:4px;">Unverified</span>')
+      : '';
+
+    html +=
+      '<div style="padding:10px 14px;border-bottom:1px solid #f3f4f6;' +
+        'display:flex;align-items:flex-start;gap:10px;">' +
+
+        // Roll badge
+        '<div style="min-width:56px;font-size:.78rem;font-weight:700;color:#1a3a5c;' +
+          'background:#eff6ff;border-radius:4px;padding:4px 6px;text-align:center;' +
+          'margin-top:2px;">' + escHtml(v.roll) + '</div>' +
+
+        // Details
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:.9rem;font-weight:600;color:#111827;">' +
+            escHtml(v.name) + lifeBadge + verBadge +
+          '</div>' +
+          '<div style="font-size:.8rem;color:#6b7280;margin-top:2px;">' +
+            'Batch ' + escHtml(v.batch) +
+            (showEmail && v.email ? ' &nbsp;·&nbsp; ' + escHtml(v.email) : '') +
+          '</div>' +
+        '</div>' +
+
+      '</div>';
+  });
+
+  // Wrap in card
+  html = '<div class="panel-card" style="margin-bottom:12px;padding:0;overflow:hidden;">' +
+    html + '</div>';
+
+  // Pagination
+  if (pages > 1) {
+    html += '<div style="display:flex;gap:8px;justify-content:center;margin-top:4px;flex-wrap:wrap;">';
+    if (page > 1) {
+      html += '<button onclick="AdminPanel._loadVoters(' + (page - 1) + ',\'' +
+        escHtml(search) + '\')" ' +
+        'style="padding:10px 18px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">← Prev</button>';
+    }
+    html += '<span style="padding:10px 8px;font-size:.85rem;color:#6b7280;">' +
+      page + ' / ' + pages + '</span>';
+    if (page < pages) {
+      html += '<button onclick="AdminPanel._loadVoters(' + (page + 1) + ',\'' +
+        escHtml(search) + '\')" ' +
+        'style="padding:10px 18px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">Next →</button>';
+    }
+    html += '</div>';
+  }
+
+  return html;
 },
 
   };

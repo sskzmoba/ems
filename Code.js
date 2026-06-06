@@ -2850,3 +2850,70 @@ function deactivateDeputyRO(token, adminId, witnessNote) {
   }
   return { success: false, message: 'Admin not found: ' + adminId };
 }
+
+// ============================================================
+// getVoterCount — total number of voters in the roll
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER
+// ============================================================
+function getVoterCount(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var rows = sheetData(SHEETS.VOTERS);
+  return { success: true, count: rows.length };
+}
+
+// ============================================================
+// getVoterList — paginated voter list with optional search
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER
+// page: 1-based. pageSize: 50. search: string (matches Roll, Name, Batch).
+// Email only returned for RO_ADMIN, DEPUTY_RO, TEM.
+// ============================================================
+function getVoterList(token, page, search) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var showEmail = (sess.role !== 'SCRUTINEER');
+  var pageSize  = 50;
+  var pageNum   = (page && page > 0) ? parseInt(page) : 1;
+  var query     = search ? search.toString().trim().toLowerCase() : '';
+
+  var rows = sheetData(SHEETS.VOTERS);
+
+  // Filter
+  var filtered = query ? rows.filter(function(r) {
+    return (r[COL.VOTER_ROLL].toString().toLowerCase().indexOf(query) !== -1) ||
+           (r[COL.VOTER_NAME].toString().toLowerCase().indexOf(query) !== -1) ||
+           (r[COL.VOTER_SURNAME].toString().toLowerCase().indexOf(query) !== -1) ||
+           (r[COL.VOTER_BATCH].toString().toLowerCase().indexOf(query) !== -1);
+  }) : rows;
+
+  var total    = filtered.length;
+  var start    = (pageNum - 1) * pageSize;
+  var pageRows = filtered.slice(start, start + pageSize);
+
+  var voters = pageRows.map(function(r) {
+    var v = {
+      roll:        r[COL.VOTER_ROLL].toString(),
+      name:        r[COL.VOTER_NAME].toString() + ' ' + r[COL.VOTER_SURNAME].toString(),
+      batch:       r[COL.VOTER_BATCH].toString(),
+      lifeMember:  r[COL.VOTER_LIFE_MEMBER] ? !!r[COL.VOTER_LIFE_MEMBER] : false,
+      emailVerified: r[COL.VOTER_EMAIL_VER] ? r[COL.VOTER_EMAIL_VER].toString() : ''
+    };
+    if (showEmail) v.email = r[COL.VOTER_EMAIL].toString();
+    return v;
+  });
+
+  return {
+    success:   true,
+    voters:    voters,
+    total:     total,
+    page:      pageNum,
+    pageSize:  pageSize,
+    pages:     Math.ceil(total / pageSize)
+  };
+}
