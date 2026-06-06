@@ -140,6 +140,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading voter roll…</div>' +
         '</div></div>';
     }
+    if (tabId === 'adminlog') {
+      setTimeout(function() { AdminPanel._loadAdminLog(1, ''); }, 0);
+      return '<div id="adminlog-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading log…</div>' +
+        '</div></div>';
+    }
 
     // Coming soon — all other tabs
     var labels = {
@@ -1178,6 +1186,125 @@ _renderVoterList: function(res, role, search) {
     if (page < pages) {
       html += '<button onclick="AdminPanel._loadVoters(' + (page + 1) + ',\'' +
         escHtml(search) + '\')" ' +
+        'style="padding:10px 18px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">Next →</button>';
+    }
+    html += '</div>';
+  }
+
+  return html;
+},
+
+  // ── ADMIN LOG TAB ────────────────────────────────────────────
+
+_loadAdminLog: function(page, filterAction) {
+  var c = document.getElementById('adminlog-content');
+  if (!c) return;
+
+  c.innerHTML =
+    '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;' +
+      'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#92400e;">' +
+      '🔒 Append-only audit record — entries cannot be edited or deleted.' +
+    '</div>' +
+    '<div style="margin-bottom:14px;display:flex;gap:8px;">' +
+      '<input type="text" id="alog-filter" placeholder="Filter by action type…" ' +
+        'value="' + escHtml(filterAction || '') + '" ' +
+        'style="flex:1;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+        'border-radius:4px;box-sizing:border-box;" inputmode="search" />' +
+      '<button onclick="AdminPanel._adminLogFilter()" ' +
+        'style="padding:12px 16px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">Filter</button>' +
+    '</div>' +
+    '<div id="alog-list-area">' +
+      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+      '<div class="spinner"></div></div>' +
+    '</div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area = document.getElementById('alog-list-area');
+      if (!area) return;
+      if (!res || !res.success) {
+        area.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load log.') + '</div>';
+        return;
+      }
+      area.innerHTML = AdminPanel._renderAdminLog(res, filterAction || '');
+    })
+    .withFailureHandler(function() {
+      var area = document.getElementById('alog-list-area');
+      if (area) area.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading log.</div>';
+    })
+    .getAdminLogPaginated(App.token, page, filterAction || '');
+},
+
+_adminLogFilter: function() {
+  var box = document.getElementById('alog-filter');
+  var q = box ? box.value.trim() : '';
+  AdminPanel._loadAdminLog(1, q);
+},
+
+_renderAdminLog: function(res, filter) {
+  var entries = res.entries || [];
+  var total   = res.total   || 0;
+  var page    = res.page    || 1;
+  var pages   = res.pages   || 1;
+
+  var html =
+    '<div style="font-size:.82rem;color:#6b7280;margin-bottom:12px;padding:0 2px;">' +
+      '<strong style="color:#374151;">' + total + '</strong> entr' +
+      (total !== 1 ? 'ies' : 'y') +
+      (filter ? ' matching <em>' + escHtml(filter) + '</em>' : '') +
+      ' &nbsp;·&nbsp; Page ' + page + ' of ' + pages +
+    '</div>';
+
+  if (entries.length === 0) {
+    html += '<div class="panel-card"><div class="panel-card-body" ' +
+      'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">📋</div>' +
+      '<div style="font-weight:600;color:#374151;">No log entries found</div>' +
+      '</div></div>';
+    return html;
+  }
+
+  entries.forEach(function(e) {
+    var ts = e.timestamp ? e.timestamp.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC' : '';
+    html +=
+      '<div style="padding:11px 14px;border-bottom:1px solid #f3f4f6;">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px;">' +
+          '<span style="font-size:.8rem;font-weight:700;color:#1a3a5c;' +
+            'background:#eff6ff;border-radius:3px;padding:2px 7px;">' +
+            escHtml(e.actionType) + '</span>' +
+          '<span style="font-size:.75rem;color:#9ca3af;">' + escHtml(ts) + '</span>' +
+        '</div>' +
+        '<div style="font-size:.85rem;color:#111827;margin-bottom:3px;">' +
+          escHtml(e.description) + '</div>' +
+        '<div style="font-size:.75rem;color:#6b7280;">' +
+          'By: <strong>' + escHtml(e.adminId) + '</strong>' +
+          (e.oldValue || e.newValue
+            ? ' &nbsp;·&nbsp; ' + escHtml(e.oldValue) + ' → ' + escHtml(e.newValue)
+            : '') +
+        '</div>' +
+      '</div>';
+  });
+
+  html = '<div class="panel-card" style="margin-bottom:12px;padding:0;overflow:hidden;">' +
+    html + '</div>';
+
+  if (pages > 1) {
+    html += '<div style="display:flex;gap:8px;justify-content:center;margin-top:4px;flex-wrap:wrap;">';
+    if (page > 1) {
+      html += '<button onclick="AdminPanel._loadAdminLog(' + (page-1) + ',\'' +
+        escHtml(filter) + '\')" ' +
+        'style="padding:10px 18px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">← Prev</button>';
+    }
+    html += '<span style="padding:10px 8px;font-size:.85rem;color:#6b7280;">' +
+      page + ' / ' + pages + '</span>';
+    if (page < pages) {
+      html += '<button onclick="AdminPanel._loadAdminLog(' + (page+1) + ',\'' +
+        escHtml(filter) + '\')" ' +
         'style="padding:10px 18px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
         'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">Next →</button>';
     }

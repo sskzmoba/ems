@@ -2917,3 +2917,55 @@ function getVoterList(token, page, search) {
     pages:     Math.ceil(total / pageSize)
   };
 }
+
+// ============================================================
+// getAdminLogPaginated — paginated AdminLog for Log tab
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER
+// page: 1-based, pageSize: 100
+// filterAction: string to match ActionType (empty = all)
+// ============================================================
+function getAdminLogPaginated(token, page, filterAction) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var pageSize = 100;
+  var pageNum  = (page && page > 0) ? parseInt(page) : 1;
+  var filter   = filterAction ? filterAction.toString().trim().toLowerCase() : '';
+
+  var rows = sheetData(SHEETS.ADMIN_LOG);
+
+  // Most recent first
+  rows = rows.slice().reverse();
+
+  // Filter by action type
+  var filtered = filter ? rows.filter(function(r) {
+    return r[COL.ALOG_ACTION_TYPE].toString().toLowerCase().indexOf(filter) !== -1;
+  }) : rows;
+
+  var total    = filtered.length;
+  var start    = (pageNum - 1) * pageSize;
+  var pageRows = filtered.slice(start, start + pageSize);
+
+  var entries = pageRows.map(function(r) {
+    return {
+      id:          r[COL.ALOG_ID].toString(),
+      adminId:     r[COL.ALOG_ADMIN_ID].toString(),
+      actionType:  r[COL.ALOG_ACTION_TYPE].toString(),
+      description: r[COL.ALOG_DESCRIPTION].toString(),
+      oldValue:    r[COL.ALOG_OLD_VALUE].toString(),
+      newValue:    r[COL.ALOG_NEW_VALUE].toString(),
+      timestamp:   r[COL.ALOG_TIMESTAMP].toString()
+    };
+  });
+
+  return {
+    success:  true,
+    entries:  entries,
+    total:    total,
+    page:     pageNum,
+    pageSize: pageSize,
+    pages:    Math.ceil(total / pageSize)
+  };
+}
