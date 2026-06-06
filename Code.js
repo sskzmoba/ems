@@ -2650,3 +2650,203 @@ function initSystemBSheets() {
   if (created.length > 0)   Logger.log('New tabs: ' + created.join(', '));
   if (skipped.length > 0)   Logger.log('Skipped : ' + skipped.join(', '));
 }
+
+// ============================================================
+// getAdminList — return all admin accounts
+// Access: RO_ADMIN only
+// ============================================================
+function getAdminList(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var rows = sheetData(SHEETS.ADMINS);
+  var admins = rows.map(function(r) {
+    return {
+      id:             r[COL.ADMIN_ID].toString(),
+      name:           r[COL.ADMIN_NAME].toString(),
+      role:           r[COL.ADMIN_ROLE].toString(),
+      email:          r[COL.ADMIN_EMAIL].toString(),
+      type:           r[COL.ADMIN_TYPE].toString(),
+      rollNo:         r[COL.ADMIN_ROLL].toString(),
+      addedAt:        r[COL.ADMIN_ADDED_AT] ? r[COL.ADMIN_ADDED_AT].toString() : '',
+      status:         r[COL.ADMIN_STATUS]   ? r[COL.ADMIN_STATUS].toString()   : 'ACTIVE',
+      disabledAt:     r[COL.ADMIN_DISABLED_AT] ? r[COL.ADMIN_DISABLED_AT].toString() : '',
+      disabledBy:     r[COL.ADMIN_DISABLED_BY] ? r[COL.ADMIN_DISABLED_BY].toString() : '',
+      deputyROActive: r[COL.ADMIN_DEPRO_ACTIVE] ? !!r[COL.ADMIN_DEPRO_ACTIVE] : false,
+      activatedAt:    r[COL.ADMIN_ACTIVATED_AT] ? r[COL.ADMIN_ACTIVATED_AT].toString() : '',
+      activatedBy:    r[COL.ADMIN_ACTIVATED_BY] ? r[COL.ADMIN_ACTIVATED_BY].toString() : ''
+    };
+  });
+  return { success: true, admins: admins };
+}
+
+// ============================================================
+// addAdmin — create a new admin account
+// Access: RO_ADMIN only
+// ============================================================
+function addAdmin(token, data) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  if (!data || !data.id || !data.name || !data.role || !data.email) {
+    return { success: false, message: 'AdminID, Name, Role and Email are required.' };
+  }
+
+  var validRoles = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER', 'OBSERVER'];
+  if (validRoles.indexOf(data.role) === -1) {
+    return { success: false, message: 'Invalid role: ' + data.role };
+  }
+
+  // Check for duplicate AdminID
+  var existing = sheetData(SHEETS.ADMINS);
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i][COL.ADMIN_ID].toString() === data.id.toString()) {
+      return { success: false, message: 'AdminID already exists: ' + data.id };
+    }
+  }
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+
+  var newRow = new Array(13).fill('');
+  newRow[COL.ADMIN_ID]       = data.id.toString().trim();
+  newRow[COL.ADMIN_NAME]     = data.name.toString().trim();
+  newRow[COL.ADMIN_ROLE]     = data.role;
+  newRow[COL.ADMIN_EMAIL]    = data.email.toString().trim().toLowerCase();
+  newRow[COL.ADMIN_TYPE]     = data.type || 'alumni';
+  newRow[COL.ADMIN_ROLL]     = data.rollNo ? data.rollNo.toString().trim() : '';
+  newRow[COL.ADMIN_ADDED_AT] = now().toISOString();
+  newRow[COL.ADMIN_STATUS]   = 'ACTIVE';
+  // cols 8–12 left blank (disabled/activation fields — set by specific functions)
+
+  sh.appendRow(newRow);
+  appendAdminLog(sess.identity, 'admin_added',
+    'Added admin: ' + data.id + ' (' + data.name + ') Role: ' + data.role,
+    '', data.id);
+
+  return { success: true };
+}
+
+// ============================================================
+// disableAdmin — set admin status to DISABLED (or re-enable)
+// Access: RO_ADMIN only
+// ============================================================
+function disableAdmin(token, adminId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  // Prevent RO from disabling themselves
+  if (adminId.toString() === sess.identity.toString()) {
+    return { success: false, message: 'You cannot disable your own account.' };
+  }
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      var currentStatus = rows[i][COL.ADMIN_STATUS] ? rows[i][COL.ADMIN_STATUS].toString() : 'ACTIVE';
+      sh.getRange(i + 1, COL.ADMIN_STATUS + 1).setValue('DISABLED');
+      sh.getRange(i + 1, COL.ADMIN_DISABLED_AT + 1).setValue(now().toISOString());
+      sh.getRange(i + 1, COL.ADMIN_DISABLED_BY + 1).setValue(sess.identity);
+      appendAdminLog(sess.identity, 'admin_disabled',
+        'Disabled admin: ' + adminId,
+        currentStatus, 'DISABLED');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Admin not found: ' + adminId };
+}
+
+// ============================================================
+// enableAdmin — re-enable a disabled admin account
+// Access: RO_ADMIN only
+// ============================================================
+function enableAdmin(token, adminId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      sh.getRange(i + 1, COL.ADMIN_STATUS + 1).setValue('ACTIVE');
+      sh.getRange(i + 1, COL.ADMIN_DISABLED_AT + 1).setValue('');
+      sh.getRange(i + 1, COL.ADMIN_DISABLED_BY + 1).setValue('');
+      appendAdminLog(sess.identity, 'admin_enabled',
+        'Re-enabled admin: ' + adminId,
+        'DISABLED', 'ACTIVE');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Admin not found: ' + adminId };
+}
+
+// ============================================================
+// activateDeputyRO — set DeputyROActivated=true for a DEPUTY_RO account
+// Access: RO_ADMIN only. Requires adminId to be role DEPUTY_RO.
+// ============================================================
+function activateDeputyRO(token, adminId, witnessNote) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      if (rows[i][COL.ADMIN_ROLE].toString() !== 'DEPUTY_RO') {
+        return { success: false, message: 'Account is not a Deputy RO account.' };
+      }
+      if (rows[i][COL.ADMIN_STATUS].toString() === 'DISABLED') {
+        return { success: false, message: 'Cannot activate a disabled account. Enable it first.' };
+      }
+      sh.getRange(i + 1, COL.ADMIN_DEPRO_ACTIVE + 1).setValue(true);
+      sh.getRange(i + 1, COL.ADMIN_ACTIVATED_AT + 1).setValue(now().toISOString());
+      sh.getRange(i + 1, COL.ADMIN_ACTIVATED_BY + 1).setValue(sess.identity);
+      appendAdminLog(sess.identity, 'deputy_ro_activated',
+        'Deputy RO activated: ' + adminId +
+        (witnessNote ? ' | Witness note: ' + witnessNote : ''),
+        'false', 'true');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Admin not found: ' + adminId };
+}
+
+// ============================================================
+// deactivateDeputyRO — set DeputyROActivated=false
+// Access: RO_ADMIN only
+// ============================================================
+function deactivateDeputyRO(token, adminId, witnessNote) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      sh.getRange(i + 1, COL.ADMIN_DEPRO_ACTIVE + 1).setValue(false);
+      sh.getRange(i + 1, COL.ADMIN_ACTIVATED_AT + 1).setValue('');
+      sh.getRange(i + 1, COL.ADMIN_ACTIVATED_BY + 1).setValue('');
+      appendAdminLog(sess.identity, 'deputy_ro_deactivated',
+        'Deputy RO deactivated: ' + adminId +
+        (witnessNote ? ' | Witness note: ' + witnessNote : ''),
+        'true', 'false');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Admin not found: ' + adminId };
+}

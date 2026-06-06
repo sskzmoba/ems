@@ -123,6 +123,15 @@ var AdminPanel = (function() {
         '</div>';
     }
 
+    if (tabId === 'admins') {
+      setTimeout(function() { AdminPanel._loadAdmins(); }, 0);
+      return '<div id="admins-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading admins…</div>' +
+        '</div></div>';
+    }
+
     // Coming soon — all other tabs
     var labels = {
       nominations: 'Nominations',
@@ -656,6 +665,377 @@ _deleteElection: function(id) {
     })
     .deleteElection(App.token, id);
 },
+
+// ── ADMINS TAB ───────────────────────────────────────────────
+
+_loadAdmins: function() {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c = document.getElementById('admins-content');
+      if (!c) return;
+      if (!res || !res.success) {
+        c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load admins.') + '</div>';
+        return;
+      }
+      c.innerHTML = AdminPanel._renderAdminsList(res.admins || []);
+    })
+    .withFailureHandler(function() {
+      var c = document.getElementById('admins-content');
+      if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading admins.</div>';
+    })
+    .getAdminList(App.token);
+},
+
+_renderAdminsList: function(admins) {
+  var roleLabel = {
+    RO_ADMIN:   'Returning Officer',
+    DEPUTY_RO:  'Deputy RO',
+    TEM:        'Tech Election Manager',
+    SCRUTINEER: 'Scrutineer',
+    OBSERVER:   'Observer'
+  };
+
+  var html =
+    '<div style="margin-bottom:16px;">' +
+      '<button class="btn btn-primary" onclick="AdminPanel.showAddAdmin()" ' +
+        'style="width:100%;padding:14px;font-size:1rem;">+ Add Admin Account</button>' +
+    '</div>' +
+    '<div id="add-admin-form-area"></div>';
+
+  if (admins.length === 0) {
+    html += '<div class="panel-card"><div class="panel-card-body" ' +
+      'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">👤</div>' +
+      '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No admin accounts yet</div>' +
+      '<div style="font-size:.85rem;">Use the button above to add one.</div>' +
+      '</div></div>';
+    return html;
+  }
+
+  admins.forEach(function(a) {
+    var isActive = (a.status !== 'DISABLED');
+    var statusBadge = isActive
+      ? '<span class="status-badge badge-active" style="font-size:.75rem;">ACTIVE</span>'
+      : '<span class="status-badge badge-closed" style="font-size:.75rem;">DISABLED</span>';
+    var deputyBadge = (a.role === 'DEPUTY_RO' && a.deputyROActive)
+      ? '<span class="status-badge badge-noms-open" style="font-size:.75rem;margin-left:6px;">Activated</span>'
+      : '';
+
+    html += '<div class="panel-card" style="margin-bottom:12px;">' +
+      '<div class="panel-card-body" style="padding:14px 16px;">' +
+
+        // Name + badges
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;' +
+          'gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;">' +
+            escHtml(a.name) + '</div>' +
+          '<div>' + statusBadge + deputyBadge + '</div>' +
+        '</div>' +
+
+        // Details
+        '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+          '<div>ID: <span style="color:#374151;font-weight:600;">' + escHtml(a.id) + '</span>' +
+            (a.rollNo ? ' &nbsp;·&nbsp; Roll: ' + escHtml(a.rollNo) : '') + '</div>' +
+          '<div>' + escHtml(roleLabel[a.role] || a.role) + ' &nbsp;·&nbsp; ' +
+            escHtml(a.type || '') + '</div>' +
+          '<div>' + escHtml(a.email) + '</div>' +
+          (a.addedAt ? '<div style="margin-top:2px;">Added: ' +
+            escHtml(a.addedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC') + '</div>' : '') +
+        '</div>' +
+
+        // Action buttons
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+
+          // Enable / Disable
+          (isActive
+            ? '<button onclick="AdminPanel._confirmDisable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                'background:#fff;color:#b91c1c;border:1.5px solid #b91c1c;border-radius:4px;cursor:pointer;">' +
+                'Disable Account</button>'
+            : '<button onclick="AdminPanel._confirmEnable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                'background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:4px;cursor:pointer;">' +
+                'Re-enable Account</button>') +
+
+          // Deputy RO activation — only for DEPUTY_RO accounts
+          (a.role === 'DEPUTY_RO'
+            ? (a.deputyROActive
+                ? '<button onclick="AdminPanel._confirmDeactivateDeputyRO(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                    'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                    'background:#fff;color:#92400e;border:1.5px solid #d97706;border-radius:4px;cursor:pointer;">' +
+                    'Deactivate Deputy RO</button>'
+                : '<button onclick="AdminPanel._confirmActivateDeputyRO(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                    'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                    'background:#fff;color:#1d4ed8;border:1.5px solid #1d4ed8;border-radius:4px;cursor:pointer;">' +
+                    'Activate Deputy RO</button>')
+            : '') +
+
+        '</div>' +
+
+        // Confirmation area for this card
+        '<div id="confirm-' + escHtml(a.id) + '" style="display:none;margin-top:12px;' +
+          'background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;padding:12px;"></div>' +
+
+        // Deputy RO confirmation area
+        (a.role === 'DEPUTY_RO'
+          ? '<div id="depro-' + escHtml(a.id) + '" style="display:none;margin-top:12px;' +
+              'background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:12px;"></div>'
+          : '') +
+
+      '</div>' +
+    '</div>';
+  });
+
+  return html;
+},
+
+showAddAdmin: function() {
+  var area = document.getElementById('add-admin-form-area');
+  if (!area) return;
+
+  // Toggle — if form already showing, collapse it
+  if (area.innerHTML.trim() !== '') { area.innerHTML = ''; return; }
+
+  area.innerHTML =
+    '<div class="panel-card" style="margin-bottom:16px;border:1px solid #bfdbfe;">' +
+      '<div class="panel-card-header" style="background:#eff6ff;color:#1e40af;">New Admin Account</div>' +
+      '<div class="panel-card-body">' +
+
+        '<label for="new-admin-id">Admin ID (= Roll Number for alumni)</label>' +
+        '<input type="text" id="new-admin-id" placeholder="e.g. SSK1234" ' +
+          'style="margin-bottom:14px;" inputmode="text" autocomplete="off" />' +
+
+        '<label for="new-admin-name">Full Name</label>' +
+        '<input type="text" id="new-admin-name" placeholder="e.g. Arun Kumar" ' +
+          'style="margin-bottom:14px;" autocomplete="off" />' +
+
+        '<label for="new-admin-role">Role</label>' +
+        '<select id="new-admin-role" style="width:100%;box-sizing:border-box;padding:12px 10px;' +
+          'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;">' +
+          '<option value="">— Select role —</option>' +
+          '<option value="DEPUTY_RO">Deputy RO</option>' +
+          '<option value="TEM">Technical Election Manager</option>' +
+          '<option value="SCRUTINEER">Scrutineer</option>' +
+          '<option value="OBSERVER">Observer</option>' +
+          '<option value="RO_ADMIN">Returning Officer (RO_ADMIN)</option>' +
+        '</select>' +
+
+        '<label for="new-admin-email">Email Address (for OTP)</label>' +
+        '<input type="email" id="new-admin-email" placeholder="e.g. arun@email.com" ' +
+          'style="margin-bottom:14px;" inputmode="email" autocomplete="off" />' +
+
+        '<label for="new-admin-type">Type</label>' +
+        '<select id="new-admin-type" style="width:100%;box-sizing:border-box;padding:12px 10px;' +
+          'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;">' +
+          '<option value="alumni">Alumni</option>' +
+          '<option value="external">External Professional</option>' +
+        '</select>' +
+
+        '<label for="new-admin-roll">Roll Number <span style="font-weight:400;color:#6b7280;">' +
+          '(leave blank for external)</span></label>' +
+        '<input type="text" id="new-admin-roll" placeholder="e.g. SSK1234" ' +
+          'style="margin-bottom:20px;" inputmode="text" autocomplete="off" />' +
+
+        '<div style="display:flex;gap:10px;">' +
+          '<button class="btn btn-outline" onclick="document.getElementById(\'add-admin-form-area\').innerHTML=\'\';" ' +
+            'style="flex:1;padding:13px;">Cancel</button>' +
+          '<button class="btn btn-primary" id="btn-submit-admin" ' +
+            'onclick="AdminPanel._submitAddAdmin()" ' +
+            'style="flex:2;padding:13px;">Add Admin</button>' +
+        '</div>' +
+
+        '<div id="add-admin-error" style="margin-top:10px;color:#c0392b;font-size:.85rem;display:none;"></div>' +
+
+      '</div>' +
+    '</div>';
+},
+
+_submitAddAdmin: function() {
+  var btn    = document.getElementById('btn-submit-admin');
+  var errEl  = document.getElementById('add-admin-error');
+  var id     = document.getElementById('new-admin-id').value.trim();
+  var name   = document.getElementById('new-admin-name').value.trim();
+  var role   = document.getElementById('new-admin-role').value;
+  var email  = document.getElementById('new-admin-email').value.trim();
+  var type   = document.getElementById('new-admin-type').value;
+  var rollNo = document.getElementById('new-admin-roll').value.trim();
+
+  errEl.style.display = 'none';
+  if (!id || !name || !role || !email) {
+    errEl.textContent = 'Admin ID, Name, Role and Email are required.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (btn) { btn.textContent = 'Adding…'; btn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Admin account added.');
+        AdminPanel._loadAdmins();
+      } else {
+        errEl.textContent = (res && res.message) || 'Failed to add admin.';
+        errEl.style.display = 'block';
+        if (btn) { btn.textContent = 'Add Admin'; btn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function() {
+      errEl.textContent = 'Error — please try again.';
+      errEl.style.display = 'block';
+      if (btn) { btn.textContent = 'Add Admin'; btn.disabled = false; }
+    })
+    .addAdmin(App.token, { id: id, name: name, role: role,
+                            email: email, type: type, rollNo: rollNo });
+},
+
+_confirmDisable: function(adminId, adminName) {
+  var box = document.getElementById('confirm-' + adminId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#b91c1c;margin-bottom:12px;">' +
+      '<strong>Disable ' + escHtml(adminName) + '?</strong><br>' +
+      'They will not be able to log in until re-enabled.' +
+    '</p>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="document.getElementById(\'confirm-' + escHtml(adminId) + '\').style.display=\'none\';" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;">Cancel</button>' +
+      '<button onclick="AdminPanel._doDisable(\'' + escHtml(adminId) + '\')" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;background:#b91c1c;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;">Yes, Disable</button>' +
+    '</div>';
+},
+
+_doDisable: function(adminId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Account disabled.');
+        AdminPanel._loadAdmins();
+      } else {
+        showToast((res && res.message) || 'Disable failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — disable failed.'); })
+    .disableAdmin(App.token, adminId);
+},
+
+_confirmEnable: function(adminId, adminName) {
+  var box = document.getElementById('confirm-' + adminId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.style.background = '#f0fdf4';
+  box.style.borderColor = '#86efac';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#166534;margin-bottom:12px;">' +
+      '<strong>Re-enable ' + escHtml(adminName) + '?</strong><br>' +
+      'They will be able to log in again.' +
+    '</p>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="document.getElementById(\'confirm-' + escHtml(adminId) + '\').style.display=\'none\';" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;">Cancel</button>' +
+      '<button onclick="AdminPanel._doEnable(\'' + escHtml(adminId) + '\')" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;background:#16a34a;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;">Yes, Re-enable</button>' +
+    '</div>';
+},
+
+_doEnable: function(adminId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Account re-enabled.');
+        AdminPanel._loadAdmins();
+      } else {
+        showToast((res && res.message) || 'Re-enable failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — re-enable failed.'); })
+    .enableAdmin(App.token, adminId);
+},
+
+_confirmActivateDeputyRO: function(adminId, adminName) {
+  var box = document.getElementById('depro-' + adminId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#1e40af;margin-bottom:10px;">' +
+      '<strong>Activate ' + escHtml(adminName) + ' as Deputy RO?</strong><br>' +
+      'This is a witnessed action. Add a witness note (optional).' +
+    '</p>' +
+    '<input type="text" id="depro-witness-' + escHtml(adminId) + '" ' +
+      'placeholder="Witness note (e.g. witnessed by Thampy Sir)" ' +
+      'style="margin-bottom:12px;" autocomplete="off" />' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="document.getElementById(\'depro-' + escHtml(adminId) + '\').style.display=\'none\';" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;">Cancel</button>' +
+      '<button onclick="AdminPanel._doActivateDeputyRO(\'' + escHtml(adminId) + '\')" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;background:#1d4ed8;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;">Activate</button>' +
+    '</div>';
+},
+
+_doActivateDeputyRO: function(adminId) {
+  var witnessNote = document.getElementById('depro-witness-' + adminId);
+  var note = witnessNote ? witnessNote.value.trim() : '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Deputy RO activated.');
+        AdminPanel._loadAdmins();
+      } else {
+        showToast((res && res.message) || 'Activation failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — activation failed.'); })
+    .activateDeputyRO(App.token, adminId, note);
+},
+
+_confirmDeactivateDeputyRO: function(adminId, adminName) {
+  var box = document.getElementById('depro-' + adminId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.style.background = '#fffbeb';
+  box.style.borderColor = '#fcd34d';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#92400e;margin-bottom:10px;">' +
+      '<strong>Deactivate ' + escHtml(adminName) + ' as Deputy RO?</strong><br>' +
+      'They will lose Deputy RO privileges until reactivated. Add a witness note (optional).' +
+    '</p>' +
+    '<input type="text" id="depro-witness-' + escHtml(adminId) + '" ' +
+      'placeholder="Witness note" ' +
+      'style="margin-bottom:12px;" autocomplete="off" />' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button class="btn btn-outline" ' +
+        'onclick="document.getElementById(\'depro-' + escHtml(adminId) + '\').style.display=\'none\';" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;">Cancel</button>' +
+      '<button onclick="AdminPanel._doDeactivateDeputyRO(\'' + escHtml(adminId) + '\')" ' +
+        'style="flex:1;padding:11px;font-size:.85rem;background:#d97706;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;">Deactivate</button>' +
+    '</div>';
+},
+
+_doDeactivateDeputyRO: function(adminId) {
+  var witnessNote = document.getElementById('depro-witness-' + adminId);
+  var note = witnessNote ? witnessNote.value.trim() : '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Deputy RO deactivated.');
+        AdminPanel._loadAdmins();
+      } else {
+        showToast((res && res.message) || 'Deactivation failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — deactivation failed.'); })
+    .deactivateDeputyRO(App.token, adminId, note);
+},
+
   };
 
 })();
