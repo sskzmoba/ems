@@ -156,6 +156,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
         '</div></div>';
     }
+    if (tabId === 'settings') {
+      setTimeout(function() { AdminPanel._loadSettings(); }, 0);
+      return '<div id="settings-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading system status…</div>' +
+        '</div></div>';
+    }
     if (tabId === 'handover') {
       setTimeout(function() { AdminPanel._loadHandover(); }, 0);
       return '<div id="handover-content">' +
@@ -1511,6 +1519,156 @@ _doWithdraw: function(nomId) {
     .withdrawNomination(App.token, nomId);
 },
 
+// ── SETTINGS TAB ─────────────────────────────────────────────
+
+  _loadSettings: function() {
+    var c = document.getElementById('settings-content');
+    if (!c) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c2 = document.getElementById('settings-content');
+        if (!c2) return;
+        if (!res || !res.success) {
+          c2.innerHTML =
+            '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load system status.') + '</div>';
+          return;
+        }
+        c2.innerHTML = AdminPanel._renderSettings(res);
+      })
+      .withFailureHandler(function() {
+        var c2 = document.getElementById('settings-content');
+        if (c2) c2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading settings.</div>';
+      })
+      .getSystemStatus(App.token);
+  },
+
+  _renderSettings: function(res) {
+    var html = '';
+
+    // Deploy URL
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Deployment</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.83rem;color:#6b7280;margin-bottom:4px;">Deploy URL</div>' +
+          '<div style="font-size:.82rem;word-break:break-all;background:#f9fafb;' +
+            'padding:8px 10px;border-radius:4px;border:1px solid #e5e7eb;margin-bottom:12px;">' +
+            escHtml(res.deployUrl || '—') +
+          '</div>' +
+          '<div style="font-size:.83rem;color:#6b7280;margin-bottom:4px;">GitHub Repository</div>' +
+          '<div style="font-size:.88rem;margin-bottom:12px;">' +
+            '<a href="' + escHtml(res.githubUrl) + '" target="_blank" ' +
+              'style="color:#1a3a5c;word-break:break-all;">' +
+              escHtml(res.githubUrl) +
+            '</a>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    // Version verification
+    var verDone = !!res.versionVerifiedAt;
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Version Verification</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+            'Confirm that the deployed Apps Script version matches the GitHub repository. ' +
+            'Open the GitHub link above, verify the code matches, then click Confirm below.' +
+          '</div>' +
+          (verDone ?
+            '<div style="padding:10px;background:#dcfce7;border-radius:4px;' +
+              'font-size:.85rem;color:#166534;margin-bottom:12px;">' +
+              '✓ Last verified ' +
+              escHtml(new Date(res.versionVerifiedAt).toLocaleString('en-IN')) +
+              ' by ' + escHtml(res.versionVerifiedBy) +
+            '</div>'
+          : '') +
+          '<div id="version-verify-err" ' +
+            'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="AdminPanel._confirmVersionVerified()" ' +
+            'id="btn-version-verify" ' +
+            'style="width:100%;padding:12px;font-size:.9rem;' +
+            'background:' + (verDone ? '#fff' : '#1a3a5c') + ';' +
+            'color:' + (verDone ? '#1a3a5c' : '#fff') + ';' +
+            'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;font-weight:600;">' +
+            (verDone ? 'Re-verify Version' : 'Confirm Version Verified') +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    // Sheet protection status
+    var prots = res.protectionStatus || {};
+    var protKeys = Object.keys(prots);
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Sheet Protection Status</div>' +
+        '<div class="panel-card-body" style="padding:0;">';
+
+    protKeys.forEach(function(name, idx) {
+      var status    = prots[name];
+      var isOk      = (status === 'protected');
+      var statusCol = isOk ? '#166534' : '#b91c1c';
+      var statusBg  = isOk ? '#dcfce7'  : '#fef2f2';
+      html +=
+        '<div style="padding:10px 16px;' + (idx > 0 ? 'border-top:1px solid #f3f4f6;' : '') +
+          'display:flex;justify-content:space-between;align-items:center;">' +
+          '<span style="font-size:.87rem;color:#374151;">' + escHtml(name) + '</span>' +
+          '<span style="font-size:.75rem;padding:2px 8px;border-radius:10px;font-weight:600;' +
+            'background:' + statusBg + ';color:' + statusCol + ';">' +
+            escHtml(status) +
+          '</span>' +
+        '</div>';
+    });
+
+    html += '</div></div>';
+
+    // Last AdminLog entry
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Audit Log</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.83rem;color:#6b7280;margin-bottom:4px;">Last entry</div>' +
+          '<div style="font-size:.87rem;color:#374151;">' +
+            escHtml(res.lastLogAction || '—') +
+          '</div>' +
+          (res.lastLogAt ?
+            '<div style="font-size:.78rem;color:#9ca3af;margin-top:3px;">' +
+              escHtml(new Date(res.lastLogAt).toLocaleString('en-IN')) +
+            '</div>'
+          : '') +
+        '</div>' +
+      '</div>';
+
+    return html;
+  },
+
+  _confirmVersionVerified: function() {
+    if (!confirm('Confirm that you have checked the GitHub repository and the deployed code matches?\n\nThis will be recorded in the audit log.')) return;
+
+    var btn   = document.getElementById('btn-version-verify');
+    var errEl = document.getElementById('version-verify-err');
+    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Version verification recorded.');
+          AdminPanel._loadSettings();
+        } else {
+          if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .recordVersionVerified(App.token);
+  },
+  
 // ── HANDOVER TAB ─────────────────────────────────────────────
 
   _loadHandover: function() {
@@ -1796,7 +1954,7 @@ _doWithdraw: function(nomId) {
       })
       .recordScrutineerConfirmation(App.token, elecId, 'A', text);
   },
-  
+
 // ── TALLY TAB ────────────────────────────────────────────────
 
   _loadTally: function() {

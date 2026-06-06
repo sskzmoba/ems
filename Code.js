@@ -3982,3 +3982,69 @@ function recordScrutineerConfirmation(token, electionId, part, confirmationText)
   return { success: true };
 }
 
+// ============================================================
+
+function getSystemStatus(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','TEM'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  // Last AdminLog entry
+  var logSh   = getSheet(SHEETS.ADMIN_LOG);
+  var logData = logSh.getDataRange().getValues();
+  var lastLogAt = ''; var lastLogAction = '';
+  if (logData.length > 1) {
+    var lastRow   = logData[logData.length - 1];
+    lastLogAt     = lastRow[COL.ALOG_TIMESTAMP].toString();
+    lastLogAction = lastRow[COL.ALOG_ACTION_TYPE].toString();
+  }
+
+  // Sheet protection status
+  var ss = SpreadsheetApp.openById(SYSTEM_B_SHEET_ID);
+  var sheetsToCheck = [
+    SHEETS.VOTES, SHEETS.VOTED_LOG, SHEETS.VOTERS,
+    SHEETS.ADMINS, SHEETS.ADMIN_LOG
+  ];
+  var protectionStatus = {};
+  sheetsToCheck.forEach(function(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) { protectionStatus[name] = 'not found'; return; }
+    var prots = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    protectionStatus[name] = prots.length > 0 ? 'protected' : 'unprotected';
+  });
+
+  // Version verified — check AdminLog for most recent version_verified entry
+  var versionVerifiedAt = ''; var versionVerifiedBy = '';
+  for (var i = logData.length - 1; i >= 1; i--) {
+    if (logData[i][COL.ALOG_ACTION_TYPE].toString() === 'version_verified') {
+      versionVerifiedAt = logData[i][COL.ALOG_TIMESTAMP].toString();
+      versionVerifiedBy = logData[i][COL.ALOG_ADMIN_ID].toString();
+      break;
+    }
+  }
+
+  return {
+    success:            true,
+    deployUrl:          DEPLOY_URL,
+    githubUrl:          'https://github.com/sskzmoba/ems',
+    lastLogAt:          lastLogAt,
+    lastLogAction:      lastLogAction,
+    protectionStatus:   protectionStatus,
+    versionVerifiedAt:  versionVerifiedAt,
+    versionVerifiedBy:  versionVerifiedBy
+  };
+}
+
+// ============================================================
+
+function recordVersionVerified(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  appendAdminLog(sess.identity, 'version_verified',
+    'RO confirmed deployed version matches GitHub repository.', '', '');
+
+  return { success: true };
+}
