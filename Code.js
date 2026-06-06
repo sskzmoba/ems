@@ -3862,7 +3862,8 @@ function getHandoverChecklist(token, electionId) {
     voter_roll_certified: { done: false, at: '', by: '' },
     sheet_protections:    { done: false, at: '', by: '' },
     scrutineer_part_a:    { done: false, at: '', by: '' },
-    version_verified:     { done: false, at: '', by: '' }
+    version_verified:     { done: false, at: '', by: '' },
+    github_transferred:   { done: false, at: '', by: '' }
   };
 
   for (var i = 1; i < logData.length; i++) {
@@ -3887,6 +3888,9 @@ function getHandoverChecklist(token, electionId) {
     }
     if (action === 'version_verified') {
       items.version_verified = { done: true, at: at, by: by };
+    }
+    if (action === 'github_org_transferred') {
+      items.github_transferred = { done: true, at: at, by: by };
     }
   }
 
@@ -4045,6 +4049,20 @@ function recordVersionVerified(token) {
 
   appendAdminLog(sess.identity, 'version_verified',
     'RO confirmed deployed version matches GitHub repository.', '', '');
+
+  return { success: true };
+}
+
+// ============================================================
+
+function recordGithubTransferred(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  appendAdminLog(sess.identity, 'github_org_transferred',
+    'RO confirmed: GitHub organisation sskzmoba ownership transferred. ' +
+    'Outgoing custodian removed from organisation.', '', '');
 
   return { success: true };
 }

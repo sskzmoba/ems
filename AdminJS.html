@@ -1668,7 +1668,7 @@ _doWithdraw: function(nomId) {
       })
       .recordVersionVerified(App.token);
   },
-  
+
 // ── HANDOVER TAB ─────────────────────────────────────────────
 
   _loadHandover: function() {
@@ -1801,6 +1801,14 @@ _doWithdraw: function(nomId) {
         label:   'Version verified',
         desc:    'Deployed script version matches GitHub commit.',
         roBtn:   false
+      },
+      {
+        key:     'github_transferred',
+        label:   'GitHub organisation ownership transferred to RO',
+        desc:    'RO has been added as owner of sskzmoba organisation and outgoing custodian removed. No further code pushes possible by EC or developer.',
+        roBtn:   true,
+        btnLabel:'Confirm GitHub Transfer',
+        btnFn:   'AdminPanel._confirmGithubTransferred()'
       }
     ];
 
@@ -1923,6 +1931,22 @@ _doWithdraw: function(nomId) {
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
       .applySheetProtections(App.token);
+  },
+
+  _confirmGithubTransferred: function() {
+    if (!confirm('Confirm that you have been added as owner of the sskzmoba GitHub organisation and the outgoing custodian has been removed?\n\nThis will be recorded in the audit log.')) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('GitHub transfer recorded.');
+          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
+        } else {
+          showToast((res && res.message) || 'Failed.');
+        }
+      })
+      .withFailureHandler(function() { showToast('Error — please try again.'); })
+      .recordGithubTransferred(App.token);
   },
 
   _recordScrutPartA: function(elecId) {
