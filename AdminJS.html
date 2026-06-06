@@ -156,6 +156,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
         '</div></div>';
     }
+    if (tabId === 'tally') {
+      setTimeout(function() { AdminPanel._loadTally(); }, 0);
+      return '<div id="tally-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading tally…</div>' +
+        '</div></div>';
+    }
     if (tabId === 'candidates') {
       setTimeout(function() { AdminPanel._loadCandidatesTab(); }, 0);
       return '<div id="candidates-content">' +
@@ -1495,6 +1503,283 @@ _doWithdraw: function(nomId) {
     .withdrawNomination(App.token, nomId);
 },
 
+// ── TALLY TAB ────────────────────────────────────────────────
+
+  _loadTally: function() {
+    var c = document.getElementById('tally-content');
+    if (!c) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success || !res.elections || res.elections.length === 0) {
+          var c2 = document.getElementById('tally-content');
+          if (!c2) return;
+          c2.innerHTML =
+            '<div class="panel-card"><div class="panel-card-body" ' +
+            'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+            '</div></div>';
+          return;
+        }
+        AdminPanel._tallySelectedElec = res.elections[0].id;
+        AdminPanel._renderTallyShell(res.elections);
+        AdminPanel._loadTallyData(res.elections[0].id);
+      })
+      .withFailureHandler(function() {
+        var c2 = document.getElementById('tally-content');
+        if (c2) c2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+      })
+      .getAllElections(App.token);
+  },
+
+  _tallySelectedElec: '',
+
+  _renderTallyShell: function(elections) {
+    var c = document.getElementById('tally-content');
+    if (!c) return;
+
+    var selHtml = '<select id="tally-elec-sel" ' +
+      'onchange="AdminPanel._onTallyElecChange()" ' +
+      'style="width:100%;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+      'border-radius:4px;box-sizing:border-box;margin-bottom:16px;">';
+    elections.forEach(function(e) {
+      selHtml += '<option value="' + escHtml(e.id) + '"' +
+        (e.id === AdminPanel._tallySelectedElec ? ' selected' : '') + '>' +
+        escHtml(e.title) + ' [' + escHtml(e.status.replace(/_/g,' ')) + ']' +
+        '</option>';
+    });
+    selHtml += '</select>';
+
+    c.innerHTML =
+      selHtml +
+      '<div id="tally-data-area">' +
+        '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+        '<div class="spinner"></div></div>' +
+      '</div>';
+  },
+
+  _onTallyElecChange: function() {
+    var sel = document.getElementById('tally-elec-sel');
+    if (!sel) return;
+    AdminPanel._tallySelectedElec = sel.value;
+    AdminPanel._loadTallyData(sel.value);
+  },
+
+  _loadTallyData: function(elecId) {
+    var area = document.getElementById('tally-data-area');
+    if (!area) return;
+    area.innerHTML =
+      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+      '<div class="spinner"></div></div>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var area2 = document.getElementById('tally-data-area');
+        if (!area2) return;
+        if (!res || !res.success) {
+          area2.innerHTML =
+            '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load tally.') + '</div>';
+          return;
+        }
+        area2.innerHTML = AdminPanel._renderTally(res);
+      })
+      .withFailureHandler(function() {
+        var area2 = document.getElementById('tally-data-area');
+        if (area2) area2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading tally.</div>';
+      })
+      .getLiveTally(App.token, elecId);
+  },
+
+  _renderTally: function(res) {
+    var html = '';
+
+    // Blackout banner
+    if (res.blackout) {
+      html +=
+        '<div style="background:#fef9c3;border:1.5px solid #fbbf24;border-radius:6px;' +
+          'padding:14px 16px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px;">' +
+          '<div style="font-size:1.2rem;">🔒</div>' +
+          '<div>' +
+            '<div style="font-weight:700;color:#92400e;font-size:.9rem;">Tally Blackout Active</div>' +
+            '<div style="font-size:.83rem;color:#92400e;margin-top:3px;">' +
+              'Vote counts and candidate names are hidden while voting is open. ' +
+              'Participation figures only are shown below.' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    // Participation summary card
+    html +=
+      '<div class="panel-card" style="margin-bottom:14px;">' +
+        '<div class="panel-card-header">Participation Summary</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:1.6rem;font-weight:700;color:#1a3a5c;text-align:center;' +
+            'padding:8px 0 4px;">' +
+            res.totalParticipants +
+          '</div>' +
+          '<div style="text-align:center;font-size:.83rem;color:#6b7280;margin-bottom:0;">unique voters participated</div>' +
+        '</div>' +
+      '</div>';
+
+    // Per-post results
+    if (!res.posts || res.posts.length === 0) {
+      html +=
+        '<div class="panel-card">' +
+          '<div class="panel-card-body" style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+            '<div style="font-size:.88rem;">No candidates on record for this election.</div>' +
+          '</div>' +
+        '</div>';
+      return html;
+    }
+
+    res.posts.forEach(function(post) {
+      var participated = post.participated || 0;
+
+      html += '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header" style="display:flex;justify-content:space-between;' +
+          'align-items:center;flex-wrap:wrap;gap:6px;">' +
+          '<span style="font-weight:700;color:#1a3a5c;">' + escHtml(post.post) + '</span>' +
+          '<span style="font-size:.8rem;color:#6b7280;">' + participated + ' voted</span>' +
+        '</div>' +
+        '<div class="panel-card-body" style="padding:0;">';
+
+      if (res.blackout) {
+        // Blackout mode — show candidate count and participation only
+        html +=
+          '<div style="padding:14px 16px;font-size:.87rem;color:#6b7280;">' +
+            post.candCount + ' candidate' + (post.candCount !== 1 ? 's' : '') +
+            ' — results hidden until voting closes.' +
+          '</div>';
+      } else {
+        // Full tally mode
+        var postTotal = 0;
+        post.candidates.forEach(function(c) { postTotal += (c.votes || 0); });
+        postTotal += (post.nota || 0);
+
+        post.candidates.forEach(function(cand, idx) {
+          var votes   = cand.votes || 0;
+          var pct     = postTotal > 0 ? Math.round((votes / postTotal) * 1000) / 10 : 0;
+          var isWinner = (idx === 0 && votes > 0);
+          var barWidth = postTotal > 0 ? Math.round((votes / postTotal) * 100) : 0;
+
+          html +=
+            '<div style="padding:12px 16px;' + (idx > 0 ? 'border-top:1px solid #f3f4f6;' : '') + '">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                'margin-bottom:6px;">' +
+                '<div>' +
+                  '<span style="font-weight:600;color:#1a3a5c;font-size:.88rem;">' +
+                    escHtml(cand.name) +
+                  '</span>' +
+                  (isWinner && (res.elecStatus === 'closed' || res.elecStatus === 'declared') ?
+                    ' <span style="font-size:.72rem;background:#dcfce7;color:#166534;' +
+                    'padding:2px 7px;border-radius:10px;font-weight:700;margin-left:4px;">✓ Winner</span>'
+                  : '') +
+                  '<div style="font-size:.75rem;color:#9ca3af;margin-top:1px;">Roll: ' +
+                    escHtml(cand.roll) + '</div>' +
+                '</div>' +
+                '<div style="text-align:right;">' +
+                  '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">' + votes + '</div>' +
+                  '<div style="font-size:.75rem;color:#6b7280;">' + pct + '%</div>' +
+                '</div>' +
+              '</div>' +
+              '<div style="background:#f3f4f6;border-radius:4px;height:6px;overflow:hidden;">' +
+                '<div style="background:#1a3a5c;height:100%;width:' + barWidth + '%;' +
+                  'border-radius:4px;transition:width .3s;"></div>' +
+              '</div>' +
+            '</div>';
+        });
+
+        // NOTA row
+        if (post.nota > 0) {
+          var notaPct = postTotal > 0 ? Math.round((post.nota / postTotal) * 1000) / 10 : 0;
+          var notaBar = postTotal > 0 ? Math.round((post.nota / postTotal) * 100) : 0;
+          html +=
+            '<div style="padding:12px 16px;border-top:1px solid #f3f4f6;">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                'margin-bottom:6px;">' +
+                '<span style="font-size:.88rem;color:#6b7280;font-style:italic;">NOTA</span>' +
+                '<div style="text-align:right;">' +
+                  '<div style="font-size:1.1rem;font-weight:700;color:#6b7280;">' + post.nota + '</div>' +
+                  '<div style="font-size:.75rem;color:#9ca3af;">' + notaPct + '%</div>' +
+                '</div>' +
+              '</div>' +
+              '<div style="background:#f3f4f6;border-radius:4px;height:6px;overflow:hidden;">' +
+                '<div style="background:#9ca3af;height:100%;width:' + notaBar + '%;' +
+                  'border-radius:4px;"></div>' +
+              '</div>' +
+            '</div>';
+        }
+      }
+
+      html += '</div></div>';
+    });
+
+    // Co-sign panel — only for closed/declared
+    var st = res.elecStatus;
+    if (st === 'closed' || st === 'declared') {
+      html +=
+        '<div class="panel-card" style="margin-bottom:16px;border:1.5px solid #1a3a5c;">' +
+          '<div class="panel-card-header">Tally Co-Sign</div>' +
+          '<div class="panel-card-body">' +
+            '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+              'Enter your confirmation statement and co-sign the tally. ' +
+              'This is recorded permanently in the audit log.' +
+            '</div>' +
+            '<textarea id="tally-cosign-text" rows="2" ' +
+              'placeholder="e.g. I have verified the tally and confirm it is correct." ' +
+              'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+              'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:10px;"></textarea>' +
+            '<div id="tally-cosign-err" ' +
+              'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+            '<button onclick="AdminPanel._submitTallyCoSign(\'' +
+              escHtml(res.electionId) + '\')" id="btn-tally-cosign" ' +
+              'style="width:100%;padding:13px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+              'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
+              'Co-sign Tally' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    return html;
+  },
+
+  _submitTallyCoSign: function(elecId) {
+    var textEl = document.getElementById('tally-cosign-text');
+    var errEl  = document.getElementById('tally-cosign-err');
+    var btn    = document.getElementById('btn-tally-cosign');
+    var text   = textEl ? textEl.value.trim() : '';
+
+    if (!text || text.length < 5) {
+      if (errEl) { errEl.textContent = 'Please enter a confirmation statement.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.textContent = 'Submitting…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Tally co-signature recorded.');
+          if (btn) { btn.textContent = '✓ Co-signed'; btn.disabled = true;
+            btn.style.background = '#166534'; }
+        } else {
+          if (btn) { btn.textContent = 'Co-sign Tally'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Co-sign failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Co-sign Tally'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .recordTallyCoSign(App.token, elecId, text);
+  },
+  
 // ── CANDIDATES TAB ───────────────────────────────────────────
 
   _loadCandidatesTab: function() {
@@ -1694,7 +1979,7 @@ _doWithdraw: function(nomId) {
       .withFailureHandler(function() { showToast('Error — please try again.'); })
       .deleteCandidate(App.token, candId);
   },
-  
+
 // ── SCRUTINY TAB ─────────────────────────────────────────────
 
 _loadScrutiny: function() {

@@ -3621,3 +3621,227 @@ function deleteCandidate(token, candId) {
 
   return { success: true };
 }
+
+// ============================================================
+
+function getLiveTally(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM','SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+  if (!electionId) return { success: false, message: 'Election ID required.' };
+
+  // Get election status
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  var elecStatus = ''; var elecTitle = '';
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === electionId) {
+      elecStatus = elecData[e][COL.ELEC_STATUS].toString();
+      elecTitle  = elecData[e][COL.ELEC_TITLE].toString();
+      break;
+    }
+  }
+  if (!elecStatus) return { success: false, message: 'Election not found.' };
+
+  // Blackout applies during active and paused
+  var blackout = (elecStatus === 'active' || elecStatus === 'paused');
+
+  // Load candidates for this election
+  var candSh   = getSheet(SHEETS.CANDIDATES);
+  var candData = candSh.getDataRange().getValues();
+  var candMap  = {}; // candId -> candidate object
+  var postMap  = {}; // postName -> { order, candidates: [] }
+  for (var c = 1; c < candData.length; c++) {
+    if (candData[c][COL.CAND_ELEC_ID].toString() !== electionId) continue;
+    var cid  = candData[c][COL.CAND_ID].toString();
+    var post = candData[c][COL.CAND_POST].toString();
+    var cobj = {
+      id:    cid,
+      name:  candData[c][COL.CAND_NAME].toString(),
+      roll:  candData[c][COL.CAND_ROLL].toString(),
+      batch: candData[c][COL.CAND_BATCH].toString(),
+      post:  post,
+      votes: 0
+    };
+    candMap[cid] = cobj;
+    if (!postMap[post]) {
+      postMap[post] = { order: candData[c][COL.CAND_POST_ORDER] || 999, candidates: [] };
+    }
+    postMap[post].candidates.push(cobj);
+  }
+
+  // Count votes from Votes sheet (only if not blackout)
+  var totalVotesCast = 0;
+  if (!blackout) {
+    var voteSh   = getSheet(SHEETS.VOTES);
+    var voteData = voteSh.getDataRange().getValues();
+    for (var v = 1; v < voteData.length; v++) {
+      if (voteData[v][COL.VOTE_ELEC_ID].toString() !== electionId) continue;
+      var vcid = voteData[v][COL.VOTE_CAND_ID].toString();
+      if (vcid === 'NOTA') {
+        totalVotesCast++;
+        // NOTA counted in post totals below
+      } else if (candMap[vcid]) {
+        candMap[vcid].votes++;
+        totalVotesCast++;
+      }
+    }
+  }
+
+  // Count NOTA per post and participation per post from VotedLog
+  var vlogSh   = getSheet(SHEETS.VOTED_LOG);
+  var vlogData = vlogSh.getDataRange().getValues();
+  var postParticipation = {}; // postName -> unique voter count
+  var postVoters = {};        // postName -> Set (using object as set)
+  for (var l = 1; l < vlogData.length; l++) {
+    if (vlogData[l][COL.LOG_ELEC_ID].toString() !== electionId) continue;
+    var lpost = vlogData[l][COL.LOG_POST].toString();
+    var lroll = vlogData[l][COL.LOG_ROLL].toString();
+    if (!postVoters[lpost]) postVoters[lpost] = {};
+    postVoters[lpost][lroll] = true;
+  }
+  Object.keys(postVoters).forEach(function(p) {
+    postParticipation[p] = Object.keys(postVoters[p]).length;
+  });
+
+  // NOTA count per post from Votes sheet (only if not blackout)
+  var postNota = {};
+  if (!blackout) {
+    var voteSh2   = getSheet(SHEETS.VOTES);
+    var voteData2 = voteSh2.getDataRange().getValues();
+    for (var v2 = 1; v2 < voteData2.length; v2++) {
+      if (voteData2[v2][COL.VOTE_ELEC_ID].toString() !== electionId) continue;
+      if (voteData2[v2][COL.VOTE_CAND_ID].toString() === 'NOTA') {
+        var npost = voteData2[v2][COL.VOTE_POST].toString();
+        postNota[npost] = (postNota[npost] || 0) + 1;
+      }
+    }
+  }
+
+  // Build sorted post list
+  var posts = Object.keys(postMap).sort(function(a, b) {
+    return postMap[a].order - postMap[b].order;
+  });
+
+  var postResults = posts.map(function(postName) {
+    var group       = postMap[postName];
+    var participated = postParticipation[postName] || 0;
+    var nota        = postNota[postName] || 0;
+
+    var cands = group.candidates.map(function(cand) {
+      return {
+        id:    cand.id,
+        name:  blackout ? null : cand.name,
+        roll:  blackout ? null : cand.roll,
+        votes: blackout ? null : cand.votes
+      };
+    });
+
+    // Sort by votes descending (only when not blackout)
+    if (!blackout) {
+      cands.sort(function(a, b) { return b.votes - a.votes; });
+    }
+
+    return {
+      post:          postName,
+      order:         group.order,
+      participated:  participated,
+      nota:          blackout ? null : nota,
+      candidates:    cands,
+      candCount:     cands.length
+    };
+  });
+
+  // Total unique voters from VotedLog
+  var allVoters = {};
+  for (var l2 = 1; l2 < vlogData.length; l2++) {
+    if (vlogData[l2][COL.LOG_ELEC_ID].toString() !== electionId) continue;
+    allVoters[vlogData[l2][COL.LOG_ROLL].toString()] = true;
+  }
+  var totalParticipants = Object.keys(allVoters).length;
+
+  return {
+    success:           true,
+    electionId:        electionId,
+    elecTitle:         elecTitle,
+    elecStatus:        elecStatus,
+    blackout:          blackout,
+    totalParticipants: totalParticipants,
+    posts:             postResults
+  };
+}
+
+// ============================================================
+
+function getVotedLogSummary(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM','SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var vlogSh   = getSheet(SHEETS.VOTED_LOG);
+  var vlogData = vlogSh.getDataRange().getValues();
+
+  var allVoters = {};
+  var postVoters = {};
+  for (var i = 1; i < vlogData.length; i++) {
+    if (vlogData[i][COL.LOG_ELEC_ID].toString() !== electionId) continue;
+    var roll = vlogData[i][COL.LOG_ROLL].toString();
+    var post = vlogData[i][COL.LOG_POST].toString();
+    allVoters[roll] = true;
+    if (!postVoters[post]) postVoters[post] = {};
+    postVoters[post][roll] = true;
+  }
+
+  var postSummary = Object.keys(postVoters).map(function(p) {
+    return { post: p, count: Object.keys(postVoters[p]).length };
+  });
+
+  var voterCount = getVoterCount(token);
+  var totalEligible = voterCount.success ? voterCount.count : 0;
+  var totalVoted    = Object.keys(allVoters).length;
+
+  return {
+    success:        true,
+    totalEligible:  totalEligible,
+    totalVoted:     totalVoted,
+    turnoutPct:     totalEligible > 0
+                      ? Math.round((totalVoted / totalEligible) * 1000) / 10
+                      : 0,
+    postSummary:    postSummary
+  };
+}
+
+// ============================================================
+
+function recordTallyCoSign(token, electionId, confirmation) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','DEPUTY_RO','SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  if (!confirmation || confirmation.toString().trim().length < 5) {
+    return { success: false, message: 'Please enter a confirmation statement (minimum 5 characters).' };
+  }
+
+  // Only allow co-sign when election is closed or declared
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === electionId) {
+      var st = elecData[e][COL.ELEC_STATUS].toString();
+      if (st !== 'closed' && st !== 'declared') {
+        return { success: false,
+          message: 'Tally co-sign is only available after the election is closed.' };
+      }
+      break;
+    }
+  }
+
+  appendAdminLog(sess.identity, 'tally_cosign',
+    'Tally co-signed for election ' + electionId + ': ' + confirmation.toString().trim(),
+    '', electionId);
+
+  return { success: true };
+}
