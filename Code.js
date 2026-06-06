@@ -3118,3 +3118,403 @@ function resendConfirmationEmail(token, nomId, role) {
     '', role);
   return { success: true };
 }
+
+// ============================================================
+// SCRUTINY FUNCTIONS
+// ============================================================
+
+function getScrutinyData(token, nomId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var role = sess.role;
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  if (!nomId) return { success: false, message: 'Nomination ID required.' };
+
+  // Load nomination row
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+
+  var nomination = {
+    id:              nom[COL.NOM_ID].toString(),
+    elecId:          nom[COL.NOM_ELEC_ID].toString(),
+    post:            nom[COL.NOM_POST].toString(),
+    candRoll:        nom[COL.NOM_CAND_ROLL].toString(),
+    candName:        nom[COL.NOM_CAND_NAME].toString(),
+    candBatch:       nom[COL.NOM_CAND_BATCH].toString(),
+    candEmail:       nom[COL.NOM_CAND_EMAIL].toString(),
+    status:          nom[COL.NOM_STATUS].toString(),
+    rejectionReason: nom[COL.NOM_REJECTION].toString(),
+    bio:             nom[COL.NOM_BIO].toString(),
+    entryMethod:     nom[COL.NOM_ENTRY_METHOD].toString(),
+    reinstated:      false   // Appeals not yet built — always false for now
+  };
+
+  // Load ScrutinyLog rows for this nomination
+  var scSh   = getSheet(SHEETS.SCRUTINY_LOG);
+  var scData = scSh.getDataRange().getValues();
+  var savedMap = {};
+  for (var j = 1; j < scData.length; j++) {
+    if (scData[j][COL.SCLOG_NOM_ID].toString() !== nomId) continue;
+    savedMap[scData[j][COL.SCLOG_CHECK_ITEM].toString()] = {
+      checkItem:   scData[j][COL.SCLOG_CHECK_ITEM].toString(),
+      checkResult: scData[j][COL.SCLOG_CHECK_RESULT].toString(),
+      notes:       scData[j][COL.SCLOG_NOTES].toString()
+    };
+  }
+
+  // Auto-assess items 3-6 from nomination data
+  // These are known facts by the time a nomination reaches confirmed status
+  var autoAssess = {
+    one_post: 'Yes',   // one-post gate enforced at submission; reaching confirmed means it passed
+    proposer: nom[COL.NOM_PROP_CONFIRMED].toString() === 'true' ? 'Yes' : 'No',
+    seconder: nom[COL.NOM_SEC_CONFIRMED].toString()  === 'true' ? 'Yes' : 'No',
+    consent:  nom[COL.NOM_CONSENT_STATUS].toString() === 'accepted' ? 'Yes' :
+              nom[COL.NOM_CONSENT_STATUS].toString() === ''         ? 'N/A' : 'No'
+  };
+
+  // Merge: saved ScrutinyLog takes precedence over auto-assess
+  // (RO can override auto-assessed items if needed)
+  var checklist = [];
+  var ALL_ITEMS = ['post_eligibility', 'tenure_bar', 'one_post', 'proposer', 'seconder', 'consent'];
+  ALL_ITEMS.forEach(function(key) {
+    if (savedMap[key]) {
+      checklist.push(savedMap[key]);
+    } else if (autoAssess[key]) {
+      checklist.push({ checkItem: key, checkResult: autoAssess[key], notes: '' });
+    } else {
+      checklist.push({ checkItem: key, checkResult: 'Pending', notes: '' });
+    }
+  });
+
+  return { success: true, nomination: nomination, checklist: checklist };
+}
+
+// ============================================================
+
+function saveScrutinyItem(token, nomId, checkItem, checkResult, notes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var role = sess.role;
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  if (!nomId || !checkItem || !checkResult) {
+    return { success: false, message: 'Missing required fields.' };
+  }
+
+  // Load nomination to get elecId, candRoll, post
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+
+  var elecId   = nom[COL.NOM_ELEC_ID].toString();
+  var candRoll = nom[COL.NOM_CAND_ROLL].toString();
+  var post     = nom[COL.NOM_POST].toString();
+  var ts       = now().toISOString();
+
+  // Upsert: update existing row for this nomId + checkItem, or append new
+  var scSh   = getSheet(SHEETS.SCRUTINY_LOG);
+  var scData = scSh.getDataRange().getValues();
+  var found  = false;
+  for (var j = 1; j < scData.length; j++) {
+    if (scData[j][COL.SCLOG_NOM_ID].toString()   === nomId &&
+        scData[j][COL.SCLOG_CHECK_ITEM].toString() === checkItem) {
+      scSh.getRange(j + 1, COL.SCLOG_CHECK_RESULT + 1).setValue(checkResult);
+      scSh.getRange(j + 1, COL.SCLOG_NOTES        + 1).setValue(notes || '');
+      scSh.getRange(j + 1, COL.SCLOG_LOGGED_AT    + 1).setValue(ts);
+      scSh.getRange(j + 1, COL.SCLOG_LOGGED_BY    + 1).setValue(sess.identity);
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    var newRow = new Array(18).fill('');
+    newRow[COL.SCLOG_ID]           = generateId();
+    newRow[COL.SCLOG_NOM_ID]       = nomId;
+    newRow[COL.SCLOG_ELEC_ID]      = elecId;
+    newRow[COL.SCLOG_CAND_ROLL]    = candRoll;
+    newRow[COL.SCLOG_POST]         = post;
+    newRow[COL.SCLOG_CHECK_ITEM]   = checkItem;
+    newRow[COL.SCLOG_CHECK_RESULT] = checkResult;
+    newRow[COL.SCLOG_NOTES]        = notes || '';
+    newRow[COL.SCLOG_LOGGED_AT]    = ts;
+    newRow[COL.SCLOG_LOGGED_BY]    = sess.identity;
+    scSh.appendRow(newRow);
+  }
+
+  return { success: true };
+}
+
+// ============================================================
+
+function acceptNomination(token, nomId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var role = sess.role;
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null; var nomRow = -1;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+  if (nom[COL.NOM_STATUS].toString() !== 'confirmed') {
+    return { success: false, message: 'Nomination is not in confirmed status.' };
+  }
+
+  // One-post check: block if candidate already has an accepted nomination for a different post
+  var candRoll = nom[COL.NOM_CAND_ROLL].toString();
+  var thisPost = nom[COL.NOM_POST].toString();
+  for (var k = 1; k < nomData.length; k++) {
+    if (k === nomRow) continue;
+    if (nomData[k][COL.NOM_CAND_ROLL].toString() === candRoll &&
+        nomData[k][COL.NOM_STATUS].toString()     === 'accepted' &&
+        nomData[k][COL.NOM_POST].toString()        !== thisPost) {
+      return { success: false,
+        message: 'Candidate already has an accepted nomination for another post.' };
+    }
+  }
+
+  // Gate: all checklist items must be resolved (no Pending)
+  var scGateSh   = getSheet(SHEETS.SCRUTINY_LOG);
+  var scGateData = scGateSh.getDataRange().getValues();
+  var savedItems = {};
+  for (var g = 1; g < scGateData.length; g++) {
+    if (scGateData[g][COL.SCLOG_NOM_ID].toString() !== nomId) continue;
+    savedItems[scGateData[g][COL.SCLOG_CHECK_ITEM].toString()] =
+      scGateData[g][COL.SCLOG_CHECK_RESULT].toString();
+  }
+  // Auto-assessed items are always resolved; only manual items need checking
+  var isBatchRep = nom[COL.NOM_POST].toString().toLowerCase().indexOf('batch') !== -1;
+
+  var postEligResult = savedItems['post_eligibility'] || 'Pending';
+  if (postEligResult !== 'Yes') {
+    return { success: false,
+      message: 'Cannot accept: Post eligibility is marked "' + postEligResult + '". Must be Yes.' };
+  }
+
+  var tenureBarResult = savedItems['tenure_bar'] || 'Pending';
+  var tenureBarOk = tenureBarResult === 'Yes' || (isBatchRep && tenureBarResult === 'N/A');
+  if (!tenureBarOk) {
+    return { success: false,
+      message: 'Cannot accept: Consecutive tenure bar is marked "' + tenureBarResult + '".' +
+               (isBatchRep ? ' Must be Yes or N/A for Batch Representative.' : ' Must be Yes.') };
+  }
+
+  var ts = now().toISOString();
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS         + 1).setValue('accepted');
+  nomSh.getRange(nomRow + 1, COL.NOM_ONE_POST_CHECK + 1).setValue(true);
+
+  // Auto-create Candidates row
+  var candSh  = getSheet(SHEETS.CANDIDATES);
+  var postOrder = 0;
+  for (var p = 0; p < EC_POSTS.length; p++) {
+    if (EC_POSTS[p].name === thisPost) { postOrder = EC_POSTS[p].order; break; }
+  }
+  var candId = generateId();
+  var newCand = new Array(13).fill('');
+  newCand[COL.CAND_ID]          = candId;
+  newCand[COL.CAND_ELEC_ID]     = nom[COL.NOM_ELEC_ID].toString();
+  newCand[COL.CAND_POST]        = thisPost;
+  newCand[COL.CAND_POST_ORDER]  = postOrder;
+  newCand[COL.CAND_NAME]        = nom[COL.NOM_CAND_NAME].toString();
+  newCand[COL.CAND_ROLL]        = candRoll;
+  newCand[COL.CAND_BATCH]       = nom[COL.NOM_CAND_BATCH].toString();
+  newCand[COL.CAND_BIO]         = nom[COL.NOM_BIO].toString();
+  newCand[COL.CAND_PHOTO]       = nom[COL.NOM_PHOTO].toString();
+  newCand[COL.CAND_NOM_ID]      = nomId;
+  candSh.appendRow(newCand);
+
+  appendAdminLog(sess.identity, 'scrutiny_decision',
+    'Nomination accepted: ' + nom[COL.NOM_CAND_NAME].toString() + ' for ' + thisPost,
+    'confirmed', 'accepted');
+
+  // Email candidate
+  var candEmail = nom[COL.NOM_CAND_EMAIL].toString();
+  if (candEmail) {
+    try {
+      sendEmailViaSendGrid(candEmail,
+        'SSKZM OBA — Your Nomination has been Accepted',
+        '<p>Dear ' + nom[COL.NOM_CAND_NAME].toString() + ',</p>' +
+        '<p>Your nomination for the post of <strong>' + thisPost + '</strong> ' +
+        'has been accepted by the Returning Officer.</p>' +
+        '<p>You will appear on the ballot when voting opens.</p>' +
+        '<p>SSKZM OBA Elections</p>');
+    } catch(e) { /* email failure does not block acceptance */ }
+  }
+
+  return { success: true };
+}
+
+// ============================================================
+
+function rejectNomination(token, nomId, reason) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var role = sess.role;
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  if (!reason || reason.trim().length < 5) {
+    return { success: false, message: 'Rejection reason is required (minimum 5 characters).' };
+  }
+
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null; var nomRow = -1;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+  if (nom[COL.NOM_STATUS].toString() !== 'confirmed') {
+    return { success: false, message: 'Nomination is not in confirmed status.' };
+  }
+
+  var ts = now().toISOString();
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS    + 1).setValue('rejected');
+  nomSh.getRange(nomRow + 1, COL.NOM_REJECTION + 1).setValue(reason.trim());
+
+  appendAdminLog(sess.identity, 'scrutiny_decision',
+    'Nomination rejected: ' + nom[COL.NOM_CAND_NAME].toString() +
+    ' for ' + nom[COL.NOM_POST].toString() + '. Reason: ' + reason.trim(),
+    'confirmed', 'rejected');
+
+  // Email candidate
+  var candEmail = nom[COL.NOM_CAND_EMAIL].toString();
+  if (candEmail) {
+    try {
+      sendEmailViaSendGrid(candEmail,
+        'SSKZM OBA — Your Nomination Status',
+        '<p>Dear ' + nom[COL.NOM_CAND_NAME].toString() + ',</p>' +
+        '<p>Your nomination for the post of <strong>' + nom[COL.NOM_POST].toString() +
+        '</strong> could not be accepted.</p>' +
+        '<p><strong>Reason:</strong> ' + reason.trim() + '</p>' +
+        '<p>Please contact the Returning Officer if you have questions.</p>' +
+        '<p>SSKZM OBA Elections</p>');
+    } catch(e) { /* email failure does not block rejection */ }
+  }
+
+  return { success: true };
+}
+
+// ============================================================
+
+function undoAcceptNomination(token, nomId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  // Block if election is at candidates_published or beyond
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null; var nomRow = -1;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+  if (nom[COL.NOM_STATUS].toString() !== 'accepted') {
+    return { success: false, message: 'Nomination is not in accepted status.' };
+  }
+
+  // Check election status
+  var elecId = nom[COL.NOM_ELEC_ID].toString();
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === elecId) {
+      var elecStatus = elecData[e][COL.ELEC_STATUS].toString();
+      var blocked = ['candidates_published','active','paused','closed','declared'];
+      if (blocked.indexOf(elecStatus) !== -1) {
+        return { success: false,
+          message: 'Cannot undo: candidate list has been published. Reversal is locked.' };
+      }
+      break;
+    }
+  }
+
+  // Revert nomination to confirmed
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS         + 1).setValue('confirmed');
+  nomSh.getRange(nomRow + 1, COL.NOM_ONE_POST_CHECK + 1).setValue('');
+
+  // Delete the auto-created Candidates row
+  var candSh   = getSheet(SHEETS.CANDIDATES);
+  var candData = candSh.getDataRange().getValues();
+  for (var c = candData.length - 1; c >= 1; c--) {
+    if (candData[c][COL.CAND_NOM_ID].toString() === nomId) {
+      candSh.deleteRow(c + 1);
+      break;
+    }
+  }
+
+  appendAdminLog(sess.identity, 'scrutiny_undo',
+    'Acceptance reversed for: ' + nom[COL.NOM_CAND_NAME].toString() +
+    ' (' + nom[COL.NOM_POST].toString() + '). Nomination returned to confirmed.',
+    'accepted', 'confirmed');
+
+  return { success: true };
+}
+
+// ============================================================
+
+function undoRejectNomination(token, nomId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var nomSh   = getSheet(SHEETS.NOMINATIONS);
+  var nomData = nomSh.getDataRange().getValues();
+  var nom = null; var nomRow = -1;
+  for (var i = 1; i < nomData.length; i++) {
+    if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+  if (nom[COL.NOM_STATUS].toString() !== 'rejected') {
+    return { success: false, message: 'Nomination is not in rejected status.' };
+  }
+
+  // Check election status
+  var elecId = nom[COL.NOM_ELEC_ID].toString();
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === elecId) {
+      var elecStatus = elecData[e][COL.ELEC_STATUS].toString();
+      var blocked = ['candidates_published','active','paused','closed','declared'];
+      if (blocked.indexOf(elecStatus) !== -1) {
+        return { success: false,
+          message: 'Cannot undo: candidate list has been published. Reversal is locked.' };
+      }
+      break;
+    }
+  }
+
+  // Revert to confirmed, clear rejection reason
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS    + 1).setValue('confirmed');
+  nomSh.getRange(nomRow + 1, COL.NOM_REJECTION + 1).setValue('');
+
+  appendAdminLog(sess.identity, 'scrutiny_undo',
+    'Rejection reversed for: ' + nom[COL.NOM_CAND_NAME].toString() +
+    ' (' + nom[COL.NOM_POST].toString() + '). Nomination returned to confirmed.',
+    'rejected', 'confirmed');
+
+  return { success: true };
+}

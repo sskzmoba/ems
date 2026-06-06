@@ -156,6 +156,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
         '</div></div>';
     }
+    if (tabId === 'scrutiny') {
+      setTimeout(function() { AdminPanel._loadScrutiny(); }, 0);
+      return '<div id="scrutiny-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading scrutiny queue…</div>' +
+        '</div></div>';
+    }
 
     // Coming soon — all other tabs
     var labels = {
@@ -1477,6 +1485,561 @@ _doWithdraw: function(nomId) {
     })
     .withFailureHandler(function() { showToast('Error — withdraw failed.'); })
     .withdrawNomination(App.token, nomId);
+},
+
+// ── SCRUTINY TAB ─────────────────────────────────────────────
+
+_loadScrutiny: function() {
+  var c = document.getElementById('scrutiny-content');
+  if (!c) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success || !res.elections || res.elections.length === 0) {
+        var c2 = document.getElementById('scrutiny-content');
+        if (!c2) return;
+        c2.innerHTML =
+          '<div class="panel-card"><div class="panel-card-body" ' +
+          'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+          '</div></div>';
+        return;
+      }
+      AdminPanel._scrutinySelectedElec = res.elections[0].id;
+      AdminPanel._renderScrutinyShell(res.elections);
+      AdminPanel._loadScrutinyList(res.elections[0].id);
+    })
+    .withFailureHandler(function() {
+      var c2 = document.getElementById('scrutiny-content');
+      if (c2) c2.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_scrutinySelectedElec: '',
+
+_renderScrutinyShell: function(elections) {
+  var c = document.getElementById('scrutiny-content');
+  if (!c) return;
+
+  var selHtml = '<select id="scrutiny-elec-sel" ' +
+    'onchange="AdminPanel._onScrutinyElecChange()" ' +
+    'style="width:100%;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+    'border-radius:4px;box-sizing:border-box;margin-bottom:16px;">';
+  elections.forEach(function(e) {
+    selHtml += '<option value="' + escHtml(e.id) + '"' +
+      (e.id === AdminPanel._scrutinySelectedElec ? ' selected' : '') + '>' +
+      escHtml(e.title) + ' [' + escHtml(e.status.replace(/_/g,' ')) + ']' +
+      '</option>';
+  });
+  selHtml += '</select>';
+
+  c.innerHTML =
+    selHtml +
+    '<div id="scrutiny-list-area">' +
+      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+      '<div class="spinner"></div></div>' +
+    '</div>';
+},
+
+_onScrutinyElecChange: function() {
+  var sel = document.getElementById('scrutiny-elec-sel');
+  if (!sel) return;
+  AdminPanel._scrutinySelectedElec = sel.value;
+  AdminPanel._loadScrutinyList(sel.value);
+},
+
+_loadScrutinyList: function(elecId) {
+  var area = document.getElementById('scrutiny-list-area');
+  if (!area) return;
+  area.innerHTML =
+    '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+    '<div class="spinner"></div></div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area2 = document.getElementById('scrutiny-list-area');
+      if (!area2) return;
+      if (!res || !res.success) {
+        area2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load nominations.') + '</div>';
+        return;
+      }
+      area2.innerHTML = AdminPanel._renderScrutinyList(res.nominations || []);
+    })
+    .withFailureHandler(function() {
+      var area2 = document.getElementById('scrutiny-list-area');
+      if (area2) area2.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading nominations.</div>';
+    })
+    .getNominations(App.token, elecId);
+},
+
+_renderScrutinyList: function(noms) {
+  var pending = [], completed = [];
+  noms.forEach(function(n) {
+    var s = (n.status || '').toLowerCase();
+    if (s === 'accepted' || s === 'rejected' || s === 'withdrawn') {
+      completed.push(n);
+    } else if (s === 'confirmed') {
+      pending.push(n);
+    }
+  });
+
+  var html = '';
+
+  html += '<div style="font-size:.9rem;font-weight:700;color:#1a3a5c;' +
+    'margin-bottom:10px;margin-top:4px;">Pending Scrutiny (' + pending.length + ')</div>';
+
+  if (pending.length === 0) {
+    html += '<div class="panel-card" style="margin-bottom:16px;">' +
+      '<div class="panel-card-body" style="text-align:center;padding:24px 16px;' +
+      'color:#6b7280;font-size:.88rem;">No nominations awaiting scrutiny.</div></div>';
+  } else {
+    pending.forEach(function(n) {
+      html += AdminPanel._scrutinyNomCard(n, false);
+    });
+  }
+
+  html += '<div style="font-size:.9rem;font-weight:700;color:#1a3a5c;' +
+    'margin-bottom:10px;margin-top:20px;">Completed (' + completed.length + ')</div>';
+
+  if (completed.length === 0) {
+    html += '<div class="panel-card">' +
+      '<div class="panel-card-body" style="text-align:center;padding:24px 16px;' +
+      'color:#6b7280;font-size:.88rem;">No completed scrutiny records.</div></div>';
+  } else {
+    completed.forEach(function(n) {
+      html += AdminPanel._scrutinyNomCard(n, true);
+    });
+  }
+
+  return html;
+},
+
+_scrutinyNomCard: function(n, isCompleted) {
+  var statusBadge = {
+    confirmed: 'badge-scrutiny',
+    accepted:  'badge-active',
+    rejected:  'badge-closed',
+    withdrawn: 'badge-draft'
+  };
+  var badge = statusBadge[(n.status||'').toLowerCase()] || 'badge-draft';
+  var statusLabel = (n.status || '').replace(/_/g,' ');
+
+  return '<div class="panel-card" style="margin-bottom:10px;">' +
+    '<div class="panel-card-body" style="padding:14px 16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
+        'gap:8px;margin-bottom:6px;flex-wrap:wrap;">' +
+        '<div style="font-weight:600;color:#1a3a5c;font-size:.93rem;">' +
+          escHtml(n.candName || '—') +
+        '</div>' +
+        '<span class="status-badge ' + badge + '">' + escHtml(statusLabel) + '</span>' +
+      '</div>' +
+      '<div style="font-size:.83rem;color:#555;margin-bottom:10px;">' +
+        'Post: <strong>' + escHtml(n.post || '—') + '</strong>' +
+        (n.candRoll ? ' &nbsp;·&nbsp; Roll: ' + escHtml(n.candRoll) : '') +
+        (n.candBatch ? ' &nbsp;·&nbsp; Batch: ' + escHtml(n.candBatch) : '') +
+      '</div>' +
+      (!isCompleted ?
+        '<button onclick="AdminPanel._openScrutinyDetail(\'' + escHtml(n.id) + '\')" ' +
+          'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+          'border:none;border-radius:4px;cursor:pointer;">Scrutinise</button>'
+      :
+        '<button onclick="AdminPanel._openScrutinyDetail(\'' + escHtml(n.id) + '\')" ' +
+          'style="width:100%;padding:11px;font-size:.88rem;background:#fff;color:#1a3a5c;' +
+          'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">View Record</button>'
+      ) +
+    '</div></div>';
+},
+
+_openScrutinyDetail: function(nomId) {
+  var c = document.getElementById('scrutiny-content');
+  if (!c) return;
+
+  c.innerHTML =
+    '<div style="margin-bottom:12px;">' +
+      '<button onclick="AdminPanel._loadScrutiny()" ' +
+        'style="width:100%;padding:12px;font-size:1rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">← Back to Scrutiny List</button>' +
+    '</div>' +
+    '<div id="scrutiny-detail-area">' +
+      '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+      '<div class="spinner"></div>' +
+      '<div style="font-size:.85rem;margin-top:12px;">Loading nomination data…</div>' +
+      '</div>' +
+    '</div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area = document.getElementById('scrutiny-detail-area');
+      if (!area) return;
+      if (!res || !res.success) {
+        area.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load scrutiny data.') + '</div>';
+        return;
+      }
+      AdminPanel._renderScrutinyDetail(res.nomination, res.checklist);
+    })
+    .withFailureHandler(function() {
+      var area = document.getElementById('scrutiny-detail-area');
+      if (area) area.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading data.</div>';
+    })
+    .getScrutinyData(App.token, nomId);
+},
+
+_renderScrutinyDetail: function(nom, checklist) {
+  var area = document.getElementById('scrutiny-detail-area');
+  if (!area) return;
+
+  var statusBadge = {
+    confirmed: 'badge-scrutiny',
+    accepted:  'badge-active',
+    rejected:  'badge-closed',
+    withdrawn: 'badge-draft'
+  };
+  var badge = statusBadge[(nom.status||'').toLowerCase()] || 'badge-draft';
+  var statusLabel = (nom.status || '').replace(/_/g,' ');
+  var isEditable = (nom.status||'').toLowerCase() === 'confirmed';
+
+  var CHECKLIST_ITEMS = [
+    { key: 'post_eligibility',  label: 'Post eligibility satisfied (EC service, batch, or other post-specific criteria)' },
+    { key: 'tenure_bar',        label: 'Consecutive tenure bar clear (6-year rule; N/A for Batch Representative nominations)' },
+    { key: 'one_post',          label: 'One-post rule — no other nomination by this candidate currently accepted' },
+    { key: 'proposer',          label: 'Proposer confirmation received' },
+    { key: 'seconder',          label: 'Seconder confirmation received' },
+    { key: 'consent',           label: 'Candidate consent obtained' }
+  ];
+
+  var CHECK_RESULTS = ['Pending', 'Yes', 'No', 'N/A'];
+
+  var checkMap = {};
+  (checklist || []).forEach(function(item) {
+    checkMap[item.checkItem] = { result: item.checkResult, notes: item.notes || '' };
+  });
+
+  var html =
+    '<div class="panel-card" style="margin-bottom:12px;">' +
+      '<div class="panel-card-header">Candidate Information</div>' +
+      '<div class="panel-card-body">' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:.87rem;">' +
+          '<div><span style="color:#888;">Name</span><br>' +
+            '<strong>' + escHtml(nom.candName || '—') + '</strong></div>' +
+          '<div><span style="color:#888;">Roll No</span><br>' +
+            '<strong>' + escHtml(nom.candRoll || '—') + '</strong></div>' +
+          '<div><span style="color:#888;">Batch</span><br>' +
+            '<strong>' + escHtml(nom.candBatch || '—') + '</strong></div>' +
+          '<div><span style="color:#888;">Post</span><br>' +
+            '<strong>' + escHtml(nom.post || '—') + '</strong></div>' +
+            '<div><span style="color:#888;">Entry Method</span><br>' +
+            '<strong>' + escHtml(
+              nom.entryMethod === 'online'        ? 'Phase 1 (self-nomination)' :
+              nom.entryMethod === 'phase2_online' ? 'Phase 2 (proposed by member)' :
+              nom.entryMethod === 'manual_ro'     ? 'Manual (RO entry)' :
+              nom.entryMethod || '—'
+            ) + '</strong></div>' +
+          '<div style="grid-column:1/-1;"><span style="color:#888;">Status</span><br>' +
+            '<span class="status-badge ' + badge + '">' + escHtml(statusLabel) + '</span></div>' +
+        '</div>' +
+        (nom.rejectionReason ?
+          '<div style="margin-top:12px;padding:10px;background:#fef2f2;' +
+          'border-radius:4px;font-size:.85rem;color:#b91c1c;">' +
+          '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>'
+        : '') +
+        (nom.reinstated ?
+          '<div style="margin-top:12px;padding:10px;background:#f0fdf4;' +
+          'border-radius:4px;font-size:.85rem;color:#166534;">' +
+          '⚖️ <strong>Reinstated by appeal decision.</strong></div>'
+        : '') +
+      '</div>' +
+    '</div>';
+    // Undo button — only for accepted/rejected, only if RO_ADMIN or DEPUTY_RO
+  var nomStatus = (nom.status || '').toLowerCase();
+  if ((nomStatus === 'accepted' || nomStatus === 'rejected') && !nom.reinstated) {
+    var undoLabel  = nomStatus === 'accepted' ? 'Undo Acceptance' : 'Undo Rejection';
+    var undoFn     = nomStatus === 'accepted'
+      ? 'AdminPanel._undoAccept(\'' + escHtml(nom.id) + '\')'
+      : 'AdminPanel._undoReject(\'' + escHtml(nom.id) + '\')';
+
+    html +=
+      '<div id="undo-nom-panel" style="margin-bottom:16px;">' +
+        '<div class="panel-card" style="border:1.5px solid #f59e0b;">' +
+          '<div class="panel-card-body">' +
+            '<div style="font-weight:600;color:#92400e;margin-bottom:8px;font-size:.9rem;">' +
+              '⚠️ Reverse Decision' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+              'This will return the nomination to Pending Scrutiny. ' +
+              'This action is locked once the candidate list is published.' +
+            '</div>' +
+            '<div id="undo-nom-err" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+            '<button onclick="' + undoFn + '" id="btn-undo-nom" ' +
+              'style="width:100%;padding:12px;font-size:.9rem;background:#92400e;color:#fff;' +
+              'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
+              undoLabel +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  html += '<div class="panel-card" style="margin-bottom:12px;">' +
+    '<div class="panel-card-header">Scrutiny Checklist</div>' +
+    '<div class="panel-card-body" style="padding:0;">';
+
+  CHECKLIST_ITEMS.forEach(function(item, idx) {
+    var current = checkMap[item.key] || { result: 'Pending', notes: '' };
+    var resultKey = (current.result || 'Pending');
+
+    var btnHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px;">';
+    CHECK_RESULTS.forEach(function(r) {
+      var isActive = (r === resultKey);
+      var col = isActive
+        ? (r === 'Yes' ? '#166534' : r === 'No' ? '#b91c1c' : r === 'N/A' ? '#374151' : '#92400e')
+        : '#6b7280';
+      var bg  = isActive
+        ? (r === 'Yes' ? '#dcfce7' : r === 'No' ? '#fef2f2' : r === 'N/A' ? '#f3f4f6' : '#fef9c3')
+        : '#fff';
+      var border = isActive ? col : '#d1d5db';
+      var onclickArgs = '\'' + escHtml(nom.id) + '\',\'' + escHtml(item.key) + '\',\'' + r + '\'';
+      btnHtml +=
+        '<button onclick="AdminPanel._setCheckResult(' + onclickArgs + ')" ' +
+          'id="chkbtn-' + escHtml(nom.id) + '-' + item.key + '-' + r + '" ' +
+          (isEditable ? '' : 'disabled ') +
+          'style="padding:7px 12px;font-size:.78rem;border-radius:4px;' +
+          'border:1.5px solid ' + border + ';background:' + bg + ';color:' + col + ';' +
+          'cursor:' + (isEditable ? 'pointer' : 'default') + ';white-space:nowrap;">' +
+          r +
+        '</button>';
+    });
+    btnHtml += '</div>';
+
+    var notesHtml = isEditable
+      ? '<input type="text" id="chknotes-' + escHtml(nom.id) + '-' + item.key + '" ' +
+          'value="' + escHtml(current.notes) + '" ' +
+          'placeholder="Notes (optional)" ' +
+          'onblur="AdminPanel._saveCheckItemNotes(\'' + escHtml(nom.id) + '\',\'' +
+            escHtml(item.key) + '\')" ' +
+          'style="width:100%;padding:8px 10px;font-size:.82rem;border:1px solid #e5e7eb;' +
+          'border-radius:4px;box-sizing:border-box;margin-bottom:2px;" />'
+      : (current.notes
+          ? '<div style="font-size:.8rem;color:#6b7280;padding:2px 0 4px;">' +
+              escHtml(current.notes) + '</div>'
+          : '');
+
+    html +=
+      '<div style="padding:12px 16px;' + (idx > 0 ? 'border-top:1px solid #f3f4f6;' : '') + '">' +
+        '<div style="font-size:.87rem;font-weight:600;color:#374151;margin-bottom:2px;">' +
+          (idx + 1) + '. ' + escHtml(item.label) +
+        '</div>' +
+        btnHtml +
+        notesHtml +
+      '</div>';
+  });
+
+  html += '</div></div>';
+
+  if (isEditable) {
+    html +=
+      '<div id="scrutiny-action-err" ' +
+        'style="color:#c0392b;font-size:.87rem;margin-bottom:6px;display:none;"></div>' +
+
+      '<div style="display:flex;gap:10px;margin-bottom:16px;">' +
+        '<button onclick="AdminPanel._acceptNom(\'' + escHtml(nom.id) + '\')" ' +
+          'id="btn-accept-nom" ' +
+          'style="flex:1;padding:14px;font-size:.95rem;background:#166534;color:#fff;' +
+          'border:none;border-radius:4px;cursor:pointer;font-weight:600;">✓ Accept</button>' +
+        '<button onclick="AdminPanel._rejectNomPrompt(\'' + escHtml(nom.id) + '\')" ' +
+          'id="btn-reject-nom" ' +
+          'style="flex:1;padding:14px;font-size:.95rem;background:#b91c1c;color:#fff;' +
+          'border:none;border-radius:4px;cursor:pointer;font-weight:600;">✗ Reject</button>' +
+      '</div>' +
+
+      '<div id="reject-nom-panel" style="display:none;margin-bottom:16px;">' +
+        '<div class="panel-card">' +
+          '<div class="panel-card-body">' +
+            '<div style="font-weight:600;color:#b91c1c;margin-bottom:10px;font-size:.9rem;">' +
+              'Rejection Reason (required)' +
+            '</div>' +
+            '<textarea id="reject-reason-text" rows="3" ' +
+              'placeholder="State the specific ground(s) for rejection…" ' +
+              'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #fca5a5;' +
+              'border-radius:4px;box-sizing:border-box;resize:vertical;"></textarea>' +
+            '<div id="reject-reason-err" ' +
+              'style="color:#c0392b;font-size:.83rem;margin-top:6px;display:none;"></div>' +
+            '<div style="display:flex;gap:8px;margin-top:12px;">' +
+              '<button onclick="document.getElementById(\'reject-nom-panel\').style.display=\'none\'" ' +
+                'style="flex:1;padding:12px;font-size:.88rem;background:#fff;color:#374151;' +
+                'border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Cancel</button>' +
+              '<button onclick="AdminPanel._confirmRejectNom(\'' + escHtml(nom.id) + '\')" ' +
+                'style="flex:1;padding:12px;font-size:.88rem;background:#b91c1c;color:#fff;' +
+                'border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm Reject</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  area.innerHTML = html;
+},
+
+_setCheckResult: function(nomId, checkItem, result) {
+  var results = ['Pending','Yes','No','N/A'];
+  results.forEach(function(r) {
+    var btn = document.getElementById('chkbtn-' + nomId + '-' + checkItem + '-' + r);
+    if (!btn) return;
+    var isActive = (r === result);
+    var col = isActive
+      ? (r === 'Yes' ? '#166534' : r === 'No' ? '#b91c1c' : r === 'N/A' ? '#374151' : '#92400e')
+      : '#6b7280';
+    var bg  = isActive
+      ? (r === 'Yes' ? '#dcfce7' : r === 'No' ? '#fef2f2' : r === 'N/A' ? '#f3f4f6' : '#fef9c3')
+      : '#fff';
+    btn.style.borderColor = isActive ? col : '#d1d5db';
+    btn.style.background  = bg;
+    btn.style.color       = col;
+  });
+
+  var notesEl = document.getElementById('chknotes-' + nomId + '-' + checkItem);
+  var notes   = notesEl ? notesEl.value.trim() : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) showToast((res && res.message) || 'Save failed.');
+    })
+    .withFailureHandler(function() { showToast('Error saving checklist item.'); })
+    .saveScrutinyItem(App.token, nomId, checkItem, result, notes);
+},
+
+_saveCheckItemNotes: function(nomId, checkItem) {
+  var notesEl = document.getElementById('chknotes-' + nomId + '-' + checkItem);
+  if (!notesEl) return;
+  var results = ['Pending','Yes','No','N/A'];
+  var currentResult = 'Pending';
+  results.forEach(function(r) {
+    var btn = document.getElementById('chkbtn-' + nomId + '-' + checkItem + '-' + r);
+    if (btn && btn.style.background !== 'rgb(255, 255, 255)' &&
+        btn.style.background !== '#fff' && btn.style.background !== '') {
+      currentResult = r;
+    }
+  });
+  google.script.run
+    .withSuccessHandler(function() {})
+    .withFailureHandler(function() {})
+    .saveScrutinyItem(App.token, nomId, checkItem, currentResult, notesEl.value.trim());
+},
+
+_acceptNom: function(nomId) {
+  var btn  = document.getElementById('btn-accept-nom');
+  var errEl = document.getElementById('scrutiny-action-err');
+  if (btn) { btn.textContent = 'Accepting…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Nomination accepted.');
+        AdminPanel._loadScrutiny();
+      } else {
+        if (btn) { btn.textContent = '✓ Accept'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = (res && res.message) || 'Accept failed.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '✓ Accept'; btn.disabled = false; }
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .acceptNomination(App.token, nomId);
+},
+
+_undoAccept: function(nomId) {
+  var btn   = document.getElementById('btn-undo-nom');
+  var errEl = document.getElementById('undo-nom-err');
+  if (btn) { btn.textContent = 'Reversing…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Acceptance reversed. Nomination returned to scrutiny.');
+        AdminPanel._loadScrutiny();
+      } else {
+        if (btn) { btn.textContent = 'Undo Acceptance'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = (res && res.message) || 'Undo failed.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = 'Undo Acceptance'; btn.disabled = false; }
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .undoAcceptNomination(App.token, nomId);
+},
+
+_undoReject: function(nomId) {
+  var btn   = document.getElementById('btn-undo-nom');
+  var errEl = document.getElementById('undo-nom-err');
+  if (btn) { btn.textContent = 'Reversing…'; btn.disabled = true; }
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Rejection reversed. Nomination returned to scrutiny.');
+        AdminPanel._loadScrutiny();
+      } else {
+        if (btn) { btn.textContent = 'Undo Rejection'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = (res && res.message) || 'Undo failed.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = 'Undo Rejection'; btn.disabled = false; }
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .undoRejectNomination(App.token, nomId);
+},
+
+_rejectNomPrompt: function(nomId) {
+  var panel = document.getElementById('reject-nom-panel');
+  if (panel) panel.style.display = 'block';
+  var btn = document.getElementById('btn-reject-nom');
+  if (btn) btn.disabled = true;
+},
+
+_confirmRejectNom: function(nomId) {
+  var reasonEl = document.getElementById('reject-reason-text');
+  var errEl    = document.getElementById('reject-reason-err');
+  var reason   = reasonEl ? reasonEl.value.trim() : '';
+
+  if (!reason) {
+    if (errEl) { errEl.textContent = 'Rejection reason is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Nomination rejected.');
+        AdminPanel._loadScrutiny();
+      } else {
+        var e2 = document.getElementById('reject-reason-err');
+        if (e2) { e2.textContent = (res && res.message) || 'Reject failed.'; e2.style.display = 'block'; }
+        var btn = document.getElementById('btn-reject-nom');
+        if (btn) btn.disabled = false;
+      }
+    })
+    .withFailureHandler(function() {
+      var e2 = document.getElementById('reject-reason-err');
+      if (e2) { e2.textContent = 'Error — please try again.'; e2.style.display = 'block'; }
+      var btn = document.getElementById('btn-reject-nom');
+      if (btn) btn.disabled = false;
+    })
+    .rejectNomination(App.token, nomId, reason);
 },
 
   // ── ADMIN LOG TAB ────────────────────────────────────────────
