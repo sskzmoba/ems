@@ -3518,3 +3518,106 @@ function undoRejectNomination(token, nomId) {
 
   return { success: true };
 }
+// ============================================================
+
+function getCandidatesForElection(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  if (!electionId) return { success: false, message: 'Election ID required.' };
+
+  // Get election status
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  var elecStatus = '';
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === electionId) {
+      elecStatus = elecData[e][COL.ELEC_STATUS].toString();
+      break;
+    }
+  }
+
+  var candSh   = getSheet(SHEETS.CANDIDATES);
+  var candData = candSh.getDataRange().getValues();
+  var candidates = [];
+  for (var i = 1; i < candData.length; i++) {
+    if (candData[i][COL.CAND_ELEC_ID].toString() !== electionId) continue;
+    candidates.push({
+      id:        candData[i][COL.CAND_ID].toString(),
+      elecId:    electionId,
+      post:      candData[i][COL.CAND_POST].toString(),
+      postOrder: candData[i][COL.CAND_POST_ORDER] || 999,
+      name:      candData[i][COL.CAND_NAME].toString(),
+      roll:      candData[i][COL.CAND_ROLL].toString(),
+      batch:     candData[i][COL.CAND_BATCH].toString(),
+      bio:       candData[i][COL.CAND_BIO].toString(),
+      nomId:     candData[i][COL.CAND_NOM_ID].toString()
+    });
+  }
+
+  return { success: true, candidates: candidates, elecStatus: elecStatus };
+}
+
+// ============================================================
+
+function deleteCandidate(token, candId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var candSh   = getSheet(SHEETS.CANDIDATES);
+  var candData = candSh.getDataRange().getValues();
+  var candRow = -1; var nomId = ''; var candName = ''; var post = '';
+  for (var i = 1; i < candData.length; i++) {
+    if (candData[i][COL.CAND_ID].toString() === candId) {
+      candRow  = i;
+      nomId    = candData[i][COL.CAND_NOM_ID].toString();
+      candName = candData[i][COL.CAND_NAME].toString();
+      post     = candData[i][COL.CAND_POST].toString();
+      break;
+    }
+  }
+  if (candRow === -1) return { success: false, message: 'Candidate not found.' };
+
+  // Check election status lock
+  var elecId   = candData[candRow][COL.CAND_ELEC_ID].toString();
+  var elecSh   = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === elecId) {
+      var blocked = ['candidates_published','active','paused','closed','declared'];
+      if (blocked.indexOf(elecData[e][COL.ELEC_STATUS].toString()) !== -1) {
+        return { success: false,
+          message: 'Cannot delete: candidate list has been published.' };
+      }
+      break;
+    }
+  }
+
+  // Delete candidate row
+  candSh.deleteRow(candRow + 1);
+
+  // Return nomination to confirmed
+  if (nomId) {
+    var nomSh   = getSheet(SHEETS.NOMINATIONS);
+    var nomData = nomSh.getDataRange().getValues();
+    for (var n = 1; n < nomData.length; n++) {
+      if (nomData[n][COL.NOM_ID].toString() === nomId) {
+        nomSh.getRange(n + 1, COL.NOM_STATUS         + 1).setValue('confirmed');
+        nomSh.getRange(n + 1, COL.NOM_ONE_POST_CHECK + 1).setValue('');
+        break;
+      }
+    }
+  }
+
+  appendAdminLog(sess.identity, 'candidate_deleted',
+    'Candidate deleted: ' + candName + ' for ' + post +
+    '. Nomination ' + nomId + ' returned to confirmed.',
+    'accepted', 'confirmed');
+
+  return { success: true };
+}
