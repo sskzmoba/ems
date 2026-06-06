@@ -3845,3 +3845,140 @@ function recordTallyCoSign(token, electionId, confirmation) {
 
   return { success: true };
 }
+
+// ============================================================
+
+function getHandoverChecklist(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM','SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var logSh   = getSheet(SHEETS.ADMIN_LOG);
+  var logData = logSh.getDataRange().getValues();
+
+  var items = {
+    ec_locked:            { done: false, at: '', by: '' },
+    voter_roll_certified: { done: false, at: '', by: '' },
+    sheet_protections:    { done: false, at: '', by: '' },
+    scrutineer_part_a:    { done: false, at: '', by: '' },
+    version_verified:     { done: false, at: '', by: '' }
+  };
+
+  for (var i = 1; i < logData.length; i++) {
+    var action  = logData[i][COL.ALOG_ACTION_TYPE].toString();
+    var newVal  = logData[i][COL.ALOG_NEW_VALUE].toString();
+    var at      = logData[i][COL.ALOG_TIMESTAMP].toString();
+    var by      = logData[i][COL.ALOG_ADMIN_ID].toString();
+    var desc    = logData[i][COL.ALOG_DESCRIPTION].toString();
+
+    if (action === 'ec_officers_locked') {
+      items.ec_locked = { done: true, at: at, by: by };
+    }
+    if (action === 'voter_roll_certified') {
+      items.voter_roll_certified = { done: true, at: at, by: by };
+    }
+    if (action === 'sheet_protections_applied') {
+      items.sheet_protections = { done: true, at: at, by: by };
+    }
+    if (action === 'scrutineer_confirmation' && newVal === electionId &&
+        desc.indexOf('Part A') !== -1) {
+      items.scrutineer_part_a = { done: true, at: at, by: by };
+    }
+    if (action === 'version_verified') {
+      items.version_verified = { done: true, at: at, by: by };
+    }
+  }
+
+  return { success: true, items: items, role: sess.role };
+}
+
+// ============================================================
+
+function lockECOfficers(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var adminSh   = getSheet(SHEETS.ADMINS);
+  var adminData = adminSh.getDataRange().getValues();
+  var count = 0;
+
+  for (var i = 1; i < adminData.length; i++) {
+    if (adminData[i][COL.ADMIN_ROLE].toString() === 'EC_OFFICER' &&
+        adminData[i][COL.ADMIN_STATUS].toString() !== 'DISABLED') {
+      adminSh.getRange(i + 1, COL.ADMIN_STATUS      + 1).setValue('DISABLED');
+      adminSh.getRange(i + 1, COL.ADMIN_DISABLED_AT + 1).setValue(now().toISOString());
+      adminSh.getRange(i + 1, COL.ADMIN_DISABLED_BY + 1).setValue(sess.identity);
+      count++;
+    }
+  }
+
+  appendAdminLog(sess.identity, 'ec_officers_locked',
+    'All EC Officer accounts disabled at handover. Count: ' + count, '', '');
+
+  return { success: true, count: count };
+}
+
+// ============================================================
+
+function applySheetProtections(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var ss = SpreadsheetApp.openById(SYSTEM_B_SHEET_ID);
+  var me = Session.getEffectiveUser();
+  var results = [];
+
+  var toProtect = [
+    SHEETS.VOTES, SHEETS.VOTED_LOG, SHEETS.VOTERS,
+    SHEETS.ADMINS, SHEETS.ADMIN_LOG, SHEETS.NOMINATIONS,
+    SHEETS.SCRUTINY_LOG, SHEETS.CANDIDATES
+  ];
+
+  toProtect.forEach(function(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) { results.push(name + ': not found'); return; }
+    var existing = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    existing.forEach(function(p) { p.remove(); });
+    var prot = sh.protect().setDescription('Protected at election handover');
+    var editors = prot.getEditors();
+    prot.removeEditors(editors);
+    prot.addEditor(me);
+    results.push(name + ': protected');
+  });
+
+  var otpSh = ss.getSheetByName(SHEETS.OTPS);
+  if (otpSh) { otpSh.hideSheet(); results.push('OTPs: hidden'); }
+
+  appendAdminLog(sess.identity, 'sheet_protections_applied',
+    'Sheet protections applied: ' + results.join('; '), '', '');
+
+  return { success: true, results: results };
+}
+
+// ============================================================
+
+function recordScrutineerConfirmation(token, electionId, part, confirmationText) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM','SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var p = (part || '').toString().toUpperCase();
+  if (p !== 'A' && p !== 'B') {
+    return { success: false, message: 'Part must be A or B.' };
+  }
+  if (!confirmationText || confirmationText.toString().trim().length < 5) {
+    return { success: false, message: 'Please enter a confirmation statement.' };
+  }
+
+  appendAdminLog(sess.identity, 'scrutineer_confirmation',
+    'Scrutineer confirmed Part ' + p + ' for election ' + electionId +
+    ': ' + confirmationText.toString().trim(),
+    '', electionId);
+
+  return { success: true };
+}
+

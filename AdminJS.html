@@ -156,6 +156,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
         '</div></div>';
     }
+    if (tabId === 'handover') {
+      setTimeout(function() { AdminPanel._loadHandover(); }, 0);
+      return '<div id="handover-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading handover checklist…</div>' +
+        '</div></div>';
+    }
     if (tabId === 'tally') {
       setTimeout(function() { AdminPanel._loadTally(); }, 0);
       return '<div id="tally-content">' +
@@ -1503,6 +1511,292 @@ _doWithdraw: function(nomId) {
     .withdrawNomination(App.token, nomId);
 },
 
+// ── HANDOVER TAB ─────────────────────────────────────────────
+
+  _loadHandover: function() {
+    var c = document.getElementById('handover-content');
+    if (!c) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success || !res.elections || res.elections.length === 0) {
+          var c2 = document.getElementById('handover-content');
+          if (!c2) return;
+          c2.innerHTML =
+            '<div class="panel-card"><div class="panel-card-body" ' +
+            'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+            '</div></div>';
+          return;
+        }
+        AdminPanel._handoverSelectedElec = res.elections[0].id;
+        AdminPanel._renderHandoverShell(res.elections);
+        AdminPanel._loadHandoverChecklist(res.elections[0].id);
+      })
+      .withFailureHandler(function() {
+        var c2 = document.getElementById('handover-content');
+        if (c2) c2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+      })
+      .getAllElections(App.token);
+  },
+
+  _handoverSelectedElec: '',
+
+  _renderHandoverShell: function(elections) {
+    var c = document.getElementById('handover-content');
+    if (!c) return;
+
+    var selHtml = '<select id="handover-elec-sel" ' +
+      'onchange="AdminPanel._onHandoverElecChange()" ' +
+      'style="width:100%;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+      'border-radius:4px;box-sizing:border-box;margin-bottom:16px;">';
+    elections.forEach(function(e) {
+      selHtml += '<option value="' + escHtml(e.id) + '"' +
+        (e.id === AdminPanel._handoverSelectedElec ? ' selected' : '') + '>' +
+        escHtml(e.title) + ' [' + escHtml(e.status.replace(/_/g,' ')) + ']' +
+        '</option>';
+    });
+    selHtml += '</select>';
+
+    c.innerHTML =
+      selHtml +
+      '<div id="handover-checklist-area">' +
+        '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+        '<div class="spinner"></div></div>' +
+      '</div>';
+  },
+
+  _onHandoverElecChange: function() {
+    var sel = document.getElementById('handover-elec-sel');
+    if (!sel) return;
+    AdminPanel._handoverSelectedElec = sel.value;
+    AdminPanel._loadHandoverChecklist(sel.value);
+  },
+
+  _loadHandoverChecklist: function(elecId) {
+    var area = document.getElementById('handover-checklist-area');
+    if (!area) return;
+    area.innerHTML =
+      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+      '<div class="spinner"></div></div>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var area2 = document.getElementById('handover-checklist-area');
+        if (!area2) return;
+        if (!res || !res.success) {
+          area2.innerHTML =
+            '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+            escHtml((res && res.message) || 'Failed to load checklist.') + '</div>';
+          return;
+        }
+        area2.innerHTML = AdminPanel._renderHandoverChecklist(res, elecId);
+      })
+      .withFailureHandler(function() {
+        var area2 = document.getElementById('handover-checklist-area');
+        if (area2) area2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading checklist.</div>';
+      })
+      .getHandoverChecklist(App.token, elecId);
+  },
+
+  _renderHandoverChecklist: function(res, elecId) {
+    var items   = res.items;
+    var role    = res.role;
+    var isRO    = (role === 'RO_ADMIN');
+    var isScrut = (role === 'SCRUTINEER');
+
+    var ITEMS = [
+      {
+        key:     'ec_locked',
+        label:   'EC Officer accounts locked',
+        desc:    'All EC_OFFICER accounts must be disabled before handover is complete.',
+        roBtn:   true,
+        btnLabel:'Lock EC Accounts',
+        btnFn:   'AdminPanel._lockECOfficers()'
+      },
+      {
+        key:     'voter_roll_certified',
+        label:   'Voter roll certified',
+        desc:    'The voter roll has been certified and uploaded by the RO.',
+        roBtn:   false
+      },
+      {
+        key:     'sheet_protections',
+        label:   'Sheet protections applied',
+        desc:    'Critical sheets are protected against manual editing.',
+        roBtn:   true,
+        btnLabel:'Apply Sheet Protections',
+        btnFn:   'AdminPanel._applySheetProtections()'
+      },
+      {
+        key:     'scrutineer_part_a',
+        label:   'Scrutineer confirmation — Part A',
+        desc:    'Scrutineer has confirmed code/data verification (Part A).',
+        roBtn:   false,
+        scrutBtn: true
+      },
+      {
+        key:     'version_verified',
+        label:   'Version verified',
+        desc:    'Deployed script version matches GitHub commit.',
+        roBtn:   false
+      }
+    ];
+
+    var doneCount = 0;
+    ITEMS.forEach(function(item) {
+      if (items[item.key] && items[item.key].done) doneCount++;
+    });
+
+    var allDone = (doneCount === ITEMS.length);
+
+    var html =
+      '<div class="panel-card" style="margin-bottom:14px;">' +
+        '<div class="panel-card-body" style="padding:14px 16px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;">Handover Checklist</div>' +
+            '<div style="font-size:.85rem;font-weight:600;color:' +
+              (allDone ? '#166534' : '#92400e') + ';">' +
+              doneCount + ' / ' + ITEMS.length + ' complete' +
+            '</div>' +
+          '</div>' +
+          (allDone ?
+            '<div style="margin-top:10px;padding:10px;background:#dcfce7;border-radius:4px;' +
+            'font-size:.85rem;color:#166534;font-weight:600;">✓ All handover items complete.</div>'
+          : '') +
+        '</div>' +
+      '</div>';
+
+    ITEMS.forEach(function(item) {
+      var state = items[item.key] || { done: false, at: '', by: '' };
+      var isDone = state.done;
+
+      html +=
+        '<div class="panel-card" style="margin-bottom:10px;' +
+          (isDone ? 'border-left:4px solid #166534;' : 'border-left:4px solid #e5e7eb;') + '">' +
+          '<div class="panel-card-body" style="padding:14px 16px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
+              'gap:8px;margin-bottom:4px;">' +
+              '<div style="font-weight:600;color:#1a3a5c;font-size:.9rem;">' +
+                (isDone ? '✓ ' : '○ ') + escHtml(item.label) +
+              '</div>' +
+              '<span style="font-size:.75rem;padding:2px 8px;border-radius:10px;white-space:nowrap;' +
+                'font-weight:600;background:' + (isDone ? '#dcfce7' : '#fef9c3') + ';' +
+                'color:' + (isDone ? '#166534' : '#92400e') + ';">' +
+                (isDone ? 'Done' : 'Pending') +
+              '</span>' +
+            '</div>' +
+            '<div style="font-size:.82rem;color:#6b7280;margin-bottom:8px;">' +
+              escHtml(item.desc) +
+            '</div>' +
+            (isDone ?
+              '<div style="font-size:.78rem;color:#6b7280;">' +
+                'Completed ' + escHtml(state.at ? new Date(state.at).toLocaleString('en-IN') : '') +
+                (state.by ? ' by ' + escHtml(state.by) : '') +
+              '</div>'
+            :
+              // Action buttons
+              (item.roBtn && isRO ?
+                '<button onclick="' + item.btnFn + '" ' +
+                  'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+                  'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
+                  escHtml(item.btnLabel) +
+                '</button>'
+              : '') +
+              (item.scrutBtn && (isScrut || isRO) ?
+                '<div>' +
+                  '<textarea id="scrut-part-a-text" rows="2" ' +
+                    'placeholder="Enter your confirmation statement…" ' +
+                    'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;' +
+                    'border-radius:4px;box-sizing:border-box;margin-bottom:8px;resize:vertical;"></textarea>' +
+                  '<div id="scrut-part-a-err" ' +
+                    'style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
+                  '<button onclick="AdminPanel._recordScrutPartA(\'' + escHtml(elecId) + '\')" ' +
+                    'id="btn-scrut-part-a" ' +
+                    'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+                    'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
+                    'Record Part A Confirmation' +
+                  '</button>' +
+                '</div>'
+              : '') +
+              (!item.roBtn && !item.scrutBtn ?
+                '<div style="font-size:.82rem;color:#9ca3af;font-style:italic;">' +
+                  'This item is confirmed automatically from system records.' +
+                '</div>'
+              : '')
+            ) +
+          '</div>' +
+        '</div>';
+    });
+
+    return html;
+  },
+
+  _lockECOfficers: function() {
+    if (!confirm('Lock all EC Officer accounts now?\n\nThis will disable all EC_OFFICER logins immediately. This action is logged to the audit record.')) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('EC Officer accounts locked (' + res.count + ' accounts disabled).');
+          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
+        } else {
+          showToast((res && res.message) || 'Lock failed.');
+        }
+      })
+      .withFailureHandler(function() { showToast('Error — please try again.'); })
+      .lockECOfficers(App.token);
+  },
+
+  _applySheetProtections: function() {
+    if (!confirm('Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.')) return;
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Sheet protections applied.');
+          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
+        } else {
+          showToast((res && res.message) || 'Failed to apply protections.');
+        }
+      })
+      .withFailureHandler(function() { showToast('Error — please try again.'); })
+      .applySheetProtections(App.token);
+  },
+
+  _recordScrutPartA: function(elecId) {
+    var textEl = document.getElementById('scrut-part-a-text');
+    var errEl  = document.getElementById('scrut-part-a-err');
+    var btn    = document.getElementById('btn-scrut-part-a');
+    var text   = textEl ? textEl.value.trim() : '';
+
+    if (!text || text.length < 5) {
+      if (errEl) { errEl.textContent = 'Please enter a confirmation statement.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Part A confirmation recorded.');
+          AdminPanel._loadHandoverChecklist(elecId);
+        } else {
+          if (btn) { btn.textContent = 'Record Part A Confirmation'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Record Part A Confirmation'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .recordScrutineerConfirmation(App.token, elecId, 'A', text);
+  },
+  
 // ── TALLY TAB ────────────────────────────────────────────────
 
   _loadTally: function() {
@@ -1779,7 +2073,7 @@ _doWithdraw: function(nomId) {
       })
       .recordTallyCoSign(App.token, elecId, text);
   },
-  
+
 // ── CANDIDATES TAB ───────────────────────────────────────────
 
   _loadCandidatesTab: function() {
