@@ -19,6 +19,8 @@ var AdminPanel = (function() {
       { id:'handover',    label:'Handover' },
       { id:'admins',      label:'Admins' },
       { id:'adminlog',    label:'Log' },
+      { id:'complaints',  label:'Complaints' },
+      { id:'appeals',     label:'Appeals' },
       { id:'settings',    label:'Settings' }
     ],
     DEPUTY_RO: [
@@ -29,7 +31,9 @@ var AdminPanel = (function() {
       { id:'voters',      label:'Voters' },
       { id:'tally',       label:'Tally' },
       { id:'handover',    label:'Handover' },
-      { id:'adminlog',    label:'Log' }
+      { id:'adminlog',    label:'Log' },
+      { id:'complaints',  label:'Complaints' },
+      { id:'appeals',     label:'Appeals' }
     ],
     TEM: [
       { id:'elections',   label:'Elections' },
@@ -194,6 +198,24 @@ var AdminPanel = (function() {
         '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
         '<div class="spinner"></div>' +
         '<div style="font-size:.85rem;margin-top:12px;">Loading scrutiny queue…</div>' +
+        '</div></div>';
+    }
+
+    if (tabId === 'complaints') {
+      setTimeout(function() { AdminPanel._loadComplaints(); }, 0);
+      return '<div id="complaints-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading complaints…</div>' +
+        '</div></div>';
+    }
+
+    if (tabId === 'appeals') {
+      setTimeout(function() { AdminPanel._loadAppeals(); }, 0);
+      return '<div id="appeals-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading appeals…</div>' +
         '</div></div>';
     }
 
@@ -3128,6 +3150,332 @@ _renderAdminLog: function(res, filter) {
   }
 
   return html;
+},
+
+// ── COMPLAINTS TAB ────────────────────────────────────────
+
+_loadComplaints: function() {
+  var c = document.getElementById('complaints-content');
+  if (!c) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c = document.getElementById('complaints-content');
+      if (!c) return;
+      if (!res || !res.success) {
+        c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load complaints.') + '</div>';
+        return;
+      }
+      c.innerHTML = AdminPanel._renderComplaints(res.complaints || []);
+    })
+    .withFailureHandler(function() {
+      var c = document.getElementById('complaints-content');
+      if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Connection error.</div>';
+    })
+    .getComplaints(App.token, null);
+},
+
+_renderComplaints: function(complaints) {
+  var statusLabels = {
+    filed:               'Filed',
+    under_review:        'Under Review',
+    resolved_upheld:     'Resolved — Upheld',
+    resolved_dismissed:  'Resolved — Dismissed',
+    referred_to_ec:      'Referred to EC'
+  };
+  var statusColors = {
+    filed:               '#fef3c7',
+    under_review:        '#eff6ff',
+    resolved_upheld:     '#d1fae5',
+    resolved_dismissed:  '#f3f4f6',
+    referred_to_ec:      '#fce7f3'
+  };
+
+  var html =
+    '<div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">' +
+      '<div style="font-size:.9rem;color:#6b7280;">' +
+        '<strong style="color:#374151;">' + complaints.length + '</strong> complaint' +
+        (complaints.length !== 1 ? 's' : '') + ' on record' +
+      '</div>' +
+    '</div>';
+
+  if (complaints.length === 0) {
+    html +=
+      '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+        '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Complaints</div>' +
+        '<div style="font-size:.85rem;">No complaints have been filed for this election.</div>' +
+      '</div>';
+    return html;
+  }
+
+  for (var i = 0; i < complaints.length; i++) {
+    var cmp = complaints[i];
+    var bgColor = statusColors[cmp.status] || '#f9fafb';
+    var statusLabel = statusLabels[cmp.status] || cmp.status;
+    html +=
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+      'padding:16px;margin-bottom:14px;">' +
+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
+        'gap:8px;margin-bottom:10px;">' +
+          '<div>' +
+            '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:2px;">' +
+              escHtml(cmp.id) + '</div>' +
+            '<div style="font-size:.82rem;color:#6b7280;">' +
+              'Filed by: <strong>' + escHtml(cmp.filedByRoll) + '</strong>' +
+              ' · ' + escHtml(cmp.filedAt.toString().split('T')[0] || cmp.filedAt.toString()) +
+            '</div>' +
+          '</div>' +
+          '<span style="font-size:.75rem;padding:3px 10px;border-radius:10px;font-weight:600;' +
+            'background:' + bgColor + ';white-space:nowrap;">' +
+            escHtml(statusLabel) +
+          '</span>' +
+        '</div>' +
+
+        (cmp.againstName ? '<div style="font-size:.85rem;color:#374151;margin-bottom:6px;">' +
+          'Against: <strong>' + escHtml(cmp.againstName) + '</strong></div>' : '') +
+
+        '<div style="font-size:.88rem;color:#1f2937;background:#f9fafb;border-radius:6px;' +
+        'padding:10px 12px;margin-bottom:12px;line-height:1.5;">' +
+          escHtml(cmp.complaintText) +
+        '</div>' +
+
+        (cmp.roNotes ? '<div style="font-size:.82rem;color:#374151;margin-bottom:6px;">' +
+          '<strong>RO Notes:</strong> ' + escHtml(cmp.roNotes) + '</div>' : '') +
+        (cmp.resolution ? '<div style="font-size:.82rem;color:#374151;margin-bottom:10px;">' +
+          '<strong>Resolution:</strong> ' + escHtml(cmp.resolution) + '</div>' : '') +
+
+        '<div style="border-top:1px solid #f3f4f6;padding-top:12px;">' +
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:8px;">Update Status</div>' +
+          '<select id="cmp-status-' + i + '" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;">' +
+            '<option value="filed"' +              (cmp.status==='filed'?              ' selected':'') + '>Filed</option>' +
+            '<option value="under_review"' +       (cmp.status==='under_review'?       ' selected':'') + '>Under Review</option>' +
+            '<option value="resolved_upheld"' +    (cmp.status==='resolved_upheld'?    ' selected':'') + '>Resolved — Upheld</option>' +
+            '<option value="resolved_dismissed"' + (cmp.status==='resolved_dismissed'? ' selected':'') + '>Resolved — Dismissed</option>' +
+            '<option value="referred_to_ec"' +     (cmp.status==='referred_to_ec'?     ' selected':'') + '>Referred to EC</option>' +
+          '</select>' +
+          '<textarea id="cmp-notes-' + i + '" placeholder="RO notes (optional)…" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;min-height:60px;' +
+            'font-family:Arial,sans-serif;resize:vertical;">' +
+            escHtml(cmp.roNotes) +
+          '</textarea>' +
+          '<textarea id="cmp-res-' + i + '" placeholder="Resolution text (optional)…" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;min-height:60px;' +
+            'font-family:Arial,sans-serif;resize:vertical;">' +
+            escHtml(cmp.resolution) +
+          '</textarea>' +
+          '<button onclick="AdminPanel._saveComplaint(\'' + escHtml(cmp.id) + '\',' + i + ')" ' +
+            'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">' +
+            'Save Update' +
+          '</button>' +
+        '</div>' +
+
+      '</div>';
+  }
+  return html;
+},
+
+_saveComplaint: function(complaintId, idx) {
+  var statusEl = document.getElementById('cmp-status-' + idx);
+  var notesEl  = document.getElementById('cmp-notes-'  + idx);
+  var resEl    = document.getElementById('cmp-res-'    + idx);
+  if (!statusEl) return;
+
+  var status     = statusEl.value;
+  var notes      = notesEl  ? notesEl.value.trim()  : '';
+  var resolution = resEl    ? resEl.value.trim()     : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast((res && res.message) || 'Update failed.', true);
+        return;
+      }
+      showToast('Complaint updated.');
+      AdminPanel._loadComplaints();
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .updateComplaintStatus(App.token, complaintId, status, notes, resolution);
+},
+
+// ── APPEALS TAB ───────────────────────────────────────────
+
+_loadAppeals: function() {
+  var c = document.getElementById('appeals-content');
+  if (!c) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c = document.getElementById('appeals-content');
+      if (!c) return;
+      if (!res || !res.success) {
+        c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load appeals.') + '</div>';
+        return;
+      }
+      c.innerHTML = AdminPanel._renderAppeals(res.appeals || []);
+    })
+    .withFailureHandler(function() {
+      var c = document.getElementById('appeals-content');
+      if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Connection error.</div>';
+    })
+    .getAppeals(App.token, null);
+},
+
+_renderAppeals: function(appeals) {
+  var statusLabels = {
+    filed:        'Filed',
+    under_review: 'Under Review',
+    upheld:       'Upheld',
+    dismissed:    'Dismissed'
+  };
+  var statusColors = {
+    filed:        '#fef3c7',
+    under_review: '#eff6ff',
+    upheld:       '#d1fae5',
+    dismissed:    '#f3f4f6'
+  };
+
+  var pendingCount = appeals.filter(function(a) {
+    return a.status === 'filed' || a.status === 'under_review';
+  }).length;
+
+  var html =
+    '<div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+      '<div style="font-size:.9rem;color:#6b7280;">' +
+        '<strong style="color:#374151;">' + appeals.length + '</strong> appeal' +
+        (appeals.length !== 1 ? 's' : '') + ' on record' +
+      '</div>' +
+      (pendingCount > 0
+        ? '<span style="font-size:.78rem;background:#fef3c7;color:#92400e;padding:3px 10px;' +
+          'border-radius:10px;font-weight:600;">⚠️ ' + pendingCount + ' pending</span>'
+        : '<span style="font-size:.78rem;background:#d1fae5;color:#065f46;padding:3px 10px;' +
+          'border-radius:10px;font-weight:600;">✓ None pending</span>') +
+    '</div>';
+
+  if (pendingCount > 0) {
+    html +=
+      '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;' +
+      'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#92400e;">' +
+      '⚠️ <strong>Voting cannot be activated while appeals are pending.</strong> ' +
+      'All appeals must be decided (upheld or dismissed) before the election can move to active.' +
+      '</div>';
+  }
+
+  if (appeals.length === 0) {
+    html +=
+      '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+        '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Appeals</div>' +
+        '<div style="font-size:.85rem;">No appeals have been filed for this election.</div>' +
+      '</div>';
+    return html;
+  }
+
+  for (var i = 0; i < appeals.length; i++) {
+    var apl = appeals[i];
+    var bgColor     = statusColors[apl.status] || '#f9fafb';
+    var statusLabel = statusLabels[apl.status] || apl.status;
+    html +=
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+      'padding:16px;margin-bottom:14px;">' +
+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
+        'gap:8px;margin-bottom:10px;">' +
+          '<div>' +
+            '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:2px;">' +
+              escHtml(apl.id) + '</div>' +
+            '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;">' +
+              escHtml(apl.candName) + '</div>' +
+            '<div style="font-size:.82rem;color:#6b7280;">' +
+              'Post: ' + escHtml(apl.post) + '</div>' +
+            '<div style="font-size:.78rem;color:#9ca3af;margin-top:2px;">' +
+              'Filed: ' + escHtml(apl.filedAt.toString().split('T')[0] || apl.filedAt.toString()) +
+            '</div>' +
+          '</div>' +
+          '<span style="font-size:.75rem;padding:3px 10px;border-radius:10px;font-weight:600;' +
+            'background:' + bgColor + ';white-space:nowrap;">' +
+            escHtml(statusLabel) +
+          '</span>' +
+        '</div>' +
+
+        '<div style="font-size:.88rem;color:#1f2937;background:#f9fafb;border-radius:6px;' +
+        'padding:10px 12px;margin-bottom:12px;line-height:1.5;">' +
+          escHtml(apl.appealText) +
+        '</div>' +
+
+        (apl.roNotes ? '<div style="font-size:.82rem;color:#374151;margin-bottom:6px;">' +
+          '<strong>RO Notes:</strong> ' + escHtml(apl.roNotes) + '</div>' : '') +
+        (apl.decision ? '<div style="font-size:.82rem;color:#374151;margin-bottom:10px;">' +
+          '<strong>Decision:</strong> ' + escHtml(apl.decision) + '</div>' : '') +
+
+        '<div style="border-top:1px solid #f3f4f6;padding-top:12px;">' +
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:8px;">Record Decision</div>' +
+          '<select id="apl-status-' + i + '" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;">' +
+            '<option value="filed"' +        (apl.status==='filed'?        ' selected':'') + '>Filed</option>' +
+            '<option value="under_review"' + (apl.status==='under_review'? ' selected':'') + '>Under Review</option>' +
+            '<option value="upheld"' +       (apl.status==='upheld'?       ' selected':'') + '>Upheld — Reinstate Nomination</option>' +
+            '<option value="dismissed"' +    (apl.status==='dismissed'?    ' selected':'') + '>Dismissed</option>' +
+          '</select>' +
+          '<textarea id="apl-notes-' + i + '" placeholder="RO notes (optional)…" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;min-height:60px;' +
+            'font-family:Arial,sans-serif;resize:vertical;">' +
+            escHtml(apl.roNotes) +
+          '</textarea>' +
+          '<textarea id="apl-dec-' + i + '" placeholder="Decision text (reasons)…" ' +
+            'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+            'border-radius:4px;margin-bottom:8px;box-sizing:border-box;min-height:60px;' +
+            'font-family:Arial,sans-serif;resize:vertical;">' +
+            escHtml(apl.decision) +
+          '</textarea>' +
+          '<button onclick="AdminPanel._saveAppeal(\'' + escHtml(apl.id) + '\',' + i + ')" ' +
+            'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">' +
+            'Save Decision' +
+          '</button>' +
+        '</div>' +
+
+      '</div>';
+  }
+  return html;
+},
+
+_saveAppeal: function(appealId, idx) {
+  var statusEl = document.getElementById('apl-status-' + idx);
+  var notesEl  = document.getElementById('apl-notes-'  + idx);
+  var decEl    = document.getElementById('apl-dec-'    + idx);
+  if (!statusEl) return;
+
+  var decision   = statusEl.value;
+  var notes      = notesEl ? notesEl.value.trim() : '';
+  var decText    = decEl   ? decEl.value.trim()   : '';
+
+  if ((decision === 'upheld' || decision === 'dismissed') && !decText) {
+    showToast('Please enter decision text before saving.', true);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast((res && res.message) || 'Update failed.', true);
+        return;
+      }
+      showToast('Appeal decision saved.');
+      AdminPanel._loadAppeals();
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .updateAppealDecision(App.token, appealId, decision, notes, decText);
 },
 
   };

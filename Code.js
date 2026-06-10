@@ -147,8 +147,19 @@ var COL = {
 // tab's functions are built. Defined here so references don't error.
 // Full schemas: Step 3 BackendFunctionMap + Session 18 Handover.
 
-var COL_CMP   = {};  // Complaints — 14 cols
-var COL_APL   = {};  // Appeals — 16 cols
+var COL_CMP = {
+  ID:0, ELEC_ID:1, FILED_BY_ROLL:2, FILED_AT:3,
+  AGAINST_ROLL:4, AGAINST_NAME:5, COMPLAINT_TEXT:6,
+  CHANNEL:7, DOC_LINKS:8, STATUS:9,
+  RO_NOTES:10, RESOLUTION:11, RESOLVED_AT:12, RESOLVED_BY:13
+};
+var COL_APL = {
+  ID:0, ELEC_ID:1, NOM_ID:2, CAND_ROLL:3,
+  CAND_NAME:4, POST:5, FILED_AT:6, APPEAL_TEXT:7,
+  DOC_LINKS:8, STATUS:9, RO_NOTES:10, DECISION:11,
+  DECIDED_AT:12, DECIDED_BY:13, NOM_STATUS_UPDATED:14,
+  VOTING_RESET_REQUIRED:15
+};
 var COL_OBS   = {};  // Observations — 11 cols
 var COL_ECDB  = {};  // ECOfficerBoardDatabase — 9 cols
 var COL_SCHED = {};  // ElectionSchedule — 21 cols
@@ -4360,4 +4371,294 @@ function getNominationsBoard(token, electionId) {
     electionTitle: elec[COL.ELEC_TITLE].toString(),
     electionStatus: elecStatus
   };
+}
+
+// ============================================================
+// COMPLAINTS MODULE
+// ============================================================
+
+// ============================================================
+// fileComplaint — voter submits a complaint
+// Access: any authenticated session
+// ============================================================
+function fileComplaint(token, electionId, complaintText, againstName, channel) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (!complaintText || complaintText.trim() === '') {
+    return { success: false, message: 'Complaint text cannot be empty.' };
+  }
+
+  var sh = getSheet(SHEETS.COMPLAINTS);
+  if (!sh) return { success: false, message: 'Complaints sheet not found.' };
+
+  var id  = 'CMP-' + new Date().getTime();
+  var now = new Date();
+  sh.appendRow([
+    id,
+    electionId || '',
+    sess.identity,
+    now,
+    '',                          // AgainstRoll — blank, RO fills if needed
+    againstName || '',
+    complaintText.trim(),
+    channel || '',
+    '',                          // DocLinks
+    'filed',                     // Status
+    '',                          // RONotes
+    '',                          // Resolution
+    '',                          // ResolvedAt
+    ''                           // ResolvedBy
+  ]);
+
+  appendAdminLog(sess.identity, 'complaint_filed',
+    'Complaint filed. ID: ' + id +
+    (againstName ? ' | Against: ' + againstName : ''),
+    '', electionId || '');
+
+  return { success: true, complaintId: id };
+}
+
+// ============================================================
+// getComplaints — returns all complaints for an election
+// Access: RO_ADMIN, DEPUTY_RO
+// ============================================================
+function getComplaints(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.COMPLAINTS);
+  var complaints = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (electionId && r[COL_CMP.ELEC_ID].toString() !== electionId.toString()) continue;
+    complaints.push({
+      id:            r[COL_CMP.ID].toString(),
+      electionId:    r[COL_CMP.ELEC_ID].toString(),
+      filedByRoll:   r[COL_CMP.FILED_BY_ROLL].toString(),
+      filedAt:       r[COL_CMP.FILED_AT].toString(),
+      againstName:   r[COL_CMP.AGAINST_NAME].toString(),
+      complaintText: r[COL_CMP.COMPLAINT_TEXT].toString(),
+      channel:       r[COL_CMP.CHANNEL].toString(),
+      status:        r[COL_CMP.STATUS].toString(),
+      roNotes:       r[COL_CMP.RO_NOTES].toString(),
+      resolution:    r[COL_CMP.RESOLUTION].toString(),
+      resolvedAt:    r[COL_CMP.RESOLVED_AT].toString()
+    });
+  }
+
+  // Most recent first
+  complaints.sort(function(a, b) {
+    return new Date(b.filedAt) - new Date(a.filedAt);
+  });
+
+  return { success: true, complaints: complaints };
+}
+
+// ============================================================
+// updateComplaintStatus — RO updates complaint status + notes
+// Access: RO_ADMIN, DEPUTY_RO
+// ============================================================
+function updateComplaintStatus(token, complaintId, status, roNotes, resolution) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var validStatuses = ['filed', 'under_review', 'resolved_upheld', 'resolved_dismissed', 'referred_to_ec'];
+  if (validStatuses.indexOf(status) === -1) {
+    return { success: false, message: 'Invalid status.' };
+  }
+
+  var sh = getSheet(SHEETS.COMPLAINTS);
+  if (!sh) return { success: false, message: 'Complaints sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_CMP.ID].toString() === complaintId.toString()) {
+      var isResolved = (status === 'resolved_upheld' || status === 'resolved_dismissed');
+      sh.getRange(i + 1, COL_CMP.STATUS      + 1).setValue(status);
+      sh.getRange(i + 1, COL_CMP.RO_NOTES    + 1).setValue(roNotes    || '');
+      sh.getRange(i + 1, COL_CMP.RESOLUTION  + 1).setValue(resolution || '');
+      if (isResolved) {
+        sh.getRange(i + 1, COL_CMP.RESOLVED_AT + 1).setValue(new Date());
+        sh.getRange(i + 1, COL_CMP.RESOLVED_BY + 1).setValue(sess.identity);
+      }
+      appendAdminLog(sess.identity, 'complaint_updated',
+        'Complaint ' + complaintId + ' → ' + status,
+        rows[i][COL_CMP.STATUS].toString(), complaintId);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Complaint not found.' };
+}
+
+// ============================================================
+// APPEALS MODULE
+// ============================================================
+
+// ============================================================
+// fileAppeal — candidate files appeal against rejection
+// Access: any authenticated session
+// ============================================================
+function fileAppeal(token, nominationId, appealText) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (!appealText || appealText.trim() === '') {
+    return { success: false, message: 'Appeal text cannot be empty.' };
+  }
+
+  // Find the nomination
+  var nomRows = sheetData(SHEETS.NOMINATIONS);
+  var nom = null;
+  for (var i = 0; i < nomRows.length; i++) {
+    if (nomRows[i][COL.NOM_ID].toString() === nominationId.toString()) {
+      nom = nomRows[i]; break;
+    }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+  if (nom[COL.NOM_STATUS].toString() !== 'rejected') {
+    return { success: false, message: 'Appeals can only be filed against rejected nominations.' };
+  }
+
+  var sh = getSheet(SHEETS.APPEALS);
+  if (!sh) return { success: false, message: 'Appeals sheet not found.' };
+
+  var id  = 'APL-' + new Date().getTime();
+  var now = new Date();
+  sh.appendRow([
+    id,
+    nom[COL.NOM_ELEC_ID].toString(),
+    nominationId,
+    nom[COL.NOM_CAND_ROLL].toString(),
+    nom[COL.NOM_CAND_NAME].toString(),
+    nom[COL.NOM_POST].toString(),
+    now,
+    appealText.trim(),
+    '',           // DocLinks
+    'filed',      // Status
+    '',           // RONotes
+    '',           // Decision
+    '',           // DecidedAt
+    '',           // DecidedBy
+    'false',      // NomStatusUpdated
+    'false'       // VotingResetRequired
+  ]);
+
+  appendAdminLog(sess.identity, 'appeal_filed',
+    'Appeal filed against rejection. NomID: ' + nominationId +
+    ' | Post: ' + nom[COL.NOM_POST].toString(),
+    '', nom[COL.NOM_ELEC_ID].toString());
+
+  return { success: true, appealId: id };
+}
+
+// ============================================================
+// getAppeals — returns all appeals for an election
+// Access: RO_ADMIN, DEPUTY_RO, SCRUTINEER
+// ============================================================
+function getAppeals(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'SCRUTINEER') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var rows = sheetData(SHEETS.APPEALS);
+  var appeals = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (electionId && r[COL_APL.ELEC_ID].toString() !== electionId.toString()) continue;
+    appeals.push({
+      id:          r[COL_APL.ID].toString(),
+      electionId:  r[COL_APL.ELEC_ID].toString(),
+      nomId:       r[COL_APL.NOM_ID].toString(),
+      candRoll:    r[COL_APL.CAND_ROLL].toString(),
+      candName:    r[COL_APL.CAND_NAME].toString(),
+      post:        r[COL_APL.POST].toString(),
+      filedAt:     r[COL_APL.FILED_AT].toString(),
+      appealText:  r[COL_APL.APPEAL_TEXT].toString(),
+      status:      r[COL_APL.STATUS].toString(),
+      roNotes:     r[COL_APL.RO_NOTES].toString(),
+      decision:    r[COL_APL.DECISION].toString(),
+      decidedAt:   r[COL_APL.DECIDED_AT].toString()
+    });
+  }
+
+  appeals.sort(function(a, b) {
+    return new Date(b.filedAt) - new Date(a.filedAt);
+  });
+
+  return { success: true, appeals: appeals };
+}
+
+// ============================================================
+// updateAppealDecision — RO records appeal decision
+// If upheld: nomination status set back to confirmed for re-scrutiny
+// Access: RO_ADMIN only (D-V6)
+// ============================================================
+function updateAppealDecision(token, appealId, decision, roNotes, decisionText) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var validDecisions = ['filed', 'under_review', 'upheld', 'dismissed'];
+  if (validDecisions.indexOf(decision) === -1) {
+    return { success: false, message: 'Invalid decision.' };
+  }
+
+  var sh = getSheet(SHEETS.APPEALS);
+  if (!sh) return { success: false, message: 'Appeals sheet not found.' };
+
+  var rows = sh.getDataRange().getValues();
+  var appealRow = null;
+  var appealRowIdx = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_APL.ID].toString() === appealId.toString()) {
+      appealRow = rows[i]; appealRowIdx = i; break;
+    }
+  }
+  if (!appealRow) return { success: false, message: 'Appeal not found.' };
+
+  var isDecided = (decision === 'upheld' || decision === 'dismissed');
+  sh.getRange(appealRowIdx + 1, COL_APL.STATUS   + 1).setValue(decision);
+  sh.getRange(appealRowIdx + 1, COL_APL.RO_NOTES + 1).setValue(roNotes    || '');
+  sh.getRange(appealRowIdx + 1, COL_APL.DECISION + 1).setValue(decisionText || '');
+  if (isDecided) {
+    sh.getRange(appealRowIdx + 1, COL_APL.DECIDED_AT + 1).setValue(new Date());
+    sh.getRange(appealRowIdx + 1, COL_APL.DECIDED_BY + 1).setValue(sess.identity);
+  }
+
+  // If upheld — reinstate nomination to confirmed so RO can re-scrutinise
+  // This is the ONLY post-rejection unlock permitted (D-V6)
+  if (decision === 'upheld') {
+    var nomId = appealRow[COL_APL.NOM_ID].toString();
+    var nomSh = getSheet(SHEETS.NOMINATIONS);
+    if (nomSh) {
+      var nomRows = nomSh.getDataRange().getValues();
+      for (var j = 1; j < nomRows.length; j++) {
+        if (nomRows[j][COL.NOM_ID].toString() === nomId) {
+          nomSh.getRange(j + 1, COL.NOM_STATUS + 1).setValue('confirmed');
+          nomSh.getRange(j + 1, COL.NOM_REJECTION + 1).setValue('');
+          break;
+        }
+      }
+    }
+    sh.getRange(appealRowIdx + 1, COL_APL.NOM_STATUS_UPDATED + 1).setValue('true');
+    appendAdminLog(sess.identity, 'appeal_upheld_candidature_reinstated',
+      'Appeal ' + appealId + ' upheld. Nomination ' + nomId +
+      ' reinstated to confirmed for re-scrutiny.',
+      'rejected', appealRow[COL_APL.ELEC_ID].toString());
+  } else {
+    appendAdminLog(sess.identity, 'appeal_decided',
+      'Appeal ' + appealId + ' → ' + decision,
+      appealRow[COL_APL.STATUS].toString(), appealRow[COL_APL.ELEC_ID].toString());
+  }
+
+  return { success: true };
 }
