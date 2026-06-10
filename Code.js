@@ -4965,3 +4965,96 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
 
   return { success: true, nominationId: nomId };
 }
+
+// ============================================================
+// purgeTrialData — clears all transactional data for a
+// trial election. Preserves Voters, Admins, Elections row,
+// and AdminLog.
+// Access: RO_ADMIN only. TrialElection=TRUE gate.
+// ============================================================
+function purgeTrialData(token, electionId, confirmPhrase) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  if (confirmPhrase !== 'CONFIRM PURGE') {
+    return { success: false, message: 'Confirmation phrase incorrect. Type CONFIRM PURGE exactly.' };
+  }
+
+  // Verify election is a trial election
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  if (elec[COL.ELEC_TRIAL].toString() !== 'true') {
+    return { success: false, message: 'Purge is only permitted for trial elections.' };
+  }
+
+  var counts = {};
+  var sheetsToPurge = [
+    { key: 'Candidates',  name: SHEETS.CANDIDATES  },
+    { key: 'Votes',       name: SHEETS.VOTES        },
+    { key: 'VotedLog',    name: SHEETS.VOTED_LOG    },
+    { key: 'Nominations', name: SHEETS.NOMINATIONS  },
+    { key: 'ScrutinyLog', name: SHEETS.SCRUTINY_LOG },
+    { key: 'Complaints',  name: SHEETS.COMPLAINTS   },
+    { key: 'Appeals',     name: SHEETS.APPEALS      }
+  ];
+
+  for (var s = 0; s < sheetsToPurge.length; s++) {
+    var sh = getSheet(sheetsToPurge[s].name);
+    if (!sh) { counts[sheetsToPurge[s].key] = 0; continue; }
+    var data = sh.getDataRange().getValues();
+    var rowsToDelete = [];
+    for (var r = 1; r < data.length; r++) {
+      // Votes and VotedLog have no electionId filter —
+      // for trial purge, clear ALL rows in these sheets
+      if (sheetsToPurge[s].name === SHEETS.VOTES ||
+          sheetsToPurge[s].name === SHEETS.VOTED_LOG) {
+        rowsToDelete.push(r + 1);
+      } else {
+        // Check electionId in col 1 (index 1 for most sheets)
+        var rowElecId = data[r][1] ? data[r][1].toString() : '';
+        if (rowElecId === electionId.toString()) rowsToDelete.push(r + 1);
+      }
+    }
+    // Delete rows bottom-up to preserve row indices
+    for (var d = rowsToDelete.length - 1; d >= 0; d--) {
+      sh.deleteRow(rowsToDelete[d]);
+    }
+    counts[sheetsToPurge[s].key] = rowsToDelete.length;
+  }
+
+  // Also clear OTPs sheet entirely (test OTPs)
+  var otpSh = getSheet(SHEETS.OTPS);
+  var otpCount = 0;
+  if (otpSh) {
+    var otpData = otpSh.getDataRange().getValues();
+    otpCount = Math.max(0, otpData.length - 1);
+    if (otpCount > 0) {
+      otpSh.deleteRows(2, otpCount);
+    }
+  }
+  counts['OTPs'] = otpCount;
+
+  // Reset election status back to draft
+  var elecSh = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === electionId.toString()) {
+      elecSh.getRange(e + 1, COL.ELEC_STATUS + 1).setValue('draft');
+      break;
+    }
+  }
+
+  appendAdminLog(sess.identity, 'trial_data_purged',
+    'Trial data purged for election ' + electionId + '. ' +
+    'Counts: ' + JSON.stringify(counts),
+    '', electionId);
+
+  return { success: true, counts: counts };
+}
