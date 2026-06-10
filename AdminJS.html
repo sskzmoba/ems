@@ -534,7 +534,14 @@ _renderManageScreen: function(el) {
 
   // Next status label for advance button
   var nextStatusMap = {
-    draft:            { next: 'nominations_open', label: 'Open Nominations' }
+    draft:                  { next: 'nominations_open',       label: 'Open Nominations' },
+    nominations_open:       { next: 'nominations_open_phase2',label: 'Open Phase 2 Nominations' },
+    nominations_open_phase2:{ next: 'scrutiny',               label: 'Close Nominations & Begin Scrutiny' },
+    scrutiny:               { next: 'candidates_published',   label: 'Publish Candidate List' },
+    candidates_published:   { next: 'active',                 label: 'Activate Voting' },
+    active:                 { next: 'paused',                 label: 'Pause Voting' },
+    paused:                 { next: 'active',                 label: 'Resume Voting' },
+    closed:                 { next: 'declared',               label: 'Declare Results' }
   };
   var advance = nextStatusMap[el.status] || null;
 
@@ -567,9 +574,7 @@ _renderManageScreen: function(el) {
         '<div class="panel-card-header">Election Status</div>' +
         '<div class="panel-card-body">' +
           '<p style="font-size:.85rem;color:#374151;margin-bottom:14px;">' +
-            'Current status is <strong>Draft</strong>. ' +
-            'Advancing will open nominations and notify no one automatically — ' +
-            'you must communicate separately.' +
+            AdminPanel._advanceStatusMsg(el.status) +
           '</p>' +
           '<button class="btn btn-primary" id="btn-advance-status" ' +
             'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advance.next + '\')" ' +
@@ -671,6 +676,36 @@ _renderManageScreen: function(el) {
     '';
 
   content.innerHTML = html;
+},
+
+_advanceStatusMsg: function(status) {
+  var msgs = {
+    draft:
+      'Current status is <strong>Draft</strong>. Advancing will open nominations. ' +
+      'Communicate separately to members.',
+    nominations_open:
+      'Current status is <strong>Nominations Open (Phase 1)</strong>. ' +
+      'Advancing will open Phase 2 nominations.',
+    nominations_open_phase2:
+      'Current status is <strong>Nominations Open (Phase 2)</strong>. ' +
+      'Advancing will close nominations and begin scrutiny.',
+    scrutiny:
+      'Current status is <strong>Scrutiny</strong>. ' +
+      'Advancing will publish the final candidate list to all voters.',
+    candidates_published:
+      'Current status is <strong>Candidates Published</strong>. ' +
+      'Advancing will activate voting. <strong>All pending appeals must be resolved first.</strong>',
+    active:
+      'Current status is <strong>Active</strong>. ' +
+      'Advancing will pause voting temporarily.',
+    paused:
+      'Current status is <strong>Paused</strong>. ' +
+      'Advancing will resume voting.',
+    closed:
+      'Current status is <strong>Closed</strong>. ' +
+      'Advancing will declare the results.'
+  };
+  return msgs[status] || 'Advance election to next stage.';
 },
 
 _advanceStatus: function(id, nextStatus) {

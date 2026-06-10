@@ -490,6 +490,26 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
       if (currentStatus === newStatus) {
         return { success: false, message: 'Election is already at that status.' };
       }
+
+      // ── GATE: candidates_published → active ──────────────────
+      // Block if any appeals are pending (filed or under_review)
+      if (currentStatus === 'candidates_published' && newStatus === 'active') {
+        var aplRows = sheetData(SHEETS.APPEALS);
+        for (var a = 0; a < aplRows.length; a++) {
+          if (aplRows[a][COL_APL.ELEC_ID].toString() === electionId.toString()) {
+            var aplStatus = aplRows[a][COL_APL.STATUS].toString();
+            if (aplStatus === 'filed' || aplStatus === 'under_review') {
+              return {
+                success: false,
+                message: 'Cannot activate voting — there is at least one pending appeal. ' +
+                         'All appeals must be decided (upheld or dismissed) before voting can open.'
+              };
+            }
+          }
+        }
+      }
+      // ────────────────────────────────────────────────────────
+
       sh.getRange(i + 1, COL.ELEC_STATUS + 1).setValue(newStatus);
       appendAdminLog(sess.identity, 'election_status_changed',
         'Status: ' + currentStatus + ' → ' + newStatus +
