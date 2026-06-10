@@ -4682,3 +4682,286 @@ function updateAppealDecision(token, appealId, decision, roNotes, decisionText) 
 
   return { success: true };
 }
+
+// ============================================================
+// VOTER NOMINATION FUNCTIONS
+// ============================================================
+
+// ============================================================
+// lookupVoterName — returns name for a given roll number
+// Used in nomination form to verify proposer/seconder rolls
+// Access: any authenticated session
+// ============================================================
+function lookupVoterName(token, rollNo) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (!rollNo || rollNo.trim() === '') {
+    return { success: false, message: 'Roll number required.' };
+  }
+
+  var rows = sheetData(SHEETS.VOTERS);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.VOTER_ROLL].toString().trim().toUpperCase() ===
+        rollNo.trim().toUpperCase()) {
+      return {
+        success: true,
+        name: (rows[i][COL.VOTER_NAME].toString() + ' ' +
+               rows[i][COL.VOTER_SURNAME].toString()).trim(),
+        batch: rows[i][COL.VOTER_BATCH].toString()
+      };
+    }
+  }
+  return { success: false, message: 'Roll number not found on voter roll.' };
+}
+
+// ============================================================
+// getMyNominations — returns nominations where caller is
+// candidate or proposer, for the given election
+// Access: any authenticated session
+// ============================================================
+function getMyNominations(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var rows = sheetData(SHEETS.NOMINATIONS);
+  var nominations = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (electionId && r[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    var isCand = r[COL.NOM_CAND_ROLL].toString() === sess.identity.toString();
+    var isProp = r[COL.NOM_PROP_ROLL].toString() === sess.identity.toString();
+    if (!isCand && !isProp) continue;
+    nominations.push({
+      id:               r[COL.NOM_ID].toString(),
+      post:             r[COL.NOM_POST].toString(),
+      candName:         r[COL.NOM_CAND_NAME].toString(),
+      candRoll:         r[COL.NOM_CAND_ROLL].toString(),
+      status:           r[COL.NOM_STATUS].toString(),
+      rejectionReason:  r[COL.NOM_REJECTION].toString(),
+      submittedAt:      r[COL.NOM_SUBMITTED_AT].toString(),
+      propConfirmed:    r[COL.NOM_PROP_CONFIRMED].toString() === 'true',
+      secConfirmed:     r[COL.NOM_SEC_CONFIRMED].toString() === 'true',
+      entryMethod:      r[COL.NOM_ENTRY_METHOD].toString(),
+      role:             isCand ? 'candidate' : 'proposer'
+    });
+  }
+
+  nominations.sort(function(a, b) {
+    return new Date(b.submittedAt) - new Date(a.submittedAt);
+  });
+
+  return { success: true, nominations: nominations };
+}
+
+// ============================================================
+// submitNomination — Phase 1 self-nomination
+// Caller is the candidate. Proposer and seconder confirmed
+// by email link. One-post-per-person enforced.
+// Access: VOTER
+// ============================================================
+function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  // 1. Verify election is in nominations_open status
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  var elecStatus = elec[COL.ELEC_STATUS].toString();
+  if (elecStatus !== 'nominations_open' && elecStatus !== 'nominations_open_phase2') {
+    return { success: false, message: 'Nominations are not currently open.' };
+  }
+
+  // 2. Validate post name is a valid EC post
+  var validPost = false;
+  for (var p = 0; p < EC_POSTS.length; p++) {
+    if (EC_POSTS[p].name === postName) { validPost = true; break; }
+  }
+  if (!validPost) return { success: false, message: 'Invalid post selected.' };
+
+  // 3. One-post-per-person check — candidate cannot have another active nomination
+  var nomRows = sheetData(SHEETS.NOMINATIONS);
+  for (var j = 0; j < nomRows.length; j++) {
+    var nr = nomRows[j];
+    if (nr[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (nr[COL.NOM_CAND_ROLL].toString() !== sess.identity.toString()) continue;
+    var nStatus = nr[COL.NOM_STATUS].toString();
+    if (nStatus === 'withdrawn' || nStatus === 'rejected' ||
+        nStatus === 'consent_declined' || nStatus === 'deadline_lapsed') continue;
+    return {
+      success: false,
+      message: 'You already have an active nomination for ' +
+               nr[COL.NOM_POST].toString() + '. ' +
+               'You must withdraw it before submitting a new nomination.'
+    };
+  }
+
+  // 4. Look up candidate details from voter roll
+  var voterRows = sheetData(SHEETS.VOTERS);
+  var candRow = null;
+  for (var v = 0; v < voterRows.length; v++) {
+    if (voterRows[v][COL.VOTER_ROLL].toString() === sess.identity.toString()) {
+      candRow = voterRows[v]; break;
+    }
+  }
+  if (!candRow) return { success: false, message: 'Your voter record could not be found.' };
+
+  // 5. Validate proposer and seconder are on voter roll
+  if (!propRoll || propRoll.trim() === '') {
+    return { success: false, message: 'Proposer roll number is required.' };
+  }
+  if (!secRoll || secRoll.trim() === '') {
+    return { success: false, message: 'Seconder roll number is required.' };
+  }
+  propRoll = propRoll.trim().toUpperCase();
+  secRoll  = secRoll.trim().toUpperCase();
+
+  if (propRoll === sess.identity.toUpperCase()) {
+    return { success: false, message: 'You cannot be your own proposer.' };
+  }
+  if (secRoll === sess.identity.toUpperCase()) {
+    return { success: false, message: 'You cannot be your own seconder.' };
+  }
+  if (propRoll === secRoll) {
+    return { success: false, message: 'Proposer and seconder must be different people.' };
+  }
+
+  var propFound = false;
+  var secFound  = false;
+  for (var vv = 0; vv < voterRows.length; vv++) {
+    var vRoll = voterRows[vv][COL.VOTER_ROLL].toString().toUpperCase();
+    if (vRoll === propRoll) propFound = true;
+    if (vRoll === secRoll)  secFound  = true;
+  }
+  if (!propFound) return { success: false, message: 'Proposer roll number not found on voter roll.' };
+  if (!secFound)  return { success: false, message: 'Seconder roll number not found on voter roll.' };
+
+  // 6. Generate nomination ID and tokens
+  var nomId     = 'NOM-' + new Date().getTime();
+  var propToken = Utilities.getUuid();
+  var secToken  = Utilities.getUuid();
+  var now       = new Date();
+
+  var candName = (candRow[COL.VOTER_NAME].toString() + ' ' +
+                  candRow[COL.VOTER_SURNAME].toString()).trim();
+  var candBatch = candRow[COL.VOTER_BATCH].toString();
+  var candEmail = candRow[COL.VOTER_EMAIL].toString();
+
+  // 7. Write nomination row
+  var sh = getSheet(SHEETS.NOMINATIONS);
+  if (!sh) return { success: false, message: 'Nominations sheet not found.' };
+
+  var deadline = elec[COL.ELEC_NOM_DEADLINE].toString();
+  sh.appendRow([
+    nomId,                    // NOM_ID
+    electionId,               // NOM_ELEC_ID
+    postName,                 // NOM_POST
+    sess.identity,            // NOM_CAND_ROLL
+    candName,                 // NOM_CAND_NAME
+    candBatch,                // NOM_CAND_BATCH
+    candEmail,                // NOM_CAND_EMAIL
+    propRoll,                 // NOM_PROP_ROLL
+    'false',                  // NOM_PROP_CONFIRMED
+    '',                       // NOM_PROP_CONFIRMED_AT
+    propToken,                // NOM_PROP_TOKEN
+    secRoll,                  // NOM_SEC_ROLL
+    'false',                  // NOM_SEC_CONFIRMED
+    '',                       // NOM_SEC_CONFIRMED_AT
+    secToken,                 // NOM_SEC_TOKEN
+    bio || '',                // NOM_BIO
+    '',                       // NOM_PHOTO
+    now,                      // NOM_SUBMITTED_AT
+    deadline,                 // NOM_DEADLINE
+    'submitted',              // NOM_STATUS
+    '',                       // NOM_REJECTION
+    '',                       // NOM_WITHDRAWN_AT
+    'phase1_online',          // NOM_ENTRY_METHOD
+    '',                       // NOM_DOC_LINKS
+    '',                       // NOM_FOLDER_URL
+    '',                       // NOM_NOMINATOR_ROLL
+    'pending',                // NOM_CONSENT_STATUS (implicit in Phase 1 but tracked)
+    '',                       // NOM_CONSENT_TOKEN
+    '',                       // NOM_CONSENT_AT
+    'false',                  // NOM_ONE_POST_CHECK
+    'false',                  // NOM_PHASE2_FLAG
+    'false'                   // NOM_DUP_DECLINED
+  ]);
+
+  // 8. Send confirmation emails to proposer and seconder
+  var propConfirmUrl = DEPLOY_URL + '?action=confirmNom&nomId=' +
+    encodeURIComponent(nomId) + '&role=proposer&token=' +
+    encodeURIComponent(propToken);
+  var secConfirmUrl  = DEPLOY_URL + '?action=confirmNom&nomId=' +
+    encodeURIComponent(nomId) + '&role=seconder&token=' +
+    encodeURIComponent(secToken);
+
+  try {
+    sendEmailViaSendGrid(
+      candEmail,
+      'Your nomination has been submitted — ' + postName,
+      'Dear ' + candName + ',\n\n' +
+      'Your nomination for the post of ' + postName + ' has been submitted.\n\n' +
+      'Your nomination will be confirmed once your proposer and seconder ' +
+      'both click their confirmation links.\n\n' +
+      'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n' +
+      'Post: ' + postName + '\n\n' +
+      'SSKZM OBA Elections'
+    );
+  } catch(e) { /* email failure should not block nomination submission */ }
+
+  // Look up proposer and seconder emails for confirmation emails
+  var propEmail = '';
+  var secEmail  = '';
+  var propName  = propRoll;
+  var secName   = secRoll;
+  for (var ve = 0; ve < voterRows.length; ve++) {
+    var vr = voterRows[ve][COL.VOTER_ROLL].toString().toUpperCase();
+    if (vr === propRoll) {
+      propEmail = voterRows[ve][COL.VOTER_EMAIL].toString();
+      propName  = (voterRows[ve][COL.VOTER_NAME].toString() + ' ' +
+                   voterRows[ve][COL.VOTER_SURNAME].toString()).trim();
+    }
+    if (vr === secRoll) {
+      secEmail = voterRows[ve][COL.VOTER_EMAIL].toString();
+      secName  = (voterRows[ve][COL.VOTER_NAME].toString() + ' ' +
+                  voterRows[ve][COL.VOTER_SURNAME].toString()).trim();
+    }
+  }
+
+  var emailBody =
+    'You have been listed as {ROLE} for the following nomination:\n\n' +
+    'Candidate: ' + candName + '\n' +
+    'Post: ' + postName + '\n' +
+    'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
+    'Please click the link below to confirm your role:\n{URL}\n\n' +
+    'If you did not agree to this role, please ignore this email.\n\n' +
+    'SSKZM OBA Elections';
+
+  try {
+    if (propEmail) {
+      sendEmailViaSendGrid(propEmail,
+        'Please confirm: Proposer for ' + candName + ' (' + postName + ')',
+        emailBody.replace('{ROLE}', 'Proposer').replace('{URL}', propConfirmUrl));
+    }
+  } catch(e) {}
+
+  try {
+    if (secEmail) {
+      sendEmailViaSendGrid(secEmail,
+        'Please confirm: Seconder for ' + candName + ' (' + postName + ')',
+        emailBody.replace('{ROLE}', 'Seconder').replace('{URL}', secConfirmUrl));
+    }
+  } catch(e) {}
+
+  appendAdminLog(sess.identity, 'nomination_submitted',
+    'Nomination submitted. Post: ' + postName + ' | NomID: ' + nomId,
+    '', electionId);
+
+  return { success: true, nominationId: nomId };
+}

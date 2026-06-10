@@ -333,8 +333,14 @@ var VoterPanel = (function() {
         '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;">' + escHtml(title) + trialBadge + '</div>' +
       '</div>' +
       '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' + body + deadline + '</div>' +
-      '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#1a3a5c;' +
-      'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+      '<button onclick="VoterPanel.showNominationForm()" style="width:100%;padding:14px;background:#1a3a5c;' +
+      'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
+      '✍️ Nominate Myself</button>' +
+      '<button onclick="VoterPanel.showMyNominations()" style="width:100%;padding:14px;background:#fff;' +
+      'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
+      '📄 My Nominations</button>' +
+      '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#fff;' +
+      'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
       '📋 View Nominations Board</button></div>';
   }
 
@@ -551,12 +557,340 @@ var VoterPanel = (function() {
   function switchToReceipts()     { NavMenu.switchTab('receipts'); }
   function switchToNominations()  { NavMenu.switchTab('nominations'); }
 
+  // ── NOMINATION FORM ───────────────────────────────────────
+
+  function showNominationForm() {
+    var c = document.getElementById('voter-content');
+    if (!c) return;
+    c.innerHTML = _renderNominationForm();
+  }
+
+  function _renderNominationForm() {
+    var posts = [
+      'President','Vice President 1','Vice President 2',
+      'General Secretary','Joint Secretary 1','Joint Secretary 2',
+      'Treasurer','Organising Secretary',
+      'Batch Representative 1965-70','Batch Representative 1971-75',
+      'Batch Representative 1976-80','Batch Representative 1981-85',
+      'Batch Representative 1986-90','Batch Representative 1991-95',
+      'Batch Representative 1996-00','Batch Representative 2001-05',
+      'Batch Representative 2006-10','Batch Representative 2011-15',
+      'Batch Representative 2016-20','Batch Representative 2021-25',
+      'Batch Representative 2026-30'
+    ];
+    var postOptions = '<option value="">— Select a post —</option>';
+    for (var i = 0; i < posts.length; i++) {
+      postOptions += '<option value="' + escHtml(posts[i]) + '">' +
+        escHtml(posts[i]) + '</option>';
+    }
+
+    return '<div style="margin-bottom:12px;">' +
+        '<button onclick="VoterPanel._backToBallot()" ' +
+        'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:16px;">✍️ Nominate Myself</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Post</label>' +
+          '<select id="nom-post" ' +
+          'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">' +
+          postOptions + '</select>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Proposer Roll Number</label>' +
+          '<div style="display:flex;gap:8px;">' +
+            '<input type="text" id="nom-prop-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+            'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+            '<button onclick="VoterPanel._lookupRoll(\'prop\')" ' +
+            'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
+          '</div>' +
+          '<div id="nom-prop-name" style="font-size:.82rem;color:#059669;margin-top:4px;min-height:18px;"></div>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Seconder Roll Number</label>' +
+          '<div style="display:flex;gap:8px;">' +
+            '<input type="text" id="nom-sec-roll" placeholder="e.g. SSK002" inputmode="text" ' +
+            'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+            '<button onclick="VoterPanel._lookupRoll(\'sec\')" ' +
+            'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
+          '</div>' +
+          '<div id="nom-sec-name" style="font-size:.82rem;color:#059669;margin-top:4px;min-height:18px;"></div>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
+          '<textarea id="nom-bio" maxlength="300" placeholder="Brief introduction for the nominations board…" ' +
+          'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
+          'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
+        '</div>' +
+
+        '<div style="margin-bottom:16px;padding:12px;background:#eff6ff;border-radius:6px;font-size:.82rem;color:#1d4ed8;">' +
+          '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">' +
+            '<input type="checkbox" id="nom-declaration" style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">' +
+            '<span>I declare that I am a Life Member of SSKZM OBA, that I am eligible for the post selected, ' +
+            'and that I consent to my name being published on the nominations board if my nomination is confirmed.</span>' +
+          '</label>' +
+        '</div>' +
+
+        '<div id="nom-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;' +
+        'border-radius:6px;padding:10px 14px;font-size:.88rem;color:#991b1b;margin-bottom:12px;"></div>' +
+
+        '<button onclick="VoterPanel._submitNomination()" ' +
+        'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
+        'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+        'Submit Nomination</button>' +
+      '</div>';
+  }
+
+  function _lookupRoll(role) {
+    var rollEl = document.getElementById('nom-' + role + '-roll');
+    var nameEl = document.getElementById('nom-' + role + '-name');
+    if (!rollEl || !nameEl) return;
+    var roll = rollEl.value.trim();
+    if (!roll) { nameEl.textContent = ''; return; }
+    nameEl.style.color = '#6b7280';
+    nameEl.textContent = 'Looking up…';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!nameEl) return;
+        if (res && res.success) {
+          nameEl.style.color = '#059669';
+          nameEl.textContent = '✓ ' + res.name + ' (Batch ' + res.batch + ')';
+        } else {
+          nameEl.style.color = '#dc2626';
+          nameEl.textContent = '✗ ' + ((res && res.message) || 'Not found');
+        }
+      })
+      .withFailureHandler(function() {
+        if (nameEl) { nameEl.style.color = '#dc2626'; nameEl.textContent = '✗ Connection error'; }
+      })
+      .lookupVoterName(App.token, roll);
+  }
+
+  function _submitNomination() {
+    var postEl    = document.getElementById('nom-post');
+    var propEl    = document.getElementById('nom-prop-roll');
+    var secEl     = document.getElementById('nom-sec-roll');
+    var bioEl     = document.getElementById('nom-bio');
+    var declEl    = document.getElementById('nom-declaration');
+    var errEl     = document.getElementById('nom-error');
+
+    if (!postEl || !propEl || !secEl || !declEl) return;
+
+    var post = postEl.value;
+    var prop = propEl.value.trim();
+    var sec  = secEl.value.trim();
+    var bio  = bioEl ? bioEl.value.trim() : '';
+
+    if (!post) { _showNomError('Please select a post.'); return; }
+    if (!prop) { _showNomError('Please enter the proposer\'s roll number.'); return; }
+    if (!sec)  { _showNomError('Please enter the seconder\'s roll number.'); return; }
+    if (!declEl.checked) { _showNomError('Please tick the declaration checkbox before submitting.'); return; }
+
+    if (errEl) errEl.style.display = 'none';
+
+    var btn = document.querySelector('button[onclick="VoterPanel._submitNomination()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          _showNomError((res && res.message) || 'Submission failed. Please try again.');
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
+          return;
+        }
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML =
+          '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+          'padding:32px 16px;text-align:center;">' +
+            '<div style="font-size:3rem;margin-bottom:12px;">✅</div>' +
+            '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">Nomination Submitted!</div>' +
+            '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' +
+              'Your nomination for <strong>' + escHtml(post) + '</strong> has been submitted.<br><br>' +
+              'Confirmation emails have been sent to your proposer and seconder. ' +
+              'Your nomination will be confirmed once both have clicked their links.' +
+            '</div>' +
+            '<button onclick="VoterPanel.showMyNominations()" ' +
+            'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+            '📄 View My Nominations</button>' +
+          '</div>';
+      })
+      .withFailureHandler(function() {
+        _showNomError('Connection error — please try again.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
+      })
+      .submitNomination(App.token, _election.id, post, prop, sec, bio);
+  }
+
+  function _showNomError(msg) {
+    var errEl = document.getElementById('nom-error');
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  }
+
+  function _backToBallot() {
+    var c = document.getElementById('voter-content');
+    if (c) c.innerHTML = _renderTab('ballot');
+    _loadBallot();
+  }
+
+  // ── MY NOMINATIONS DASHBOARD ──────────────────────────────
+
+  function showMyNominations() {
+    var c = document.getElementById('voter-content');
+    if (!c) return;
+    c.innerHTML = _spinner('Loading your nominations…');
+
+    var elecId = _election ? _election.id : null;
+    if (!elecId) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success && res.election) {
+            _election = res.election;
+            _loadMyNominations();
+          } else {
+            var c2 = document.getElementById('voter-content');
+            if (c2) c2.innerHTML = _errorCard('No active election found.');
+          }
+        })
+        .withFailureHandler(function() {
+          var c2 = document.getElementById('voter-content');
+          if (c2) c2.innerHTML = _errorCard('Connection error.');
+        })
+        .getElectionsForVoter(App.token);
+      return;
+    }
+    _loadMyNominations();
+  }
+
+  function _loadMyNominations() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c) return;
+        if (!res || !res.success) {
+          c.innerHTML = _errorCard((res && res.message) || 'Could not load nominations.');
+          return;
+        }
+        c.innerHTML = _renderMyNominations(res.nominations || []);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML = _errorCard('Connection error.');
+      })
+      .getMyNominations(App.token, _election.id);
+  }
+
+  function _renderMyNominations(nominations) {
+    var statusLabels = {
+      submitted:        'Awaiting Proposer/Seconder',
+      confirmed:        'Confirmed — Pending Scrutiny',
+      accepted:         'Accepted ✓',
+      rejected:         'Rejected',
+      withdrawn:        'Withdrawn',
+      consent_declined: 'Consent Declined',
+      deadline_lapsed:  'Deadline Lapsed'
+    };
+    var statusColors = {
+      submitted:        '#fef3c7',
+      confirmed:        '#eff6ff',
+      accepted:         '#d1fae5',
+      rejected:         '#fef2f2',
+      withdrawn:        '#f3f4f6',
+      consent_declined: '#fef2f2',
+      deadline_lapsed:  '#f3f4f6'
+    };
+
+    var html =
+      '<div style="margin-bottom:12px;">' +
+        '<button onclick="VoterPanel._backToBallot()" ' +
+        'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+      '</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">📄 My Nominations</div>';
+
+    if (nominations.length === 0) {
+      html +=
+        '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+          '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+          '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Nominations Yet</div>' +
+          '<div style="font-size:.85rem;margin-bottom:16px;">You have not submitted any nominations.</div>' +
+          '<button onclick="VoterPanel.showNominationForm()" ' +
+          'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+          '✍️ Nominate Myself</button>' +
+        '</div>';
+      return html;
+    }
+
+    for (var i = 0; i < nominations.length; i++) {
+      var nom = nominations[i];
+      var bgColor     = statusColors[nom.status] || '#f9fafb';
+      var statusLabel = statusLabels[nom.status]  || nom.status;
+      html +=
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+        'padding:16px;margin-bottom:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">' +
+            '<div style="font-size:.95rem;font-weight:700;color:#1a3a5c;">' + escHtml(nom.post) + '</div>' +
+            '<span style="font-size:.72rem;padding:3px 10px;border-radius:10px;font-weight:600;' +
+              'background:' + bgColor + ';white-space:nowrap;">' + escHtml(statusLabel) + '</span>' +
+          '</div>' +
+          '<div style="font-size:.8rem;color:#6b7280;margin-bottom:8px;">' +
+            'Submitted: ' + escHtml(nom.submittedAt.toString().split('T')[0] || nom.submittedAt.toString()) +
+            ' · Role: ' + escHtml(nom.role) +
+          '</div>' +
+          '<div style="display:flex;gap:12px;font-size:.82rem;margin-bottom:8px;">' +
+            '<span style="color:' + (nom.propConfirmed ? '#059669' : '#9ca3af') + ';">' +
+              (nom.propConfirmed ? '✓' : '○') + ' Proposer confirmed</span>' +
+            '<span style="color:' + (nom.secConfirmed ? '#059669' : '#9ca3af') + ';">' +
+              (nom.secConfirmed ? '✓' : '○') + ' Seconder confirmed</span>' +
+          '</div>' +
+          (nom.rejectionReason ?
+            '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
+            'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
+            '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>' : '') +
+          (nom.status === 'submitted' || nom.status === 'confirmed' ?
+            '<button onclick="VoterPanel._confirmWithdraw(\'' + escHtml(nom.id) + '\',\'' +
+            escHtml(nom.post) + '\')" ' +
+            'style="width:100%;padding:12px;background:#fff;color:#dc2626;border:1.5px solid #dc2626;' +
+            'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Withdraw Nomination</button>'
+            : '') +
+        '</div>';
+    }
+    return html;
+  }
+
+  function _confirmWithdraw(nomId, postName) {
+    if (!confirm('Withdraw your nomination for "' + postName + '"?\n\nThis cannot be undone.')) return;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Withdrawal failed.', true);
+          return;
+        }
+        showToast('Nomination withdrawn.');
+        _loadMyNominations();
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .withdrawNomination(App.token, nomId);
+  }
+
   return {
     init: init,
     submitVote: submitVote,
     showNominationsBoard: showNominationsBoard,
     switchToReceipts: switchToReceipts,
-    switchToNominations: switchToNominations
+    switchToNominations: switchToNominations,
+    showNominationForm: showNominationForm,
+    showMyNominations: showMyNominations,
+    _lookupRoll: _lookupRoll,
+    _submitNomination: _submitNomination,
+    _backToBallot: _backToBallot,
+    _confirmWithdraw: _confirmWithdraw
   };
 
 })();
