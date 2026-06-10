@@ -4066,3 +4066,298 @@ function recordGithubTransferred(token) {
 
   return { success: true };
 }
+
+// ============================================================
+// VOTER PANEL BACKEND FUNCTIONS
+// ============================================================
+ 
+// ============================================================
+// getElectionsForVoter — returns the most relevant election
+// for the voter panel status screen.
+// Access: VOTER (any valid session)
+// ============================================================
+function getElectionsForVoter(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  var elections = sheetData(SHEETS.ELECTIONS);
+  // Priority order: active states first, then pre-vote, then post-vote
+  var priority = [
+    'active', 'paused', 'candidates_published',
+    'scrutiny', 'nominations_open_phase2', 'nominations_open',
+    'closed', 'declared', 'draft'
+  ];
+  var best = null;
+  var bestP = priority.length;
+  for (var i = 0; i < elections.length; i++) {
+    var p = priority.indexOf(elections[i][COL.ELEC_STATUS].toString());
+    if (p !== -1 && p < bestP) { best = elections[i]; bestP = p; }
+  }
+ 
+  if (!best) return { success: true, election: null };
+ 
+  return {
+    success: true,
+    election: {
+      id:          best[COL.ELEC_ID].toString(),
+      title:       best[COL.ELEC_TITLE].toString(),
+      status:      best[COL.ELEC_STATUS].toString(),
+      isTrial:     best[COL.ELEC_TRIAL].toString() === 'true',
+      nomDeadline: best[COL.ELEC_NOM_DEADLINE].toString(),
+      vDay:        best[COL.ELEC_VDAY].toString(),
+      voteClose:   best[COL.ELEC_VOTE_CLOSE].toString(),
+      declareDay:  best[COL.ELEC_DECLARE_DAY].toString(),
+      ecContact:   best[COL.ELEC_EC_CONTACT].toString(),
+      resultVis:   best[COL.ELEC_RESULT_VIS].toString(),
+      mode:        best[COL.ELEC_MODE].toString()
+    }
+  };
+}
+ 
+// ============================================================
+// getCandidatesForVoter — returns candidate list for the ballot.
+// Candidates are shuffled per post for display fairness.
+// Access: VOTER (any valid session), election must be active/paused
+// ============================================================
+function getCandidatesForVoter(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  // Verify election is in a state where ballot is accessible
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  var status = elec[COL.ELEC_STATUS].toString();
+  if (status !== 'active' && status !== 'paused') {
+    return { success: false, message: 'Ballot not available — election is not currently open.' };
+  }
+ 
+  var candRows = sheetData(SHEETS.CANDIDATES);
+  // Group candidates by post, in EC_POSTS order
+  var postMap = {};
+  for (var j = 0; j < candRows.length; j++) {
+    var row = candRows[j];
+    if (row[COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
+    var post = row[COL.CAND_POST].toString();
+    if (!postMap[post]) postMap[post] = { post: post, order: row[COL.CAND_POST_ORDER], candidates: [] };
+    postMap[post].candidates.push({
+      id:    row[COL.CAND_ID].toString(),
+      name:  row[COL.CAND_NAME].toString(),
+      roll:  row[COL.CAND_ROLL].toString(),
+      batch: row[COL.CAND_BATCH].toString(),
+      bio:   row[COL.CAND_BIO].toString(),
+      photo: row[COL.CAND_PHOTO].toString(),
+      seats: parseInt(row[COL.CAND_SEAT_COUNT].toString()) || 1
+    });
+  }
+ 
+  // Sort posts by order, shuffle candidates within each post
+  var posts = [];
+  for (var key in postMap) {
+    var pg = postMap[key];
+    // Fisher-Yates shuffle
+    var arr = pg.candidates;
+    for (var k = arr.length - 1; k > 0; k--) {
+      var r = Math.floor(Math.random() * (k + 1));
+      var tmp = arr[k]; arr[k] = arr[r]; arr[r] = tmp;
+    }
+    posts.push({ post: pg.post, order: parseInt(pg.order) || 99, candidates: arr,
+                 seatCount: arr.length > 0 ? arr[0].seats : 1 });
+  }
+  posts.sort(function(a, b) { return a.order - b.order; });
+ 
+  return { success: true, posts: posts, electionTitle: elec[COL.ELEC_TITLE].toString() };
+}
+ 
+// ============================================================
+// getBallotStatus — returns which posts the voter has already voted on.
+// Reads VotedLog only — no vote content, no candidate identity.
+// Access: VOTER (any valid session)
+// ============================================================
+function getBallotStatus(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  var rows = sheetData(SHEETS.VOTED_LOG);
+  var voted = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.LOG_ROLL].toString()    === sess.identity.toString() &&
+        rows[i][COL.LOG_ELEC_ID].toString() === electionId.toString()) {
+      voted.push(rows[i][COL.LOG_POST].toString());
+    }
+  }
+  return { success: true, votedPosts: voted };
+}
+ 
+// ============================================================
+// castVote — records a single post vote.
+// TRUST ARCHITECTURE: Votes and VotedLog are written in the SAME
+// transaction. Votes contains NO voter identity. VotedLog contains
+// NO vote content. These two sheets must never be correlated.
+// Access: VOTER (any valid session), election must be active
+// ============================================================
+function castVote(token, electionId, postName, candidateId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  // 1. Verify election is active
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'active') {
+    return { success: false, message: 'Voting is not currently open.' };
+  }
+ 
+  // 2. Check voter has not already voted on this post (idempotency guard)
+  var logRows = sheetData(SHEETS.VOTED_LOG);
+  for (var j = 0; j < logRows.length; j++) {
+    if (logRows[j][COL.LOG_ROLL].toString()    === sess.identity.toString() &&
+        logRows[j][COL.LOG_ELEC_ID].toString() === electionId.toString() &&
+        logRows[j][COL.LOG_POST].toString()     === postName.toString()) {
+      return { success: false, message: 'You have already voted for this post.' };
+    }
+  }
+ 
+  // 3. Validate candidateId is valid for this post in this election
+  //    (or is 'NOTA' or 'ABSTAIN' — always valid)
+  if (candidateId !== 'NOTA' && candidateId !== 'ABSTAIN') {
+    var candRows = sheetData(SHEETS.CANDIDATES);
+    var validCand = false;
+    for (var k = 0; k < candRows.length; k++) {
+      if (candRows[k][COL.CAND_ID].toString()      === candidateId.toString() &&
+          candRows[k][COL.CAND_ELEC_ID].toString() === electionId.toString() &&
+          candRows[k][COL.CAND_POST].toString()     === postName.toString()) {
+        validCand = true; break;
+      }
+    }
+    if (!validCand) return { success: false, message: 'Invalid candidate selection.' };
+  }
+ 
+  // 4. Write to Votes — NO voter identity
+  var voteId = 'V-' + new Date().getTime() + '-' + Math.floor(Math.random() * 100000);
+  var now    = new Date();
+  var votesSh = getSheet(SHEETS.VOTES);
+  if (!votesSh) return { success: false, message: 'Votes sheet not found.' };
+  votesSh.appendRow([voteId, electionId, postName, candidateId, now]);
+ 
+  // 5. Write to VotedLog — NO vote content
+  var logSh = getSheet(SHEETS.VOTED_LOG);
+  if (!logSh) return { success: false, message: 'VotedLog sheet not found.' };
+  logSh.appendRow([sess.identity, electionId, postName, now]);
+ 
+  return { success: true, receiptToken: voteId };
+}
+ 
+// ============================================================
+// getMyReceipts — returns voter's own VotedLog entries.
+// Returns post names and timestamps only — no vote content.
+// Access: VOTER (any valid session)
+// ============================================================
+function getMyReceipts(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  var rows = sheetData(SHEETS.VOTED_LOG);
+  var receipts = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.LOG_ROLL].toString() === sess.identity.toString()) {
+      var eId = rows[i][COL.LOG_ELEC_ID].toString();
+      if (!electionId || eId === electionId.toString()) {
+        receipts.push({
+          electionId: eId,
+          post:       rows[i][COL.LOG_POST].toString(),
+          votedAt:    rows[i][COL.LOG_TIMESTAMP].toString()
+        });
+      }
+    }
+  }
+  return { success: true, receipts: receipts };
+}
+ 
+// ============================================================
+// getNominationsBoard — returns confirmed/accepted nominations
+// for the public nominations board.
+// Visible from nominations_open status onward.
+// No roll numbers, no proposer/seconder identity returned.
+// Access: VOTER (any valid session)
+// ============================================================
+function getNominationsBoard(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+ 
+  // Verify election exists and is in a visible state
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+ 
+  var visibleStatuses = [
+    'nominations_open', 'nominations_open_phase2',
+    'scrutiny', 'candidates_published', 'active', 'paused', 'closed', 'declared'
+  ];
+  if (visibleStatuses.indexOf(elec[COL.ELEC_STATUS].toString()) === -1) {
+    return { success: false, message: 'Nominations board not yet available.' };
+  }
+ 
+  var nomRows  = sheetData(SHEETS.NOMINATIONS);
+  // Which statuses to show depends on election phase:
+  // During nominations/scrutiny: show 'confirmed' (both proposer + seconder confirmed)
+  // After candidates_published: show 'accepted' only
+  var elecStatus = elec[COL.ELEC_STATUS].toString();
+  var showStatuses;
+  if (elecStatus === 'candidates_published' || elecStatus === 'active' ||
+      elecStatus === 'paused' || elecStatus === 'closed' || elecStatus === 'declared') {
+    showStatuses = ['accepted'];
+  } else {
+    showStatuses = ['confirmed', 'accepted'];
+  }
+ 
+  // Group by post in EC_POSTS order
+  var postMap = {};
+  for (var j = 0; j < nomRows.length; j++) {
+    var row = nomRows[j];
+    if (row[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (showStatuses.indexOf(row[COL.NOM_STATUS].toString()) === -1) continue;
+    var post = row[COL.NOM_POST].toString();
+    if (!postMap[post]) {
+      // Find post order from EC_POSTS
+      var postOrder = 99;
+      for (var p = 0; p < EC_POSTS.length; p++) {
+        if (EC_POSTS[p].name === post) { postOrder = EC_POSTS[p].order; break; }
+      }
+      postMap[post] = { post: post, order: postOrder, nominations: [] };
+    }
+    postMap[post].nominations.push({
+      name:   row[COL.NOM_CAND_NAME].toString(),
+      batch:  row[COL.NOM_CAND_BATCH].toString(),
+      bio:    row[COL.NOM_BIO].toString(),
+      status: row[COL.NOM_STATUS].toString()
+      // Deliberately excludes: roll, proposer roll, seconder roll
+    });
+  }
+ 
+  var posts = [];
+  for (var key in postMap) { posts.push(postMap[key]); }
+  posts.sort(function(a, b) { return a.order - b.order; });
+ 
+  return {
+    success:      true,
+    posts:        posts,
+    electionTitle: elec[COL.ELEC_TITLE].toString(),
+    electionStatus: elecStatus
+  };
+}
