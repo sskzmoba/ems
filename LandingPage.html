@@ -1,33 +1,290 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SSKZM OBA Elections</title>
-  <style>
-    body{font-family:Arial,sans-serif;background:#f0f2f5;margin:0;padding:40px 20px}
-    .card{max-width:500px;margin:0 auto;background:#fff;border-radius:6px;
-      box-shadow:0 2px 10px rgba(0,0,0,.12);overflow:hidden}
-    .header{background:#1a3a5c;border-top:3px solid #b8960c;padding:24px 28px}
-    .header h1{margin:0;color:#fff;font-size:1.2rem}
-    .header p{margin:4px 0 0;color:rgba(255,255,255,.65);font-size:.85rem}
-    .body{padding:28px}
-    .btn{display:block;text-align:center;padding:13px;border-radius:4px;
-      text-decoration:none;font-size:1rem;margin-bottom:12px}
-    .btn-primary{background:#1a3a5c;color:#fff}
-    .btn-secondary{background:#f0f2f5;color:#1a3a5c;border:1px solid #ccc}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSKZM OBA — Election Management System</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:20px;line-height:1.6;}
+
+.trial-banner{background:#8b0000;padding:10px 18px;display:flex;align-items:center;justify-content:center;gap:10px;}
+.trial-banner-icon{color:#ffcccc;font-size:16px;flex-shrink:0;}
+.trial-banner-txt{font-size:15px;color:#fff;font-weight:700;line-height:1.6;text-align:center;}
+.trial-banner-txt strong{color:#ffcccc;}
+
+.header{background:#1a3a5c;padding:16px 18px;border-bottom:3px solid #1a3a5c;}
+.header-assoc{font-size:12px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;}
+.header-title{font-size:22px;font-weight:600;color:#fff;line-height:1.3;}
+.header-sub{font-size:14px;color:rgba(255,255,255,0.85);margin-top:3px;}
+
+.body{padding:16px 18px;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto;}
+
+.status-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
+.status-head{background:#1a3a5c;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.status-head-t{font-size:15px;font-weight:600;color:#fff;}
+.trial-pill{background:rgba(250,199,117,0.2);border:1px solid #FAC775;color:#FAC775;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;white-space:nowrap;}
+.status-pill{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;white-space:nowrap;}
+
+.phase-strip{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid #dde3ea;overflow-x:auto;-webkit-overflow-scrolling:touch;background:#f8fafc;}
+.phase-step{display:flex;align-items:center;gap:5px;font-size:12px;color:#aaa;white-space:nowrap;}
+.phase-step.done{color:#1a7a4a;}
+.phase-step.active{color:#1a3a5c;font-weight:600;}
+.phase-dot{width:7px;height:7px;border-radius:50%;background:#ddd;flex-shrink:0;}
+.phase-step.done .phase-dot{background:#1a7a4a;}
+.phase-step.active .phase-dot{background:#1a3a5c;}
+.phase-arrow{font-size:10px;color:#ccc;padding:0 6px;flex-shrink:0;}
+
+.dates-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 16px;}
+.date-cell{background:#f0f2f5;border:1px solid #dde3ea;border-radius:6px;padding:10px 12px;}
+.date-lbl{font-size:11px;color:#888;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;}
+.date-val{font-size:14px;color:#1a3a5c;font-weight:600;}
+.date-val.blank{color:#bbb;font-style:italic;font-weight:400;}
+
+.status-msg{margin:0 16px 14px;border-radius:5px;padding:10px 13px;font-size:14px;line-height:1.7;}
+.msg-nominations{background:#faeeda;border-left:3px solid #b8922a;color:#633806;}
+.msg-candidates{background:#e6f1fb;border-left:3px solid #1a3a5c;color:#0c2340;}
+.msg-voting{background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
+.msg-results{background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
+.msg-default{background:#f0f2f5;border-left:3px solid #dde3ea;color:#555;}
+
+.no-election-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:32px 20px;text-align:center;}
+.no-election-t{font-size:18px;font-weight:600;color:#1a3a5c;margin-bottom:8px;}
+.no-election-d{font-size:14px;color:#777;line-height:1.7;}
+
+.login-primary{display:block;width:100%;padding:16px;background:#1a3a5c;color:#fff;border:none;border-radius:8px;font-size:18px;font-weight:600;cursor:pointer;text-align:center;min-height:52px;font-family:Arial,sans-serif;}
+.login-primary:hover{background:#0f2540;}
+.tutorial-link{display:block;text-align:center;font-size:13px;color:#888;padding:6px;cursor:pointer;text-decoration:none;}
+.tutorial-link:hover{color:#1a3a5c;text-decoration:underline;}
+
+.vva-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:14px 16px;display:flex;align-items:flex-start;gap:13px;}
+.vva-icon{width:38px;height:38px;border-radius:7px;background:#e6f1fb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;color:#1a3a5c;}
+.vva-body{flex:1;}
+.vva-title{font-size:15px;font-weight:600;color:#1a3a5c;margin-bottom:3px;}
+.vva-sub{font-size:13px;color:#666;line-height:1.55;margin-bottom:6px;}
+.vva-link{font-size:14px;color:#1a3a5c;text-decoration:none;font-weight:600;}
+.vva-link:hover{text-decoration:underline;}
+
+.trust-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:14px 16px;}
+.trust-lbl{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;}
+.trust-item{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f0f2f5;}
+.trust-item:last-child{border-bottom:none;padding-bottom:0;}
+.trust-dot{width:6px;height:6px;border-radius:50%;background:#1a3a5c;flex-shrink:0;margin-top:8px;}
+.trust-txt{font-size:14px;color:#555;line-height:1.65;}
+.trust-txt strong{color:#222;font-weight:600;}
+
+.footer{padding:14px 18px;border-top:1px solid #dde3ea;background:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+.footer-l{font-size:12px;color:#999;line-height:1.6;}
+.footer-links{display:flex;gap:14px;}
+.footer-lk{font-size:12px;color:#999;text-decoration:none;}
+.footer-lk:hover{color:#1a3a5c;}
+
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid #dde3ea;border-top-color:#1a3a5c;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
 </head>
 <body>
-  <div class="card">
-    <div class="header">
-      <h1>SSKZM Old Boys Association</h1>
-      <p>Election Management System</p>
-    </div>
-    <div class="body">
-      <p style="color:#555;margin-top:0">Welcome. Please use one of the options below.</p>
-      <a href="https://script.google.com/macros/s/AKfycbxLGxL0GiKfExlqHN_yNMuwj5JZGd0Y5vdx6my3KAUfdH67CaEutUN2rLfzXBzw4FvJ3w/exec?action=login" class="btn btn-primary">Voter Login</a>
-      <a href="https://script.google.com/macros/s/AKfycbxLGxL0GiKfExlqHN_yNMuwj5JZGd0Y5vdx6my3KAUfdH67CaEutUN2rLfzXBzw4FvJ3w/exec?action=tutorial" class="btn btn-secondary">How It Works</a>
+
+<div id="trial-banner" style="display:none;">
+  <div class="trial-banner">
+    <div class="trial-banner-txt">
+      &#9432; &nbsp;<strong>TRIAL ELECTION</strong> — This is a test run only. No votes cast here count toward any official result.
     </div>
   </div>
+</div>
+
+<div class="header">
+  <div class="header-assoc">SSKZM Old Boys Association</div>
+  <div class="header-title">Election Management System</div>
+  <div class="header-sub" id="header-sub">2026–27 Executive Committee Election</div>
+</div>
+
+<div class="body">
+
+  <div id="status-area">
+    <div style="padding:28px;text-align:center;color:#999;font-size:13px;">
+      <span class="spinner"></span>Loading election status…
+    </div>
+  </div>
+
+  <button class="login-primary" onclick="goVoterLogin()">Login</button>
+<a class="tutorial-link" onclick="window.location.href=DEPLOY_URL+'?action=tutorial'">How It Works</a>
+
+  <div id="vva-area" style="display:none;">
+    <div class="vva-card">
+      <div class="vva-icon">&#10003;</div>
+      <div class="vva-body">
+        <div class="vva-title">Verify your voter roll status</div>
+        <div class="vva-sub">Check if your details are on the voter roll before the cutoff date.</div>
+        <a id="vva-link" href="#" class="vva-link" target="_blank" rel="noopener">Open verification portal &#8599;</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="trust-card">
+    <div class="trust-lbl">How your vote is protected</div>
+    <div class="trust-item">
+      <div class="trust-dot"></div>
+      <div class="trust-txt"><strong>Structural anonymity</strong> — no one can link your vote to your identity, not even the Returning Officer.</div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-dot"></div>
+      <div class="trust-txt"><strong>RO independence</strong> — once the RO is appointed, the EC has zero access to the election system.</div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-dot"></div>
+      <div class="trust-txt"><strong>Receipt token</strong> — every vote generates an anonymous token you can verify after results are declared.</div>
+    </div>
+    <div class="trust-item">
+      <div class="trust-dot"></div>
+      <div class="trust-txt"><strong>Data stays with OBA</strong> — all election data lives in the Association's own Google account. No vendor holds your data.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <div class="footer-l">
+    SSKZM Old Boys Association · Election Management System<br>
+    All data held on OBA's own Google account
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/sskzmoba/ems" class="footer-lk" target="_blank" rel="noopener">GitHub</a>
+    <a href="mailto:sskzmobakazak@gmail.com" class="footer-lk">Contact GS</a>
+  </div>
+</div>
+
+<script>
+var DEPLOY_URL = '<?= ScriptApp.getService().getUrl() ?>';
+
+function goVoterLogin() {
+  window.location.href = DEPLOY_URL + '?action=login';
+}
+
+function fmtDate(d) {
+  if (!d || d.toString().trim() === '') return null;
+  var dt = new Date(d);
+  if (isNaN(dt.getTime())) return d.toString();
+  return dt.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function phaseFor(status) {
+  if (status === 'nominations_open' || status === 'nominations_open_phase2') return 'nominations';
+  if (status === 'scrutiny' || status === 'candidates_published') return 'candidates';
+  if (status === 'active' || status === 'paused' || status === 'closed') return 'voting';
+  if (status === 'declared') return 'results';
+  return 'none';
+}
+
+function phaseLabel(status) {
+  var map = {
+    nominations_open:        'Nominations are open. Life members may log in to submit or support a nomination.',
+    nominations_open_phase2: 'Phase 2 nominations are open. Log in to nominate a fellow member.',
+    scrutiny:                'Nominations are under review by the Returning Officer.',
+    candidates_published:    'The candidate list has been published. Voting opens soon — check the dates below.',
+    active:                  'Voting is open. Log in now to cast your vote.',
+    paused:                  'Voting is temporarily paused. Please check back shortly.',
+    closed:                  'Voting has closed. Results will be declared by the Returning Officer.',
+    declared:                'Results have been declared. Thank you to all who participated.'
+  };
+  return map[status] || 'Election in progress. Please check back for updates.';
+}
+
+function msgClass(status) {
+  if (status === 'nominations_open' || status === 'nominations_open_phase2') return 'msg-nominations';
+  if (status === 'scrutiny' || status === 'candidates_published') return 'msg-candidates';
+  if (status === 'active' || status === 'paused' || status === 'closed') return 'msg-voting';
+  if (status === 'declared') return 'msg-results';
+  return 'msg-default';
+}
+
+function buildPhaseStrip(activePhase) {
+  var phases = [
+    { id:'nominations', label:'Nominations' },
+    { id:'candidates',  label:'Candidates'  },
+    { id:'voting',      label:'Voting'      },
+    { id:'results',     label:'Results'     }
+  ];
+  var passed = true;
+  var html = '<div class="phase-strip">';
+  for (var i = 0; i < phases.length; i++) {
+    var p = phases[i];
+    var cls = 'phase-step';
+    if (p.id === activePhase) { cls += ' active'; passed = false; }
+    else if (passed)           { cls += ' done'; }
+    html += '<div class="' + cls + '"><div class="phase-dot"></div>' + p.label + '</div>';
+    if (i < phases.length - 1) html += '<div class="phase-arrow">›</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderStatusCard(e) {
+  var phase    = phaseFor(e.status);
+  var titleTxt = e.title + (e.trial ? ' — Trial' : '');
+  var pillHtml = e.trial
+    ? '<div class="trial-pill">Trial run</div>'
+    : '<div class="status-pill">' + e.status.replace(/_/g,' ') + '</div>';
+
+  var nomDate  = fmtDate(e.nomDeadline);
+  var vDay     = fmtDate(e.vDay);
+  var declDay  = fmtDate(e.declareDay);
+  var mode     = e.mode
+    ? e.mode.charAt(0).toUpperCase() + e.mode.slice(1)
+    : '';
+
+  var html = '<div class="status-card">';
+  html += '<div class="status-head"><div class="status-head-t">' + titleTxt + '</div>' + pillHtml + '</div>';
+  html += buildPhaseStrip(phase);
+  html += '<div class="dates-grid">';
+  html += '<div class="date-cell"><div class="date-lbl">Nominations closed</div><div class="date-val' + (!nomDate ? ' blank' : '') + '">' + (nomDate || 'TBA') + '</div></div>';
+  html += '<div class="date-cell"><div class="date-lbl">Voting opens</div><div class="date-val' + (!vDay ? ' blank' : '') + '">' + (vDay || 'TBA') + '</div></div>';
+  html += '<div class="date-cell"><div class="date-lbl">Results declared</div><div class="date-val' + (!declDay ? ' blank' : '') + '">' + (declDay || 'TBA') + '</div></div>';
+  html += '<div class="date-cell"><div class="date-lbl">Mode</div><div class="date-val' + (!mode ? ' blank' : '') + '">' + (mode || 'TBA') + '</div></div>';
+  html += '</div>';
+  html += '<div class="status-msg ' + msgClass(e.status) + '">' + phaseLabel(e.status) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderNoElection() {
+  return '<div class="no-election-card">' +
+    '<div class="no-election-t">No election is currently scheduled</div>' +
+    '<div class="no-election-d">When the Executive Committee announces an election,<br>details will appear here.</div>' +
+    '</div>';
+}
+
+google.script.run
+  .withSuccessHandler(function(res) {
+    var area = document.getElementById('status-area');
+    if (!res || !res.found) {
+      area.innerHTML = renderNoElection();
+      return;
+    }
+
+    if (res.trial) {
+      document.getElementById('trial-banner').style.display = 'block';
+    }
+
+    if (res.title) {
+      document.getElementById('header-sub').textContent = res.title;
+    }
+
+    area.innerHTML = renderStatusCard(res);
+
+    if (res.vvaUrl && res.vvaUrl.trim() !== '') {
+      document.getElementById('vva-link').href = res.vvaUrl;
+      document.getElementById('vva-area').style.display = 'block';
+    }
+  })
+  .withFailureHandler(function() {
+    document.getElementById('status-area').innerHTML =
+      '<div class="no-election-card">' +
+      '<div class="no-election-t">Unable to load election status</div>' +
+      '<div class="no-election-d">Please refresh the page. If this persists, contact the General Secretary.</div>' +
+      '</div>';
+  })
+  .getPublicElectionStatus();
+</script>
 </body>
 </html>

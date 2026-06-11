@@ -2455,6 +2455,17 @@ function getPublicElectionStatus() {
       return { found: false, message: 'No election is currently scheduled.' };
     }
 
+    var vvaUrl = '';
+    try {
+      var lpcRows = sheetData(SHEETS.LANDING_CONTENT);
+      for (var k = 0; k < lpcRows.length; k++) {
+        if (lpcRows[k][0].toString().trim() === 'vva_url') {
+          vvaUrl = lpcRows[k][1].toString().trim();
+          break;
+        }
+      }
+    } catch (e) { vvaUrl = ''; }
+
     return {
       found:       true,
       electionId:  best[COL.ELEC_ID].toString(),
@@ -2466,7 +2477,8 @@ function getPublicElectionStatus() {
       vDay:        best[COL.ELEC_VDAY].toString(),
       voteClose:   best[COL.ELEC_VOTE_CLOSE].toString(),
       declareDay:  best[COL.ELEC_DECLARE_DAY].toString(),
-      resultVis:   best[COL.ELEC_RESULT_VIS].toString()
+      resultVis:   best[COL.ELEC_RESULT_VIS].toString(),
+      vvaUrl:      vvaUrl
     };
   } catch (e) {
     return { found: false, message: 'Election status unavailable.' };
