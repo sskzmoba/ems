@@ -5058,3 +5058,131 @@ function purgeTrialData(token, electionId, confirmPhrase) {
 
   return { success: true, counts: counts };
 }
+
+// ============================================================
+// updateObjectionStatus — marks a VoterRollDraft row with an
+// objection status and optional notes.
+// Access: RO_ADMIN only
+// Valid status: objected | resolved_retained | resolved_removed | none
+// ============================================================
+function updateObjectionStatus(token, rollNo, status, notes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var allowed = ['objected', 'resolved_retained', 'resolved_removed', 'none'];
+  if (allowed.indexOf(status) === -1) {
+    return { success: false, message: 'Invalid status value.' };
+  }
+  if (!rollNo || rollNo.toString().trim() === '') {
+    return { success: false, message: 'Roll number required.' };
+  }
+
+  var sh = getSheet(SHEETS.VOTER_ROLL_DRAFT);
+  if (!sh) return { success: false, message: 'VoterRollDraft sheet not found.' };
+
+  var data = sh.getDataRange().getValues();
+  var found = false;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][COL_VRD.ROLL].toString().trim() === rollNo.toString().trim()) {
+      var oldStatus = data[i][COL_VRD.OBJECTION_STATUS].toString();
+      sh.getRange(i + 1, COL_VRD.OBJECTION_STATUS + 1).setValue(status);
+      sh.getRange(i + 1, COL_VRD.OBJECTION_NOTES + 1).setValue(notes ? notes.toString().trim() : '');
+      appendAdminLog(sess.identity, 'objection_status_updated',
+        'VoterRollDraft roll ' + rollNo + ': status changed from "' + oldStatus +
+        '" to "' + status + '".' + (notes ? ' Notes: ' + notes : ''),
+        oldStatus, status);
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) return { success: false, message: 'Roll number not found in draft.' };
+  return { success: true };
+}
+
+// ============================================================
+// certifyVoterRoll — certifies the voter roll.
+// Gates:
+//   1. At least one row must exist in VoterRollDraft
+//   2. No rows with objection_status = 'objected' (unresolved)
+// On success: copies non-removed rows to Voters sheet, logs.
+// Access: RO_ADMIN only
+// ============================================================
+function certifyVoterRoll(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh = getSheet(SHEETS.VOTER_ROLL_DRAFT);
+  if (!sh) return { success: false, message: 'VoterRollDraft sheet not found.' };
+
+  var data = sh.getDataRange().getValues();
+  var draftRows = data.slice(1);
+
+  if (draftRows.length === 0) {
+    return { success: false, message: 'Cannot certify: voter roll draft is empty.' };
+  }
+
+  var unresolvedCount = 0;
+  for (var i = 0; i < draftRows.length; i++) {
+    if (draftRows[i][COL_VRD.OBJECTION_STATUS].toString() === 'objected') {
+      unresolvedCount++;
+    }
+  }
+  if (unresolvedCount > 0) {
+    return {
+      success: false,
+      message: 'Cannot certify: ' + unresolvedCount +
+        ' objection(s) unresolved. Mark each as Retained or Removed first.'
+    };
+  }
+
+  var voterSh = getSheet(SHEETS.VOTERS);
+  if (!voterSh) return { success: false, message: 'Voters sheet not found.' };
+
+  var lastVoterRow = voterSh.getLastRow();
+  if (lastVoterRow > 1) {
+    voterSh.getRange(2, 1, lastVoterRow - 1, voterSh.getLastColumn()).clearContent();
+  }
+
+  var writeRows = [];
+  var certifiedCount = 0;
+  var removedCount = 0;
+  for (var j = 0; j < draftRows.length; j++) {
+    var r = draftRows[j];
+    if (r[COL_VRD.OBJECTION_STATUS].toString() === 'resolved_removed') {
+      removedCount++;
+      continue;
+    }
+    var voterRow = new Array(14).fill('');
+    voterRow[0]  = r[COL_VRD.ROLL];
+    voterRow[1]  = r[COL_VRD.NAME];
+    voterRow[2]  = r[COL_VRD.SURNAME];
+    voterRow[3]  = r[COL_VRD.BATCH];
+    voterRow[4]  = r[COL_VRD.EMAIL];
+    voterRow[5]  = r[COL_VRD.PHONE_CC];
+    voterRow[6]  = r[COL_VRD.PHONE];
+    voterRow[7]  = r[COL_VRD.PHONE2_CC];
+    voterRow[8]  = r[COL_VRD.PHONE2];
+    voterRow[9]  = 'TRUE';
+    voterRow[10] = 'FALSE';
+    voterRow[11] = '';
+    voterRow[12] = '';
+    voterRow[13] = r[COL_VRD.VERIFICATION_CAT];
+    writeRows.push(voterRow);
+    certifiedCount++;
+  }
+
+  if (writeRows.length > 0) {
+    voterSh.getRange(2, 1, writeRows.length, 14).setValues(writeRows);
+  }
+
+  appendAdminLog(sess.identity, 'voter_roll_certified',
+    'Voter roll certified for election ' + (electionId || 'unspecified') + '. ' +
+    certifiedCount + ' voters certified. ' + removedCount + ' removed by objection.',
+    '', electionId || '');
+
+  return { success: true, certified: certifiedCount, removed: removedCount };
+}
+

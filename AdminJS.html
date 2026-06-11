@@ -10,18 +10,19 @@ var AdminPanel = (function() {
   // Tab definitions per role
   var TAB_SETS = {
     RO_ADMIN: [
-      { id:'elections',   label:'Elections' },
-      { id:'nominations', label:'Nominations' },
-      { id:'scrutiny',    label:'Scrutiny' },
-      { id:'candidates',  label:'Candidates' },
-      { id:'voters',      label:'Voters' },
-      { id:'tally',       label:'Tally' },
-      { id:'handover',    label:'Handover' },
-      { id:'admins',      label:'Admins' },
-      { id:'adminlog',    label:'Log' },
-      { id:'complaints',  label:'Complaints' },
-      { id:'appeals',     label:'Appeals' },
-      { id:'settings',    label:'Settings' }
+      { id:'elections',        label:'Elections' },
+      { id:'nominations',      label:'Nominations' },
+      { id:'scrutiny',         label:'Scrutiny' },
+      { id:'candidates',       label:'Candidates' },
+      { id:'voters',           label:'Voters' },
+      { id:'voter_roll_draft', label:'Roll Draft' },
+      { id:'tally',            label:'Tally' },
+      { id:'handover',         label:'Handover' },
+      { id:'admins',           label:'Admins' },
+      { id:'adminlog',         label:'Log' },
+      { id:'complaints',       label:'Complaints' },
+      { id:'appeals',          label:'Appeals' },
+      { id:'settings',         label:'Settings' }
     ],
     DEPUTY_RO: [
       { id:'elections',   label:'Elections' },
@@ -216,6 +217,15 @@ var AdminPanel = (function() {
         '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
         '<div class="spinner"></div>' +
         '<div style="font-size:.85rem;margin-top:12px;">Loading appeals…</div>' +
+        '</div></div>';
+    }
+
+    if (tabId === 'voter_roll_draft') {
+      setTimeout(function() { AdminPanel._loadVoterRollDraft('all', ''); }, 0);
+      return '<div id="vrd-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading voter roll draft…</div>' +
         '</div></div>';
     }
 
@@ -3577,6 +3587,248 @@ _saveAppeal: function(appealId, idx) {
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
     .updateAppealDecision(App.token, appealId, decision, notes, decText);
+},
+
+  // ============================================================
+// VOTER ROLL DRAFT TAB (S41)
+// ============================================================
+
+_loadVoterRollDraft: function(filter, search) {
+  var c = document.getElementById('vrd-content');
+  if (!c) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        c.innerHTML = '<div style="padding:24px;color:#b91c1c;">' +
+          (res && res.message ? res.message : 'Failed to load draft.') + '</div>';
+        return;
+      }
+      c.innerHTML = AdminPanel._renderVoterRollDraft(res.rows || [], filter, search || '');
+    })
+    .withFailureHandler(function() {
+      c.innerHTML = '<div style="padding:24px;color:#b91c1c;">Connection error.</div>';
+    })
+    .getVoterRollDraft(App.token, 1, search || '');
+},
+
+_renderVoterRollDraft: function(rows, filter, search) {
+  // Apply client-side filter
+  var filtered = rows.filter(function(r) {
+    var status = (r[10] || '').toString();
+    if (filter === 'objected')  return status === 'objected';
+    if (filter === 'unresolved') return status === 'objected';
+    if (filter === 'resolved')  return status === 'resolved_retained' || status === 'resolved_removed';
+    return true; // 'all'
+  });
+
+  var total     = rows.length;
+  var objected  = rows.filter(function(r){ return (r[10]||'').toString() === 'objected'; }).length;
+  var retained  = rows.filter(function(r){ return (r[10]||'').toString() === 'resolved_retained'; }).length;
+  var removed   = rows.filter(function(r){ return (r[10]||'').toString() === 'resolved_removed'; }).length;
+  var clean     = total - objected - retained - removed;
+
+  // Status badge helper
+  function badge(status) {
+    var map = {
+      'none':               ['#e5e7eb','#374151','No objection'],
+      'objected':           ['#fef3c7','#92400e','⚠ Objected'],
+      'resolved_retained':  ['#d1fae5','#065f46','✓ Retained'],
+      'resolved_removed':   ['#fee2e2','#991b1b','✗ Removed']
+    };
+    var v = map[status] || map['none'];
+    return '<span style="background:' + v[0] + ';color:' + v[1] +
+      ';padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">' +
+      v[2] + '</span>';
+  }
+
+  var html = '';
+
+  // Summary bar
+  html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:16px;' +
+    'background:#f8fafc;border-bottom:1px solid #e5e7eb;">';
+  html += '<div style="flex:1;min-width:120px;background:#fff;border:1px solid #e5e7eb;' +
+    'border-radius:6px;padding:10px 14px;">' +
+    '<div style="font-size:.75rem;color:#6b7280;">Total in draft</div>' +
+    '<div style="font-size:1.4rem;font-weight:700;color:#1a3a5c;">' + total + '</div></div>';
+  html += '<div style="flex:1;min-width:120px;background:#fff;border:1px solid #e5e7eb;' +
+    'border-radius:6px;padding:10px 14px;">' +
+    '<div style="font-size:.75rem;color:#6b7280;">No objection</div>' +
+    '<div style="font-size:1.4rem;font-weight:700;color:#374151;">' + clean + '</div></div>';
+  html += '<div style="flex:1;min-width:120px;background:#fef3c7;border:1px solid #fcd34d;' +
+    'border-radius:6px;padding:10px 14px;">' +
+    '<div style="font-size:.75rem;color:#92400e;">Unresolved</div>' +
+    '<div style="font-size:1.4rem;font-weight:700;color:#92400e;">' + objected + '</div></div>';
+  html += '<div style="flex:1;min-width:120px;background:#d1fae5;border:1px solid #6ee7b7;' +
+    'border-radius:6px;padding:10px 14px;">' +
+    '<div style="font-size:.75rem;color:#065f46;">Retained</div>' +
+    '<div style="font-size:1.4rem;font-weight:700;color:#065f46;">' + retained + '</div></div>';
+  html += '<div style="flex:1;min-width:120px;background:#fee2e2;border:1px solid #fca5a5;' +
+    'border-radius:6px;padding:10px 14px;">' +
+    '<div style="font-size:.75rem;color:#991b1b;">Removed</div>' +
+    '<div style="font-size:1.4rem;font-weight:700;color:#991b1b;">' + removed + '</div></div>';
+  html += '</div>';
+
+  // Search + filter bar
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;' +
+    'border-bottom:1px solid #e5e7eb;align-items:center;">';
+  html += '<input id="vrd-search" type="text" placeholder="Search roll / name…" ' +
+    'value="' + escHtml(search) + '" ' +
+    'style="flex:1;min-width:180px;padding:9px 12px;border:1px solid #d1d5db;' +
+    'border-radius:6px;font-size:.9rem;" ' +
+    'oninput="AdminPanel._loadVoterRollDraft(document.getElementById(\'vrd-filter\').value, this.value)">';
+  html += '<select id="vrd-filter" ' +
+    'style="padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;" ' +
+    'onchange="AdminPanel._loadVoterRollDraft(this.value, document.getElementById(\'vrd-search\').value)">';
+  var filterOpts = [
+    ['all','All rows'],
+    ['objected','Unresolved only'],
+    ['resolved','Resolved only']
+  ];
+  filterOpts.forEach(function(o) {
+    html += '<option value="' + o[0] + '"' + (filter === o[0] ? ' selected' : '') +
+      '>' + o[1] + '</option>';
+  });
+  html += '</select>';
+  html += '</div>';
+
+  // Certify button
+  html += '<div style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">';
+  if (objected > 0) {
+    html += '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;' +
+      'padding:10px 14px;font-size:.85rem;color:#92400e;">' +
+      '⚠ ' + objected + ' unresolved objection(s) must be resolved before certification.' +
+      '</div>';
+  } else if (total === 0) {
+    html += '<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;' +
+      'padding:10px 14px;font-size:.85rem;color:#991b1b;">' +
+      'No rows in draft. Upload a voter roll CSV in the Voters tab first.' +
+      '</div>';
+  } else {
+    html += '<button onclick="AdminPanel._certifyRoll()" ' +
+      'style="width:100%;padding:13px;background:#065f46;color:#fff;border:none;' +
+      'border-radius:6px;font-size:1rem;font-weight:600;cursor:pointer;min-height:44px;">' +
+      '✓ Certify Voter Roll (' + (total - removed) + ' voters)' +
+      '</button>';
+  }
+  html += '</div>';
+
+  // Row cards
+  if (filtered.length === 0) {
+    html += '<div style="padding:32px;text-align:center;color:#6b7280;font-size:.9rem;">' +
+      'No rows match this filter.</div>';
+    return html;
+  }
+
+  html += '<div style="padding:12px 16px;">';
+  filtered.forEach(function(r, idx) {
+    var rollNo  = (r[0]  || '').toString();
+    var name    = (r[1]  || '').toString() + ' ' + (r[2] || '').toString();
+    var batch   = (r[3]  || '').toString();
+    var email   = (r[4]  || '').toString();
+    var status  = (r[10] || 'none').toString();
+    var notes   = (r[11] || '').toString();
+    var verCat  = (r[12] || '').toString();
+    var cardId  = 'vrd-card-' + idx;
+
+    html += '<div id="' + cardId + '" style="background:#fff;border:1px solid #e5e7eb;' +
+      'border-radius:8px;padding:14px 16px;margin-bottom:10px;">';
+
+    // Top row: name + badge
+    html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
+      'gap:8px;margin-bottom:6px;">';
+    html += '<div style="font-weight:600;font-size:.95rem;color:#1a3a5c;">' +
+      escHtml(name.trim()) + '</div>';
+    html += badge(status);
+    html += '</div>';
+
+    // Meta row
+    html += '<div style="font-size:.8rem;color:#6b7280;margin-bottom:10px;">' +
+      'Roll: ' + escHtml(rollNo) + ' &nbsp;·&nbsp; Batch: ' + escHtml(batch) +
+      (verCat ? ' &nbsp;·&nbsp; ' + escHtml(verCat) : '') +
+      '<br>' + escHtml(email) +
+      '</div>';
+
+    // Existing notes
+    if (notes) {
+      html += '<div style="background:#f0f4f8;border-radius:4px;padding:8px 10px;' +
+        'font-size:.8rem;color:#374151;margin-bottom:10px;">' +
+        '<strong>Notes:</strong> ' + escHtml(notes) + '</div>';
+    }
+
+    // Action form
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
+    html += '<select id="vrd-status-' + idx + '" ' +
+      'style="flex:1;min-width:150px;padding:8px 10px;border:1px solid #d1d5db;' +
+      'border-radius:5px;font-size:.85rem;">';
+    var statusOpts = [
+      ['none','No objection'],
+      ['objected','Mark as Objected'],
+      ['resolved_retained','Resolve — Retain'],
+      ['resolved_removed','Resolve — Remove']
+    ];
+    statusOpts.forEach(function(o) {
+      html += '<option value="' + o[0] + '"' + (status === o[0] ? ' selected' : '') +
+        '>' + o[1] + '</option>';
+    });
+    html += '</select>';
+    html += '<input id="vrd-notes-' + idx + '" type="text" placeholder="Notes (optional)" ' +
+      'value="' + escHtml(notes) + '" ' +
+      'style="flex:2;min-width:160px;padding:8px 10px;border:1px solid #d1d5db;' +
+      'border-radius:5px;font-size:.85rem;">';
+    html += '<button onclick="AdminPanel._saveObjectionStatus(\'' +
+      escHtml(rollNo) + '\',' + idx + ')" ' +
+      'style="padding:8px 14px;background:#1a3a5c;color:#fff;border:none;' +
+      'border-radius:5px;font-size:.85rem;cursor:pointer;min-height:44px;">Save</button>';
+    html += '</div>';
+
+    html += '</div>'; // end card
+  });
+  html += '</div>';
+
+  return html;
+},
+
+_saveObjectionStatus: function(rollNo, idx) {
+  var statusEl = document.getElementById('vrd-status-' + idx);
+  var notesEl  = document.getElementById('vrd-notes-'  + idx);
+  if (!statusEl) return;
+  var status = statusEl.value;
+  var notes  = notesEl ? notesEl.value.trim() : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast((res && res.message) || 'Update failed.', true);
+        return;
+      }
+      showToast('Saved.');
+      var filter = document.getElementById('vrd-filter');
+      var search = document.getElementById('vrd-search');
+      AdminPanel._loadVoterRollDraft(
+        filter ? filter.value : 'all',
+        search ? search.value : ''
+      );
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .updateObjectionStatus(App.token, rollNo, status, notes);
+},
+
+_certifyRoll: function() {
+  if (!confirm('Certify the voter roll? This will copy all retained rows to the live ' +
+      'Voters sheet. This action is logged and cannot be undone.')) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast((res && res.message) || 'Certification failed.', true);
+        return;
+      }
+      showToast('Voter roll certified. ' + res.certified + ' voters, ' +
+        res.removed + ' removed.');
+      AdminPanel._loadVoterRollDraft('all', '');
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .certifyVoterRoll(App.token, '');
 },
 
   };
