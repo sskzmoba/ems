@@ -5034,8 +5034,10 @@ function getMyNominations(token, electionId) {
       rejectionReason:  r[COL.NOM_REJECTION].toString(),
       submittedAt:      r[COL.NOM_SUBMITTED_AT].toString(),
       propConfirmed:    r[COL.NOM_PROP_CONFIRMED].toString() === 'true',
+      secRoll:          r[COL.NOM_SEC_ROLL].toString(),
       secConfirmed:     r[COL.NOM_SEC_CONFIRMED].toString() === 'true',
       entryMethod:      r[COL.NOM_ENTRY_METHOD].toString(),
+      phase2:           r[COL.NOM_PHASE2_FLAG].toString() === 'true',
       role:             isCand ? 'candidate' : 'proposer'
     });
   }
@@ -5257,6 +5259,308 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
     '', electionId);
 
   return { success: true, nominationId: nomId };
+}
+
+// ============================================================
+// submitNomination_Phase2 — Phase 2 nomination
+// Caller is the proposer. Candidate receives consent email.
+// Seconder is optional at submission.
+// Access: VOTER
+// ============================================================
+function submitNomination_Phase2(token, electionId, postName, candRoll, secRoll, bio) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  // 1. Verify election is in nominations_open_phase2 status
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'nominations_open_phase2') {
+    return { success: false, message: 'Phase 2 nominations are not currently open.' };
+  }
+
+  // 2. Validate post
+  var validPost = false;
+  for (var p = 0; p < EC_POSTS.length; p++) {
+    if (EC_POSTS[p].name === postName) { validPost = true; break; }
+  }
+  if (!validPost) return { success: false, message: 'Invalid post selected.' };
+
+  // 3. Caller cannot nominate themselves via Phase 2
+  candRoll = candRoll.trim().toUpperCase();
+  if (candRoll === sess.identity.toUpperCase()) {
+    return { success: false, message: 'Use the "Nominate Myself" form to nominate yourself.' };
+  }
+
+  // 4. Look up candidate on voter roll
+  var voterRows = sheetData(SHEETS.VOTERS);
+  var candRow = null;
+  for (var v = 0; v < voterRows.length; v++) {
+    if (voterRows[v][COL.VOTER_ROLL].toString().trim().toUpperCase() === candRoll) {
+      candRow = voterRows[v]; break;
+    }
+  }
+  if (!candRow) return { success: false, message: 'Candidate roll number not found on voter roll.' };
+
+  // 5. One-post-per-person check on the candidate
+  var nomRows = sheetData(SHEETS.NOMINATIONS);
+  for (var j = 0; j < nomRows.length; j++) {
+    var nr = nomRows[j];
+    if (nr[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (nr[COL.NOM_CAND_ROLL].toString().toUpperCase() !== candRoll) continue;
+    var nStatus = nr[COL.NOM_STATUS].toString();
+    if (nStatus === 'withdrawn' || nStatus === 'rejected' ||
+        nStatus === 'consent_declined' || nStatus === 'deadline_lapsed') continue;
+    return {
+      success: false,
+      message: nr[COL.NOM_CAND_NAME].toString() + ' already has an active nomination for ' +
+               nr[COL.NOM_POST].toString() + '.'
+    };
+  }
+
+  // 6. Validate seconder if provided
+  secRoll = secRoll ? secRoll.trim().toUpperCase() : '';
+  var secRow = null;
+  if (secRoll) {
+    if (secRoll === candRoll) {
+      return { success: false, message: 'The candidate cannot be their own seconder.' };
+    }
+    if (secRoll === sess.identity.toUpperCase()) {
+      return { success: false, message: 'As proposer, you cannot also be the seconder.' };
+    }
+    for (var vs = 0; vs < voterRows.length; vs++) {
+      if (voterRows[vs][COL.VOTER_ROLL].toString().trim().toUpperCase() === secRoll) {
+        secRow = voterRows[vs]; break;
+      }
+    }
+    if (!secRow) return { success: false, message: 'Seconder roll number not found on voter roll.' };
+  }
+
+  // 7. Prepare row data
+  var nomId    = 'NOM-' + Utilities.getUuid().substring(0, 8).toUpperCase();
+  var secToken = secRoll ? Utilities.getUuid() : '';
+  var consentToken = Utilities.getUuid();
+  var nowDate  = new Date();
+  var deadline = elec[COL.ELEC_NOM_DEADLINE].toString();
+
+  var candName  = (candRow[COL.VOTER_NAME].toString() + ' ' +
+                   candRow[COL.VOTER_SURNAME].toString()).trim();
+  var candBatch = candRow[COL.VOTER_BATCH].toString();
+  var candEmail = candRow[COL.VOTER_EMAIL].toString();
+
+  // Look up proposer name for emails
+  var propName = sess.identity;
+  for (var vp = 0; vp < voterRows.length; vp++) {
+    if (voterRows[vp][COL.VOTER_ROLL].toString().trim().toUpperCase() ===
+        sess.identity.toUpperCase()) {
+      propName = (voterRows[vp][COL.VOTER_NAME].toString() + ' ' +
+                  voterRows[vp][COL.VOTER_SURNAME].toString()).trim();
+      break;
+    }
+  }
+
+  // 8. Write nomination row
+  var sh = getSheet(SHEETS.NOMINATIONS);
+  if (!sh) return { success: false, message: 'Nominations sheet not found.' };
+
+  sh.appendRow([
+    nomId,                    // NOM_ID
+    electionId,               // NOM_ELEC_ID
+    postName,                 // NOM_POST
+    candRoll,                 // NOM_CAND_ROLL
+    candName,                 // NOM_CAND_NAME
+    candBatch,                // NOM_CAND_BATCH
+    candEmail,                // NOM_CAND_EMAIL
+    sess.identity,            // NOM_PROP_ROLL (caller is proposer)
+    'true',                   // NOM_PROP_CONFIRMED (proposer confirmed by submitting)
+    nowDate,                  // NOM_PROP_CONFIRMED_AT
+    '',                       // NOM_PROP_TOKEN (not needed — proposer confirmed at submit)
+    secRoll,                  // NOM_SEC_ROLL
+    'false',                  // NOM_SEC_CONFIRMED
+    '',                       // NOM_SEC_CONFIRMED_AT
+    secToken,                 // NOM_SEC_TOKEN
+    bio || '',                // NOM_BIO
+    '',                       // NOM_PHOTO
+    nowDate,                  // NOM_SUBMITTED_AT
+    deadline,                 // NOM_DEADLINE
+    'submitted',              // NOM_STATUS
+    '',                       // NOM_REJECTION
+    '',                       // NOM_WITHDRAWN_AT
+    'phase2_online',          // NOM_ENTRY_METHOD
+    '',                       // NOM_DOC_LINKS
+    '',                       // NOM_FOLDER_URL
+    sess.identity,            // NOM_NOMINATOR_ROLL
+    'pending',                // NOM_CONSENT_STATUS
+    consentToken,             // NOM_CONSENT_TOKEN
+    '',                       // NOM_CONSENT_AT
+    'false',                  // NOM_ONE_POST_CHECK
+    'true',                   // NOM_PHASE2_FLAG
+    'false'                   // NOM_DUP_DECLINED
+  ]);
+
+  // 9. Send consent email to candidate
+  var consentAcceptUrl  = DEPLOY_URL + '?action=consentAccept&nomId=' +
+    encodeURIComponent(nomId) + '&token=' + encodeURIComponent(consentToken);
+  var consentDeclineUrl = DEPLOY_URL + '?action=consentDecline&nomId=' +
+    encodeURIComponent(nomId) + '&token=' + encodeURIComponent(consentToken);
+
+  try {
+    if (candEmail) {
+      sendEmailViaSendGrid(
+        candEmail,
+        'You have been nominated for ' + postName + ' — action required',
+        'Dear ' + candName + ',\n\n' +
+        propName + ' has nominated you for the post of ' + postName + '.\n\n' +
+        'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
+        'Please click one of the links below:\n\n' +
+        'ACCEPT this nomination:\n' + consentAcceptUrl + '\n\n' +
+        'DECLINE this nomination:\n' + consentDeclineUrl + '\n\n' +
+        'If you do not respond before the nomination deadline, the nomination will lapse.\n\n' +
+        'SSKZM OBA Elections'
+      );
+    }
+  } catch(e) {}
+
+  // 10. Send seconder confirmation email if seconder provided
+  if (secRoll && secRow) {
+    var secEmail = secRow[COL.VOTER_EMAIL].toString();
+    var secName  = (secRow[COL.VOTER_NAME].toString() + ' ' +
+                    secRow[COL.VOTER_SURNAME].toString()).trim();
+    var secConfirmUrl = DEPLOY_URL + '?action=confirmNom&nomId=' +
+      encodeURIComponent(nomId) + '&role=seconder&token=' +
+      encodeURIComponent(secToken);
+    try {
+      if (secEmail) {
+        sendEmailViaSendGrid(
+          secEmail,
+          'Please confirm: Seconder for ' + candName + ' (' + postName + ')',
+          'Dear ' + secName + ',\n\n' +
+          'You have been listed as Seconder for the following nomination:\n\n' +
+          'Candidate: ' + candName + '\n' +
+          'Post: ' + postName + '\n' +
+          'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
+          'Please click the link below to confirm:\n' + secConfirmUrl + '\n\n' +
+          'If you did not agree to this role, please ignore this email.\n\n' +
+          'SSKZM OBA Elections'
+        );
+      }
+    } catch(e) {}
+  }
+
+  appendAdminLog(sess.identity, 'phase2_nomination_submitted',
+    'Phase 2 nomination submitted. Candidate: ' + candRoll +
+    ' | Post: ' + postName + ' | NomID: ' + nomId,
+    '', electionId);
+
+  return { success: true, nominationId: nomId,
+           message: 'Nomination submitted. A consent email has been sent to ' + candName + '.' };
+}
+
+// ============================================================
+// addSeconder — proposer adds a seconder to a Phase 2
+// nomination that was submitted without one.
+// Access: VOTER (proposer of the nomination only)
+// ============================================================
+function addSeconder(token, nomId, secRoll) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  // 1. Find nomination
+  var sh   = getSheet(SHEETS.NOMINATIONS);
+  var data = sh.getDataRange().getValues();
+  var rowIndex = -1;
+  var nom = null;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][COL.NOM_ID].toString() === nomId) {
+      rowIndex = i; nom = data[i]; break;
+    }
+  }
+  if (!nom) return { success: false, message: 'Nomination not found.' };
+
+  // 2. Caller must be the proposer
+  if (nom[COL.NOM_PROP_ROLL].toString().toUpperCase() !== sess.identity.toUpperCase()) {
+    return { success: false, message: 'Only the proposer can add a seconder.' };
+  }
+
+  // 3. Must be a Phase 2 nomination
+  if (nom[COL.NOM_PHASE2_FLAG].toString() !== 'true') {
+    return { success: false, message: 'This action only applies to Phase 2 nominations.' };
+  }
+
+  // 4. Seconder slot must be empty
+  if (nom[COL.NOM_SEC_ROLL].toString().trim() !== '') {
+    return { success: false, message: 'A seconder has already been added to this nomination.' };
+  }
+
+  // 5. Nomination must be active
+  var status = nom[COL.NOM_STATUS].toString();
+  if (status === 'withdrawn' || status === 'rejected' ||
+      status === 'consent_declined' || status === 'deadline_lapsed') {
+    return { success: false, message: 'This nomination is no longer active.' };
+  }
+
+  // 6. Validate seconder
+  secRoll = secRoll.trim().toUpperCase();
+  var candRoll = nom[COL.NOM_CAND_ROLL].toString().toUpperCase();
+  if (secRoll === candRoll) {
+    return { success: false, message: 'The candidate cannot be their own seconder.' };
+  }
+  if (secRoll === sess.identity.toUpperCase()) {
+    return { success: false, message: 'As proposer, you cannot also be the seconder.' };
+  }
+
+  var voterRows = sheetData(SHEETS.VOTERS);
+  var secRow = null;
+  for (var v = 0; v < voterRows.length; v++) {
+    if (voterRows[v][COL.VOTER_ROLL].toString().trim().toUpperCase() === secRoll) {
+      secRow = voterRows[v]; break;
+    }
+  }
+  if (!secRow) return { success: false, message: 'Seconder roll number not found on voter roll.' };
+
+  // 7. Write seconder to sheet
+  var secToken = Utilities.getUuid();
+  var secName  = (secRow[COL.VOTER_NAME].toString() + ' ' +
+                  secRow[COL.VOTER_SURNAME].toString()).trim();
+  var secEmail = secRow[COL.VOTER_EMAIL].toString();
+
+  sh.getRange(rowIndex + 1, COL.NOM_SEC_ROLL  + 1).setValue(secRoll);
+  sh.getRange(rowIndex + 1, COL.NOM_SEC_TOKEN + 1).setValue(secToken);
+
+  // 8. Send seconder confirmation email
+  var candName = nom[COL.NOM_CAND_NAME].toString();
+  var postName = nom[COL.NOM_POST].toString();
+  var elecId   = nom[COL.NOM_ELEC_ID].toString();
+  var secConfirmUrl = DEPLOY_URL + '?action=confirmNom&nomId=' +
+    encodeURIComponent(nomId) + '&role=seconder&token=' +
+    encodeURIComponent(secToken);
+
+  try {
+    if (secEmail) {
+      sendEmailViaSendGrid(
+        secEmail,
+        'Please confirm: Seconder for ' + candName + ' (' + postName + ')',
+        'Dear ' + secName + ',\n\n' +
+        'You have been listed as Seconder for the following nomination:\n\n' +
+        'Candidate: ' + candName + '\n' +
+        'Post: ' + postName + '\n\n' +
+        'Please click the link below to confirm:\n' + secConfirmUrl + '\n\n' +
+        'If you did not agree to this role, please ignore this email.\n\n' +
+        'SSKZM OBA Elections'
+      );
+    }
+  } catch(e) {}
+
+  appendAdminLog(sess.identity, 'seconder_added',
+    'Seconder added. NomID: ' + nomId + ' | Seconder: ' + secRoll,
+    '', elecId);
+
+  return { success: true, message: 'Seconder added. A confirmation email has been sent to ' + secName + '.' };
 }
 
 // ============================================================

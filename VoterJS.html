@@ -339,6 +339,10 @@ var VoterPanel = (function() {
       '<button onclick="VoterPanel.showMyNominations()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
       '📄 My Nominations</button>' +
+      (phase === 2 ?
+      '<button onclick="VoterPanel.showNominationForm_Phase2()" style="width:100%;padding:14px;background:#fff;' +
+      'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
+      '🤝 Nominate Another Member</button>' : '') +
       '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
       '📋 View Nominations Board</button></div>';
@@ -558,6 +562,172 @@ var VoterPanel = (function() {
   function switchToNominations()  { NavMenu.switchTab('nominations'); }
 
   // ── NOMINATION FORM ───────────────────────────────────────
+
+  function showNominationForm_Phase2() {
+    var c = document.getElementById('voter-content');
+    if (!c) return;
+    c.innerHTML = _renderPhase2Form();
+  }
+
+  function _renderPhase2Form() {
+    var posts = [
+      'President','Vice President 1','Vice President 2',
+      'General Secretary','Joint Secretary 1','Joint Secretary 2',
+      'Treasurer','Organising Secretary',
+      'Batch Representative 1965-70','Batch Representative 1971-75',
+      'Batch Representative 1976-80','Batch Representative 1981-85',
+      'Batch Representative 1986-90','Batch Representative 1991-95',
+      'Batch Representative 1996-00','Batch Representative 2001-05',
+      'Batch Representative 2006-10','Batch Representative 2011-15',
+      'Batch Representative 2016-20','Batch Representative 2021-25',
+      'Batch Representative 2026-30'
+    ];
+    var postOptions = '<option value="">— Select a post —</option>';
+    for (var i = 0; i < posts.length; i++) {
+      postOptions += '<option value="' + escHtml(posts[i]) + '">' + escHtml(posts[i]) + '</option>';
+    }
+
+    return '<div style="margin-bottom:12px;">' +
+        '<button onclick="VoterPanel._backToBallot()" ' +
+        'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">🤝 Nominate Another Member</div>' +
+        '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">You will be recorded as the Proposer. The candidate will receive an email asking them to accept or decline.</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Post</label>' +
+          '<select id="p2-post" ' +
+          'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">' +
+          postOptions + '</select>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Candidate Roll Number</label>' +
+          '<div style="display:flex;gap:8px;">' +
+            '<input type="text" id="p2-cand-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+            'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+            '<button onclick="VoterPanel._lookupRollP2(\'cand\')" ' +
+            'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
+          '</div>' +
+          '<div id="p2-cand-name" style="font-size:.82rem;color:#059669;margin-top:4px;min-height:18px;"></div>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+            'Seconder Roll Number <span style="font-weight:400;color:#9ca3af;">(optional — can be added later)</span>' +
+          '</label>' +
+          '<div style="display:flex;gap:8px;">' +
+            '<input type="text" id="p2-sec-roll" placeholder="e.g. SSK002" inputmode="text" ' +
+            'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+            '<button onclick="VoterPanel._lookupRollP2(\'sec\')" ' +
+            'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
+          '</div>' +
+          '<div id="p2-sec-name" style="font-size:.82rem;color:#059669;margin-top:4px;min-height:18px;"></div>' +
+        '</div>' +
+
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
+          '<textarea id="p2-bio" maxlength="300" placeholder="Brief introduction for the nominations board…" ' +
+          'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
+          'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
+        '</div>' +
+
+        '<div style="margin-bottom:16px;padding:12px;background:#eff6ff;border-radius:6px;font-size:.82rem;color:#1d4ed8;line-height:1.5;">' +
+          'ℹ️ By submitting, you confirm you are proposing this member in good faith. ' +
+          'The candidate must accept before the nomination appears on the board.' +
+        '</div>' +
+
+        '<div id="p2-error" style="display:none;margin-bottom:12px;padding:10px 12px;' +
+        'background:#fef2f2;border-radius:6px;font-size:.85rem;color:#991b1b;"></div>' +
+
+        '<button onclick="VoterPanel._submitPhase2()" ' +
+        'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+        'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+        '🤝 Submit Nomination</button>' +
+      '</div>';
+  }
+
+  function _lookupRollP2(role) {
+    var rollEl = document.getElementById('p2-' + role + '-roll');
+    var nameEl = document.getElementById('p2-' + role + '-name');
+    if (!rollEl || !nameEl) return;
+    var roll = rollEl.value.trim();
+    if (!roll) { nameEl.innerHTML = ''; return; }
+    nameEl.style.color = '#9ca3af';
+    nameEl.innerHTML = 'Looking up…';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          nameEl.style.color = '#059669';
+          nameEl.innerHTML = '✓ ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
+        } else {
+          nameEl.style.color = '#dc2626';
+          nameEl.innerHTML = '✗ ' + escHtml((res && res.message) || 'Not found');
+        }
+      })
+      .withFailureHandler(function() {
+        nameEl.style.color = '#dc2626';
+        nameEl.innerHTML = '✗ Connection error';
+      })
+      .lookupVoterName(App.token, roll);
+  }
+
+  function _submitPhase2() {
+    var postEl    = document.getElementById('p2-post');
+    var candRollEl= document.getElementById('p2-cand-roll');
+    var secRollEl = document.getElementById('p2-sec-roll');
+    var bioEl     = document.getElementById('p2-bio');
+    var errEl     = document.getElementById('p2-error');
+
+    var post    = postEl    ? postEl.value.trim()     : '';
+    var candRoll= candRollEl? candRollEl.value.trim()  : '';
+    var secRoll = secRollEl ? secRollEl.value.trim()   : '';
+    var bio     = bioEl     ? bioEl.value.trim()       : '';
+
+    if (errEl) errEl.style.display = 'none';
+
+    if (!post)     { _p2Error('Please select a post.'); return; }
+    if (!candRoll) { _p2Error('Please enter the candidate\'s roll number.'); return; }
+
+    if (!_election || !_election.id) { _p2Error('Election data missing. Please reload.'); return; }
+
+    var btn = document.querySelector('[onclick="VoterPanel._submitPhase2()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
+        if (!res || !res.success) {
+          _p2Error((res && res.message) || 'Submission failed. Please try again.');
+          return;
+        }
+        var c = document.getElementById('voter-content');
+        if (c) {
+          c.innerHTML =
+            '<div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:24px 16px;text-align:center;margin-bottom:16px;">' +
+              '<div style="font-size:2rem;margin-bottom:8px;">✅</div>' +
+              '<div style="font-size:1rem;font-weight:700;color:#065f46;margin-bottom:8px;">Nomination Submitted</div>' +
+              '<div style="font-size:.88rem;color:#374151;line-height:1.6;">' + escHtml(res.message) + '</div>' +
+            '</div>' +
+            '<button onclick="VoterPanel.showMyNominations()" ' +
+            'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+            'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+            '📄 View My Nominations</button>';
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
+        _p2Error('Connection error. Please try again.');
+      })
+      .submitNomination_Phase2(App.token, _election.id, post, candRoll, secRoll, bio);
+  }
+
+  function _p2Error(msg) {
+    var errEl = document.getElementById('p2-error');
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  }
 
   function showNominationForm() {
     var c = document.getElementById('voter-content');
@@ -853,6 +1023,20 @@ var VoterPanel = (function() {
             '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
             'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
             '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>' : '') +
+          (nom.phase2 && nom.role === 'proposer' && !nom.secConfirmed && !nom.secRoll ?
+            '<div style="margin-bottom:8px;">' +
+              '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Add Seconder</div>' +
+              '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
+                '<input type="text" id="sec-roll-' + escHtml(nom.id) + '" placeholder="Seconder roll no." ' +
+                'style="flex:1;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+                '<button onclick="VoterPanel._lookupRollAddSec(\'' + escHtml(nom.id) + '\')" ' +
+                'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Look up</button>' +
+              '</div>' +
+              '<div id="sec-name-' + escHtml(nom.id) + '" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:6px;"></div>' +
+              '<button onclick="VoterPanel._submitAddSeconder(\'' + escHtml(nom.id) + '\')" ' +
+              'style="width:100%;padding:10px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">➕ Add Seconder</button>' +
+            '</div>' : '') +
           (nom.status === 'submitted' || nom.status === 'confirmed' ?
             '<button onclick="VoterPanel._confirmWithdraw(\'' + escHtml(nom.id) + '\',\'' +
             escHtml(nom.post) + '\')" ' +
@@ -878,6 +1062,48 @@ var VoterPanel = (function() {
       .withFailureHandler(function() { showToast('Connection error.', true); })
       .withdrawNomination(App.token, nomId);
   }
+  function _lookupRollAddSec(nomId) {
+    var rollEl = document.getElementById('sec-roll-' + nomId);
+    var nameEl = document.getElementById('sec-name-' + nomId);
+    if (!rollEl || !nameEl) return;
+    var roll = rollEl.value.trim();
+    if (!roll) { nameEl.innerHTML = ''; return; }
+    nameEl.style.color = '#9ca3af';
+    nameEl.innerHTML = 'Looking up…';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          nameEl.style.color = '#059669';
+          nameEl.innerHTML = '✓ ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
+        } else {
+          nameEl.style.color = '#dc2626';
+          nameEl.innerHTML = '✗ ' + escHtml((res && res.message) || 'Not found');
+        }
+      })
+      .withFailureHandler(function() {
+        nameEl.style.color = '#dc2626';
+        nameEl.innerHTML = '✗ Connection error';
+      })
+      .lookupVoterName(App.token, roll);
+  }
+
+  function _submitAddSeconder(nomId) {
+    var rollEl = document.getElementById('sec-roll-' + nomId);
+    if (!rollEl) return;
+    var secRoll = rollEl.value.trim();
+    if (!secRoll) { showToast('Please enter a seconder roll number.', true); return; }
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Failed to add seconder.', true);
+          return;
+        }
+        showToast(res.message || 'Seconder added.');
+        showMyNominations();
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .addSeconder(App.token, nomId, secRoll);
+  }
 
   return {
     init: init,
@@ -886,6 +1112,7 @@ var VoterPanel = (function() {
     switchToReceipts: switchToReceipts,
     switchToNominations: switchToNominations,
     showNominationForm: showNominationForm,
+    showNominationForm_Phase2: showNominationForm_Phase2,
     showMyNominations: showMyNominations,
     _lookupRoll: _lookupRoll,
     _submitNomination: _submitNomination,
