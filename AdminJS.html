@@ -551,10 +551,13 @@ _renderManageScreen: function(el) {
     scrutiny:               { next: 'candidates_published',   label: 'Publish Candidate List' },
     candidates_published:   { next: 'active',                 label: 'Activate Voting' },
     active:                 { next: 'paused',                 label: 'Pause Voting' },
-    paused:                 { next: 'active',                 label: 'Resume Voting' },
+    paused:                 { next: 'closed',                 label: 'Close Voting' },
     closed:                 { next: 'declared',               label: 'Declare Results' }
   };
   var advance = nextStatusMap[el.status] || null;
+  var advanceSecondary = el.status === 'paused'
+    ? { next: 'active', label: 'Resume Voting' }
+    : null;
 
   var html =
     // Back button
@@ -589,9 +592,15 @@ _renderManageScreen: function(el) {
           '</p>' +
           '<button class="btn btn-primary" id="btn-advance-status" ' +
             'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advance.next + '\')" ' +
-            'style="width:100%;padding:14px;font-size:1rem;">' +
+            'style="width:100%;padding:14px;font-size:1rem;margin-bottom:8px;">' +
             '▶ ' + advance.label +
           '</button>' +
+          (advanceSecondary ?
+            '<button class="btn btn-outline" ' +
+              'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advanceSecondary.next + '\')" ' +
+              'style="width:100%;padding:14px;font-size:1rem;margin-bottom:8px;">' +
+              '↺ ' + advanceSecondary.label +
+            '</button>' : '') +
           '<div id="advance-status-error" ' +
             'style="margin-top:10px;color:#c0392b;font-size:.85rem;display:none;"></div>' +
         '</div>' +
@@ -2663,7 +2672,7 @@ _renderScrutinyList: function(noms) {
     var s = (n.status || '').toLowerCase();
     if (s === 'accepted' || s === 'rejected' || s === 'withdrawn') {
       completed.push(n);
-    } else if (s === 'confirmed') {
+    } else if (s === 'confirmed' || s === 'pending_scrutiny') {
       pending.push(n);
     }
   });
@@ -2701,10 +2710,11 @@ _renderScrutinyList: function(noms) {
 
 _scrutinyNomCard: function(n, isCompleted) {
   var statusBadge = {
-    confirmed: 'badge-scrutiny',
-    accepted:  'badge-active',
-    rejected:  'badge-closed',
-    withdrawn: 'badge-draft'
+    confirmed:        'badge-scrutiny',
+    pending_scrutiny: 'badge-scrutiny',
+    accepted:         'badge-active',
+    rejected:         'badge-closed',
+    withdrawn:        'badge-draft'
   };
   var badge = statusBadge[(n.status||'').toLowerCase()] || 'badge-draft';
   var statusLabel = (n.status || '').replace(/_/g,' ');
@@ -2784,7 +2794,8 @@ _renderScrutinyDetail: function(nom, checklist) {
   };
   var badge = statusBadge[(nom.status||'').toLowerCase()] || 'badge-draft';
   var statusLabel = (nom.status || '').replace(/_/g,' ');
-  var isEditable = (nom.status||'').toLowerCase() === 'confirmed';
+  var isEditable = (nom.status||'').toLowerCase() === 'confirmed' ||
+                   (nom.status||'').toLowerCase() === 'pending_scrutiny';
 
   var CHECKLIST_ITEMS = [
     { key: 'post_eligibility',  label: 'Post eligibility satisfied (EC service, batch, or other post-specific criteria)' },

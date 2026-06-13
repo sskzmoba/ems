@@ -170,27 +170,25 @@ var COL_LPC   = {};  // LandingPageContent — 7 cols
 // ── EC POSTS — 21 posts in display order ─────────────────────
 
 var EC_POSTS = [
-  {name:'President',                    order:1},
-  {name:'Vice President 1',             order:2},
-  {name:'Vice President 2',             order:3},
-  {name:'General Secretary',            order:4},
-  {name:'Joint Secretary 1',            order:5},
-  {name:'Joint Secretary 2',            order:6},
-  {name:'Treasurer',                    order:7},
-  {name:'Organising Secretary',         order:8},
-  {name:'Batch Representative 1965-70', order:9},
-  {name:'Batch Representative 1971-75', order:10},
-  {name:'Batch Representative 1976-80', order:11},
-  {name:'Batch Representative 1981-85', order:12},
-  {name:'Batch Representative 1986-90', order:13},
-  {name:'Batch Representative 1991-95', order:14},
-  {name:'Batch Representative 1996-00', order:15},
-  {name:'Batch Representative 2001-05', order:16},
-  {name:'Batch Representative 2006-10', order:17},
-  {name:'Batch Representative 2011-15', order:18},
-  {name:'Batch Representative 2016-20', order:19},
-  {name:'Batch Representative 2021-25', order:20},
-  {name:'Batch Representative 2026-30', order:21}
+  {name:'President',                    order:1,  seats:1},
+  {name:'Vice President',               order:2,  seats:2},
+  {name:'General Secretary',            order:3,  seats:1},
+  {name:'Joint Secretary',              order:4,  seats:2},
+  {name:'Treasurer',                    order:5,  seats:1},
+  {name:'Organising Secretary',         order:6,  seats:1},
+  {name:'Batch Representative 1965-70', order:7,  seats:1},
+  {name:'Batch Representative 1971-75', order:8,  seats:1},
+  {name:'Batch Representative 1976-80', order:9,  seats:1},
+  {name:'Batch Representative 1981-85', order:10, seats:1},
+  {name:'Batch Representative 1986-90', order:11, seats:1},
+  {name:'Batch Representative 1991-95', order:12, seats:1},
+  {name:'Batch Representative 1996-00', order:13, seats:1},
+  {name:'Batch Representative 2001-05', order:14, seats:1},
+  {name:'Batch Representative 2006-10', order:15, seats:1},
+  {name:'Batch Representative 2011-15', order:16, seats:1},
+  {name:'Batch Representative 2016-20', order:17, seats:1},
+  {name:'Batch Representative 2021-25', order:18, seats:1},
+  {name:'Batch Representative 2026-30', order:19, seats:1}
 ];
 
 // ============================================================
@@ -1869,8 +1867,10 @@ function confirmNomination(nomId, role, token, rollNo) {
     var propDone  = freshData[i][COL.NOM_PROP_CONFIRMED].toString() === 'true';
     var secDone   = freshData[i][COL.NOM_SEC_CONFIRMED].toString()  === 'true';
 
-    var newStatus = (propDone && secDone) ? 'pending_scrutiny' : 'pending_confirmation';
-    if (propDone && secDone) {
+    var consentOk = freshData[i][COL.NOM_PHASE2_FLAG].toString() !== 'true' ||
+                    freshData[i][COL.NOM_CONSENT_STATUS].toString() === 'accepted';
+    var newStatus = (propDone && secDone && consentOk) ? 'pending_scrutiny' : 'pending_confirmation';
+    if (propDone && secDone && consentOk) {
       sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('pending_scrutiny');
     }
 
@@ -3341,19 +3341,26 @@ function getNominations(token, electionId) {
 function withdrawNomination(token, nomId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+  var isRO = sess.role === 'RO_ADMIN';
 
   var sh = getSheet(SHEETS.NOMINATIONS);
   if (!sh) return { success: false, message: 'Nominations sheet not found.' };
-
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (rows[i][COL.NOM_ID].toString() !== nomId.toString()) continue;
 
     var status = rows[i][COL.NOM_STATUS].toString();
-    var blocked = ['accepted', 'candidates_published'];
+
+    // Only candidate or RO may withdraw
+    var candRoll = rows[i][COL.NOM_CAND_ROLL].toString();
+    if (!isRO && sess.identity.toUpperCase() !== candRoll.toUpperCase()) {
+      return { success: false, message: 'Only the candidate or Returning Officer may withdraw this nomination.' };
+    }
+
+    // Blocked at candidates_published and beyond
+    var blocked = ['candidates_published', 'active', 'paused', 'closed', 'declared'];
     if (blocked.indexOf(status) !== -1) {
-      return { success: false, message: 'Cannot withdraw a nomination at status: ' + status };
+      return { success: false, message: 'Withdrawal is no longer permitted at this stage.' };
     }
     if (status === 'withdrawn') {
       return { success: false, message: 'Nomination is already withdrawn.' };
@@ -3419,17 +3426,21 @@ function resendConfirmationEmail(token, nomId, role) {
     ? nom[COL.NOM_PROP_TOKEN].toString()
     : nom[COL.NOM_SEC_TOKEN].toString();
 
-  var confirmUrl = DEPLOY_URL + '?action=confirmNomination&nomId=' +
-    nom[COL.NOM_ID] + '&role=' + role + '&token=' + confirmToken;
+  var confirmUrl = DEPLOY_URL + '?action=confirmNom&nomId=' +
+    encodeURIComponent(nom[COL.NOM_ID].toString()) + '&role=' + role + '&token=' +
+    encodeURIComponent(confirmToken);
 
-  var subject = 'Reminder: Please confirm your ' + role + ' role — SSKZM OBA Election';
-  var body = 'Dear ' + role + ',\n\n' +
-    'This is a reminder to confirm your role as ' + role + ' for the nomination of ' +
-    nom[COL.NOM_CAND_NAME].toString() + ' for the post of ' +
-    nom[COL.NOM_POST].toString() + '.\n\n' +
-    'Please click the link below to confirm:\n' + confirmUrl + '\n\n' +
-    'If you did not agree to be a ' + role + ', please ignore this email.\n\n' +
-    'SSKZM OBA Elections';
+  var roleLabel = role === 'proposer' ? 'Proposer' : 'Seconder';
+  var subject = 'Reminder: Please confirm your ' + roleLabel + ' role — SSKZM OBA Election';
+  var body =
+    '<p>Dear ' + roleLabel + ',</p>' +
+    '<p>This is a reminder to confirm your role as ' + roleLabel + ' for the following nomination:</p>' +
+    '<p>Candidate: <strong>' + nom[COL.NOM_CAND_NAME].toString() + '</strong><br>' +
+    'Post: <strong>' + nom[COL.NOM_POST].toString() + '</strong></p>' +
+    '<p>Please click the link below to confirm:</p>' +
+    '<p><a href="' + confirmUrl + '">✅ Confirm as ' + roleLabel + '</a></p>' +
+    '<p>If you did not agree to this role, please ignore this email.</p>' +
+    '<p>SSKZM OBA Elections</p>';
 
   try {
     sendEmailViaSendGrid(email, subject, body);
@@ -3597,8 +3608,9 @@ function acceptNomination(token, nomId) {
     if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
   }
   if (!nom) return { success: false, message: 'Nomination not found.' };
-  if (nom[COL.NOM_STATUS].toString() !== 'confirmed') {
-    return { success: false, message: 'Nomination is not in confirmed status.' };
+  var nomStatus = nom[COL.NOM_STATUS].toString();
+  if (nomStatus !== 'confirmed' && nomStatus !== 'pending_scrutiny') {
+    return { success: false, message: 'Nomination is not ready for scrutiny.' };
   }
 
   // One-post check: block if candidate already has an accepted nomination for a different post
@@ -3705,13 +3717,24 @@ function rejectNomination(token, nomId, reason) {
     if (nomData[i][COL.NOM_ID].toString() === nomId) { nom = nomData[i]; nomRow = i; break; }
   }
   if (!nom) return { success: false, message: 'Nomination not found.' };
-  if (nom[COL.NOM_STATUS].toString() !== 'confirmed') {
-    return { success: false, message: 'Nomination is not in confirmed status.' };
+  var nomStatus = nom[COL.NOM_STATUS].toString();
+  if (nomStatus !== 'confirmed' && nomStatus !== 'pending_scrutiny') {
+    return { success: false, message: 'Nomination is not ready for scrutiny.' };
   }
 
   var ts = now().toISOString();
   nomSh.getRange(nomRow + 1, COL.NOM_STATUS    + 1).setValue('rejected');
   nomSh.getRange(nomRow + 1, COL.NOM_REJECTION + 1).setValue(reason.trim());
+
+  // Remove candidate entry if one exists for this nomination
+  var candSh   = getSheet(SHEETS.CANDIDATES);
+  var candData = candSh.getDataRange().getValues();
+  for (var c = candData.length - 1; c >= 1; c--) {
+    if (candData[c][COL.CAND_NOM_ID].toString() === nomId) {
+      candSh.deleteRow(c + 1);
+      break;
+    }
+  }
 
   appendAdminLog(sess.identity, 'scrutiny_decision',
     'Nomination rejected: ' + nom[COL.NOM_CAND_NAME].toString() +
@@ -3774,7 +3797,7 @@ function undoAcceptNomination(token, nomId) {
   }
 
   // Revert nomination to confirmed
-  nomSh.getRange(nomRow + 1, COL.NOM_STATUS         + 1).setValue('confirmed');
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS         + 1).setValue('pending_scrutiny');
   nomSh.getRange(nomRow + 1, COL.NOM_ONE_POST_CHECK + 1).setValue('');
 
   // Delete the auto-created Candidates row
@@ -3832,7 +3855,7 @@ function undoRejectNomination(token, nomId) {
   }
 
   // Revert to confirmed, clear rejection reason
-  nomSh.getRange(nomRow + 1, COL.NOM_STATUS    + 1).setValue('confirmed');
+  nomSh.getRange(nomRow + 1, COL.NOM_STATUS    + 1).setValue('pending_scrutiny');
   nomSh.getRange(nomRow + 1, COL.NOM_REJECTION + 1).setValue('');
 
   appendAdminLog(sess.identity, 'scrutiny_undo',
@@ -3931,7 +3954,7 @@ function deleteCandidate(token, candId) {
     var nomData = nomSh.getDataRange().getValues();
     for (var n = 1; n < nomData.length; n++) {
       if (nomData[n][COL.NOM_ID].toString() === nomId) {
-        nomSh.getRange(n + 1, COL.NOM_STATUS         + 1).setValue('confirmed');
+        nomSh.getRange(n + 1, COL.NOM_STATUS         + 1).setValue('pending_scrutiny');
         nomSh.getRange(n + 1, COL.NOM_ONE_POST_CHECK + 1).setValue('');
         break;
       }
@@ -4639,7 +4662,7 @@ function getNominationsBoard(token, electionId) {
  
   var nomRows  = sheetData(SHEETS.NOMINATIONS);
   // Which statuses to show depends on election phase:
-  // During nominations/scrutiny: show 'confirmed' (both proposer + seconder confirmed)
+  // During nominations/scrutiny: show 'pending_scrutiny' (all confirmations complete)
   // After candidates_published: show 'accepted' only
   var elecStatus = elec[COL.ELEC_STATUS].toString();
   var showStatuses;
@@ -4647,7 +4670,7 @@ function getNominationsBoard(token, electionId) {
       elecStatus === 'paused' || elecStatus === 'closed' || elecStatus === 'declared') {
     showStatuses = ['accepted'];
   } else {
-    showStatuses = ['confirmed', 'accepted'];
+    showStatuses = ['pending_scrutiny', 'accepted'];
   }
  
   // Group by post in EC_POSTS order
@@ -4956,7 +4979,7 @@ function updateAppealDecision(token, appealId, decision, roNotes, decisionText) 
       var nomRows = nomSh.getDataRange().getValues();
       for (var j = 1; j < nomRows.length; j++) {
         if (nomRows[j][COL.NOM_ID].toString() === nomId) {
-          nomSh.getRange(j + 1, COL.NOM_STATUS + 1).setValue('confirmed');
+          nomSh.getRange(j + 1, COL.NOM_STATUS + 1).setValue('pending_scrutiny');
           nomSh.getRange(j + 1, COL.NOM_REJECTION + 1).setValue('');
           break;
         }
@@ -5230,19 +5253,20 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
   }
 
   var emailBody =
-    'You have been listed as {ROLE} for the following nomination:\n\n' +
-    'Candidate: ' + candName + '\n' +
-    'Post: ' + postName + '\n' +
-    'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
-    'Please click the link below to confirm your role:\n{URL}\n\n' +
-    'If you did not agree to this role, please ignore this email.\n\n' +
+    'You have been listed as {ROLE} for the following nomination:<br><br>' +
+    'Candidate: ' + candName + '<br>' +
+    'Post: ' + postName + '<br>' +
+    'Election: ' + elec[COL.ELEC_TITLE].toString() + '<br><br>' +
+    'Please click the link below to confirm your role:<br><br>' +
+    '<a href="{URL}">✅ Confirm as {ROLE}</a><br><br>' +
+    'If you did not agree to this role, please ignore this email.<br><br>' +
     'SSKZM OBA Elections';
 
   try {
     if (propEmail) {
       sendEmailViaSendGrid(propEmail,
         'Please confirm: Proposer for ' + candName + ' (' + postName + ')',
-        emailBody.replace('{ROLE}', 'Proposer').replace('{URL}', propConfirmUrl));
+        emailBody.replace(/\{ROLE\}/g, 'Proposer').replace('{URL}', propConfirmUrl));
     }
   } catch(e) {}
 
@@ -5250,7 +5274,7 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
     if (secEmail) {
       sendEmailViaSendGrid(secEmail,
         'Please confirm: Seconder for ' + candName + ' (' + postName + ')',
-        emailBody.replace('{ROLE}', 'Seconder').replace('{URL}', secConfirmUrl));
+        emailBody.replace(/\{ROLE\}/g, 'Seconder').replace('{URL}', secConfirmUrl));
     }
   } catch(e) {}
 
@@ -5388,7 +5412,7 @@ function submitNomination_Phase2(token, electionId, postName, candRoll, secRoll,
     '',                       // NOM_PHOTO
     nowDate,                  // NOM_SUBMITTED_AT
     deadline,                 // NOM_DEADLINE
-    'submitted',              // NOM_STATUS
+    'consent_pending',        // NOM_STATUS
     '',                       // NOM_REJECTION
     '',                       // NOM_WITHDRAWN_AT
     'phase2_online',          // NOM_ENTRY_METHOD
@@ -5417,10 +5441,10 @@ function submitNomination_Phase2(token, electionId, postName, candRoll, secRoll,
         'Dear ' + candName + ',\n\n' +
         propName + ' has nominated you for the post of ' + postName + '.\n\n' +
         'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
-        'Please click one of the links below:\n\n' +
-        'ACCEPT this nomination:\n' + consentAcceptUrl + '\n\n' +
-        'DECLINE this nomination:\n' + consentDeclineUrl + '\n\n' +
-        'If you do not respond before the nomination deadline, the nomination will lapse.\n\n' +
+        'Please click one of the links below:<br><br>' +
+        '<a href="' + consentAcceptUrl + '">✅ ACCEPT this nomination</a><br><br>' +
+        '<a href="' + consentDeclineUrl + '">❌ DECLINE this nomination</a><br><br>' +
+        'If you do not respond before the nomination deadline, the nomination will lapse.<br><br>' +
         'SSKZM OBA Elections'
       );
     }
@@ -5444,8 +5468,9 @@ function submitNomination_Phase2(token, electionId, postName, candRoll, secRoll,
           'Candidate: ' + candName + '\n' +
           'Post: ' + postName + '\n' +
           'Election: ' + elec[COL.ELEC_TITLE].toString() + '\n\n' +
-          'Please click the link below to confirm:\n' + secConfirmUrl + '\n\n' +
-          'If you did not agree to this role, please ignore this email.\n\n' +
+          'Please click the link below to confirm:<br><br>' +
+          '<a href="' + secConfirmUrl + '">✅ Confirm as Seconder</a><br><br>' +
+          'If you did not agree to this role, please ignore this email.<br><br>' +
           'SSKZM OBA Elections'
         );
       }
@@ -5549,9 +5574,10 @@ function addSeconder(token, nomId, secRoll) {
         'You have been listed as Seconder for the following nomination:\n\n' +
         'Candidate: ' + candName + '\n' +
         'Post: ' + postName + '\n\n' +
-        'Please click the link below to confirm:\n' + secConfirmUrl + '\n\n' +
-        'If you did not agree to this role, please ignore this email.\n\n' +
-        'SSKZM OBA Elections'
+        'Please click the link below to confirm:<br><br>' +
+          '<a href="' + secConfirmUrl + '">✅ Confirm as Seconder</a><br><br>' +
+          'If you did not agree to this role, please ignore this email.<br><br>' +
+          'SSKZM OBA Elections'
       );
     }
   } catch(e) {}
@@ -5572,7 +5598,7 @@ function addSeconder(token, nomId, secRoll) {
 function purgeTrialData(token, electionId, confirmPhrase) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+  var isRO = sess.role === 'RO_ADMIN';
 
   if (confirmPhrase !== 'CONFIRM PURGE') {
     return { success: false, message: 'Confirmation phrase incorrect. Type CONFIRM PURGE exactly.' };

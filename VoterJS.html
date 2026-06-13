@@ -457,8 +457,8 @@ var VoterPanel = (function() {
       for (var j = 0; j < noms.length; j++) {
         var nom = noms[j];
         var badge = nom.status === 'accepted'
-          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">✓ Accepted</span>'
-          : '<span style="font-size:.72rem;background:#eff6ff;color:#1d4ed8;padding:2px 7px;border-radius:10px;font-weight:600;">Confirmed</span>';
+          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">✓ Confirmed Candidate</span>'
+          : '';
         html += '<div style="padding:10px 0;border-bottom:1px solid #f9fafb;">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
             '<div style="font-size:.9rem;font-weight:600;color:#1f2937;">' + escHtml(nom.name) + '</div>' + badge +
@@ -571,8 +571,8 @@ var VoterPanel = (function() {
 
   function _renderPhase2Form() {
     var posts = [
-      'President','Vice President 1','Vice President 2',
-      'General Secretary','Joint Secretary 1','Joint Secretary 2',
+      'President','Vice President',
+      'General Secretary','Joint Secretary',
       'Treasurer','Organising Secretary',
       'Batch Representative 1965-70','Batch Representative 1971-75',
       'Batch Representative 1976-80','Batch Representative 1981-85',
@@ -737,8 +737,8 @@ var VoterPanel = (function() {
 
   function _renderNominationForm() {
     var posts = [
-      'President','Vice President 1','Vice President 2',
-      'General Secretary','Joint Secretary 1','Joint Secretary 2',
+      'President','Vice President',
+      'General Secretary','Joint Secretary',
       'Treasurer','Organising Secretary',
       'Batch Representative 1965-70','Batch Representative 1971-75',
       'Batch Representative 1976-80','Batch Representative 1981-85',
@@ -957,22 +957,28 @@ var VoterPanel = (function() {
 
   function _renderMyNominations(nominations) {
     var statusLabels = {
-      submitted:        'Awaiting Proposer/Seconder',
-      confirmed:        'Confirmed — Pending Scrutiny',
-      accepted:         'Accepted ✓',
-      rejected:         'Rejected',
-      withdrawn:        'Withdrawn',
-      consent_declined: 'Consent Declined',
-      deadline_lapsed:  'Deadline Lapsed'
+      submitted:           'Awaiting Proposer/Seconder',
+      consent_pending:     'Awaiting Candidate Consent',
+      pending_confirmation:'Awaiting Seconder Confirmation',
+      confirmed:           'Submitted — Awaiting Scrutiny',
+      pending_scrutiny:    'Submitted — Awaiting Scrutiny',
+      accepted:            'Accepted ✓',
+      rejected:            'Rejected',
+      withdrawn:           'Withdrawn',
+      consent_declined:    'Consent Declined',
+      deadline_lapsed:     'Deadline Lapsed'
     };
     var statusColors = {
-      submitted:        '#fef3c7',
-      confirmed:        '#eff6ff',
-      accepted:         '#d1fae5',
-      rejected:         '#fef2f2',
-      withdrawn:        '#f3f4f6',
-      consent_declined: '#fef2f2',
-      deadline_lapsed:  '#f3f4f6'
+      submitted:           '#fef3c7',
+      consent_pending:     '#fef3c7',
+      pending_confirmation:'#fef3c7',
+      confirmed:           '#eff6ff',
+      pending_scrutiny:    '#eff6ff',
+      accepted:            '#d1fae5',
+      rejected:            '#fef2f2',
+      withdrawn:           '#f3f4f6',
+      consent_declined:    '#fef2f2',
+      deadline_lapsed:     '#f3f4f6'
     };
 
     var html =
@@ -1037,7 +1043,10 @@ var VoterPanel = (function() {
               'style="width:100%;padding:10px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
               'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">➕ Add Seconder</button>' +
             '</div>' : '') +
-          (nom.status === 'submitted' || nom.status === 'confirmed' ?
+          (( nom.status === 'submitted' || nom.status === 'confirmed' ||
+             nom.status === 'consent_pending' || nom.status === 'pending_confirmation') &&
+            !(nom.phase2 && nom.role === 'proposer' &&
+              (nom.status === 'pending_confirmation' || nom.status === 'confirmed')) ?
             '<button onclick="VoterPanel._confirmWithdraw(\'' + escHtml(nom.id) + '\',\'' +
             escHtml(nom.post) + '\')" ' +
             'style="width:100%;padding:12px;background:#fff;color:#dc2626;border:1.5px solid #dc2626;' +
@@ -1114,6 +1123,11 @@ var VoterPanel = (function() {
     showNominationForm: showNominationForm,
     showNominationForm_Phase2: showNominationForm_Phase2,
     showMyNominations: showMyNominations,
+    _lookupRollP2: _lookupRollP2,
+    _submitPhase2: _submitPhase2,
+    _p2Error: _p2Error,
+    _lookupRollAddSec: _lookupRollAddSec,
+    _submitAddSeconder: _submitAddSeconder,
     _lookupRoll: _lookupRoll,
     _submitNomination: _submitNomination,
     _backToBallot: _backToBallot,
