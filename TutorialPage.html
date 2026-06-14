@@ -1,0 +1,969 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;}
+
+/* ── Role selector ── */
+.tut-wrap{max-width:680px;margin:0 auto;padding:0 0 40px;}
+.tut-header{background:#1a3a5c;border-bottom:3px solid #b8960c;padding:14px 16px 10px;margin:-28px -28px 20px -28px;}
+.tut-header-title{color:#fff;font-size:13px;font-weight:700;}
+.tut-header-sub{color:#b8960c;font-size:11px;margin-top:2px;}
+.tut-header-hint{color:rgba(255,255,255,0.6);font-size:10px;margin-top:4px;}
+
+.role-bar{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:10px;margin-bottom:0;}
+.role-bar::-webkit-scrollbar{display:none;}
+.role-btn{flex-shrink:0;padding:6px 12px;border-radius:20px;border:1px solid #c8d4e0;background:#fff;color:#1a3a5c;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:Arial,sans-serif;}
+.role-btn.active{background:#1a3a5c;color:#fff;border-color:#1a3a5c;}
+
+/* ── Section labels ── */
+.section-label{background:#f8fafc;border-bottom:1px solid #c8d4e0;padding:6px 0;margin:0 0 0 0;}
+.section-label-inner{font-size:9px;font-weight:700;color:#888;letter-spacing:0.5px;text-transform:uppercase;}
+
+/* ── Tab bar ── */
+.tab-bar{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;background:#fff;border-bottom:1px solid #c8d4e0;padding:0 4px;}
+.tab-bar::-webkit-scrollbar{display:none;}
+.tab-btn{flex-shrink:0;padding:9px 11px;border:none;border-bottom:3px solid transparent;background:transparent;color:#888;font-size:10px;font-weight:400;cursor:pointer;white-space:nowrap;font-family:Arial,sans-serif;}
+.tab-btn.active{color:#1a3a5c;border-bottom-color:#1a3a5c;font-weight:700;}
+
+/* ── Screen label bar ── */
+.screen-bar{background:#f0f4f8;border-bottom:1px solid #c8d4e0;padding:6px 0;display:flex;justify-content:space-between;align-items:center;}
+.screen-bar-role{font-size:10px;color:#888;}
+.screen-bar-role b{color:#1a3a5c;}
+.screen-bar-source{font-size:9px;color:#aaa;}
+
+/* ── Mockup area ── */
+.mockup-area{padding:10px;}
+
+/* ── Mockup cards ── */
+.mk-card{background:#fff;border-radius:8px;border:1px solid #c8d4e0;overflow:hidden;}
+.mk-trial{background:#8b0000;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;text-align:center;}
+.mk-body{padding:10px 12px;}
+.mk-title{font-size:12px;font-weight:700;color:#1a3a5c;margin-bottom:6px;}
+.mk-sub{font-size:10px;color:#888;margin-bottom:8px;}
+.mk-row{background:#f0f4f8;border-radius:5px;padding:7px 9px;margin-bottom:5px;font-size:10px;}
+.mk-row-head{display:flex;justify-content:space-between;align-items:flex-start;}
+.mk-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;}
+.mk-badge-green{background:#d1fae5;color:#065f46;}
+.mk-badge-amber{background:#fde68a;color:#92400e;}
+.mk-badge-blue{background:#e6f1fb;color:#0c447c;}
+.mk-badge-red{background:#fee2e2;color:#991b1b;}
+.mk-badge-gray{background:#f1efe8;color:#5f5e5a;}
+.mk-sep{border:none;border-top:1px solid #e8edf2;margin:6px 0;}
+.mk-warn{background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;font-size:10px;margin-top:6px;}
+.mk-info{background:#e6f1fb;border:1px solid #b5d4f4;border-radius:4px;padding:6px 8px;font-size:10px;margin-top:6px;}
+.mk-soon{background:#f1efe8;border:1px solid #b4b2a9;border-radius:4px;padding:6px 8px;font-size:10px;margin-top:6px;}
+.mk-bar-wrap{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.mk-bar-label{font-size:9px;width:90px;}
+.mk-bar-track{flex:1;background:#e0e7f0;border-radius:2px;height:9px;}
+.mk-bar-fill{background:#1a3a5c;height:9px;border-radius:2px;}
+.mk-bar-val{font-size:9px;font-weight:700;width:28px;}
+.mk-radio{width:11px;height:11px;border-radius:50%;border:1.5px solid #aaa;display:inline-block;flex-shrink:0;vertical-align:middle;margin-right:5px;}
+.mk-checklist-row{display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid #f0f4f8;font-size:10px;}
+.mk-check-y{color:#059669;}
+.mk-check-w{color:#f59e0b;}
+.mk-check-o{color:#888;}
+
+/* ── Callout buttons ── */
+.cbt{display:inline-flex;align-items:center;gap:3px;background:#fdf8e8;border:1px solid #b8960c;border-radius:5px;padding:3px 8px;font-size:9px;color:#7a6200;cursor:pointer;font-weight:700;margin:2px 2px 2px 0;font-family:Arial,sans-serif;}
+.cbt.soon{background:#f1efe8;border-color:#b4b2a9;color:#5f5e5a;}
+.cbt:active{opacity:0.7;}
+
+/* ── Callout index ── */
+.callout-index{padding:8px 10px 0;}
+.callout-index-label{font-size:9px;font-weight:700;color:#888;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;}
+.callout-index-wrap{display:flex;flex-wrap:wrap;gap:3px;}
+
+/* ── Screen index ── */
+.screen-index{padding:8px 10px 0;}
+.screen-index-label{font-size:9px;font-weight:700;color:#888;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px;}
+.screen-index-btn{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:6px 8px;border-radius:5px;border:1px solid #c8d4e0;background:#fff;color:#555;font-size:10px;font-weight:400;cursor:pointer;margin-bottom:3px;font-family:Arial,sans-serif;}
+.screen-index-btn.active{border-color:#1a3a5c;background:#f0f4f8;color:#1a3a5c;font-weight:700;}
+.screen-index-tab{color:#aaa;font-size:9px;margin-right:3px;}
+.screen-index-count{font-size:9px;color:#aaa;}
+
+/* ── Footer note ── */
+.tut-footer{margin:12px 10px 0;padding:8px 10px;background:#f8fafc;border-radius:5px;border:1px solid #c8d4e0;font-size:9px;color:#888;line-height:1.6;}
+.tut-footer b{color:#1a3a5c;}
+
+/* ── Bottom drawer ── */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:none;flex-direction:column;justify-content:flex-end;}
+.drawer-overlay.open{display:flex;}
+.drawer-box{background:#fff;border-radius:14px 14px 0 0;padding:0 16px 28px;max-height:72vh;overflow-y:auto;border-top:2px solid #b8960c;}
+.drawer-box.soon{border-top-color:#b4b2a9;}
+.drawer-handle-wrap{text-align:center;padding:10px 0 8px;}
+.drawer-handle{width:36px;height:4px;background:#ddd;border-radius:2px;display:inline-block;}
+.drawer-tag{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;margin-bottom:8px;}
+.drawer-title{font-size:15px;font-weight:700;color:#1a3a5c;margin-bottom:10px;line-height:1.4;}
+.drawer-para{font-size:12px;color:#333;line-height:1.7;margin-bottom:10px;}
+.drawer-para:last-of-type{margin-bottom:0;}
+.drawer-close{margin-top:16px;width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;}
+
+/* ── Sub-screen nav ── */
+.subscreen-bar{background:#f8fafc;border-bottom:1px solid #c8d4e0;display:flex;gap:4px;padding:5px 8px;overflow-x:auto;}
+.subscreen-btn{flex-shrink:0;padding:3px 8px;border-radius:10px;border:1px solid #c8d4e0;background:#fff;color:#888;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:Arial,sans-serif;}
+.subscreen-btn.active{border-color:#1a3a5c;background:#f0f4f8;color:#1a3a5c;}
+</style>
+
+<!-- ── Page structure ── -->
+<div class="tut-wrap">
+
+<div class="tut-header">
+  <div class="tut-header-title">SSKZM OBA &nbsp;·&nbsp; Election System</div>
+  <div class="tut-header-sub">Interactive Tutorial</div>
+  <div class="tut-header-hint">Tap <b style="color:#b8960c;">💬</b> callouts to learn what each element does &nbsp;·&nbsp; ⏳ = planned feature</div>
+</div>
+
+<!-- Role selector -->
+<div class="section-label" style="padding:8px 0 0;">
+  <div class="section-label-inner">Select your role</div>
+</div>
+<div class="role-bar" id="role-bar"></div>
+
+<!-- Tab bar -->
+<div class="section-label" style="border-top:1px solid #c8d4e0;">
+  <div class="section-label-inner" id="panel-source-label">Panel</div>
+</div>
+<div class="tab-bar" id="tab-bar"></div>
+
+<!-- Sub-screen bar (shown only when tab has multiple screens) -->
+<div class="subscreen-bar" id="subscreen-bar" style="display:none;"></div>
+
+<!-- Screen label -->
+<div class="screen-bar" style="padding:6px 10px;">
+  <div class="screen-bar-role" id="screen-role-label"><b>—</b></div>
+  <div class="screen-bar-source" id="screen-source-label"></div>
+</div>
+
+<!-- Mockup -->
+<div class="mockup-area" id="mockup-area"></div>
+
+<!-- Callout index -->
+<div class="callout-index">
+  <div class="callout-index-label" id="callout-index-label">Callouts on this screen</div>
+  <div class="callout-index-wrap" id="callout-index-wrap"></div>
+</div>
+
+<!-- Screen index -->
+<div class="screen-index">
+  <div class="screen-index-label" id="screen-index-label">All screens in this role</div>
+  <div id="screen-index-wrap"></div>
+</div>
+
+<!-- Footer -->
+<div class="tut-footer">
+  <b>Legend:</b> 💬 Built feature &nbsp;·&nbsp; ⏳ Planned / not yet built in code<br>
+  Tutorial reflects system state at Session 30. Planned features are shown for completeness — they are designed but await a future build session.
+</div>
+
+</div><!-- end tut-wrap -->
+
+<!-- ── Drawer ── -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer(event)">
+  <div class="drawer-box" id="drawer-box">
+    <div class="drawer-handle-wrap"><div class="drawer-handle"></div></div>
+    <div class="drawer-tag" id="drawer-tag"></div>
+    <div class="drawer-title" id="drawer-title"></div>
+    <div id="drawer-body"></div>
+    <button class="drawer-close" onclick="TUT.closeDrawer()">Got it ✓</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA — all roles, tabs, screens, callouts
+// ============================================================
+var TAG_COLORS = {
+  'What this is':       {bg:'#e1f5ee',text:'#085041'},
+  'Why it matters':     {bg:'#e6f1fb',text:'#0c447c'},
+  'How to use it':      {bg:'#faeeda',text:'#633806'},
+  'Security design':    {bg:'#f0e6fb',text:'#4a0c7c'},
+  'Constitutional basis':{bg:'#fcebeb',text:'#791f1f'},
+  'Coming soon':        {bg:'#f1efe8',text:'#444441'}
+};
+
+var ROLES = [
+{id:'voter',label:'🗳️ Voter',source:'Voter panel',tabs:[
+  {id:'ballot',label:'My Ballot',def:true,screens:[
+    {id:'ballot-main',label:'My Ballot',mk:'ballot',callouts:[
+      {el:'Election status banner',tag:'What this is',title:'The banner tells you where the election stands',body:['The banner reflects the current phase — nominations open, scrutiny, voting active, paused, or results declared. It changes automatically as the RO advances the election.','If voting is not yet open, the banner explains why and gives the expected opening date. You do not need to contact anyone to check.','During a Trial Election the banner is highlighted in dark red to make clear this is a practice run and no votes count toward any official result.']},
+      {el:'Cast Your Vote button',tag:'How to use it',title:'You vote once — there is no going back after you submit',body:['The ballot appears only when the election status is active. You see each post you are eligible to vote for, with candidates in a random order — shuffled per voter to remove positional bias.','For each post you have three options: vote for one candidate, choose NOTA (None of the Above), or choose Abstain. NOTA means you reject all candidates. Abstain means you choose not to vote for that post at all.','Once you tap Cast Vote and Get Receipt, your votes are submitted. You cannot change them. The system immediately shows your receipt tokens — keep them to verify your vote was recorded.','A voter who submits and subsequently wishes to change their vote has no recourse. This is a fundamental principle of any secret ballot.']},
+      {el:'NOTA option',tag:'Why it matters',title:'NOTA is a genuine vote — not the same as abstaining',body:['Choosing NOTA (None of the Above) is an active democratic choice. It means you participated and voted, but you reject all the candidates for that post. NOTA votes are counted and displayed in the tally.','NOTA does not affect which candidate wins — the candidate with the most votes is still elected. But a high NOTA count sends a clear signal about the quality of the candidate field.','Abstain means you have chosen not to cast a vote for that post at all. An abstaining voter will not receive a receipt token for that post.']},
+      {el:'Receipt token',tag:'Security design',title:'Your receipt token proves your vote exists — but reveals nothing about how you voted',body:['After voting, you receive a unique token for each post you voted on (including NOTA). This token is stored in the VotedLog alongside a timestamp.','You can enter it on the public verification page and the system will confirm the vote exists. It will never reveal which candidate you chose — that information is stored separately and cannot be traced back to you.','The separation between who voted (VotedLog) and how they voted (Votes sheet) is the core technical safeguard of the election. No one — not the RO, not the system administrator — can see how any individual voted.']},
+      {el:'Ballot eligibility filter',tag:'What this is',title:'You only see posts you are eligible to vote for',body:['Not every voter sees the same ballot. Batch Representatives are voted on only by members of the relevant batch bracket. The Organising Secretary post may be restricted to the designated batch during Phase 1.','The system filters your ballot automatically based on your batch year on the voter roll. If a post does not appear, you are not eligible to vote for it.','Vice President and Joint Secretary are two-seat posts. You vote once for the post and the top two vote-getters are elected. VP1/VP2 and JtSec1/JtSec2 are designated by inter-se seniority after the election — this is not a system function.']}
+    ]}
+  ]},
+  {id:'nominations',label:'Nominations',screens:[
+    {id:'nom-board',label:'Nominations board',mk:'nomboard',callouts:[
+      {el:'Nominations board',tag:'What this is',title:'A read-only public view of confirmed nominations',body:['Visible to all voters from when the nomination window opens. Shows nominations that are confirmed — proposer confirmed, and in Phase 2 the candidate has consented and the seconder has confirmed.','Each entry shows candidate name, batch year, and post. Roll numbers, proposer identity, and seconder identity are not shown — protecting the privacy of all parties.','The board is marked Pending Scrutiny until the RO accepts each nomination. Names may appear and disappear as withdrawals occur. A disclaimer explains this clearly.']},
+      {el:'Nominate myself button',tag:'How to use it',title:'How to file a nomination for yourself',body:['During Phase 1 (standard nominations), you nominate yourself for a post. Enter the roll numbers of your Proposer and Seconder; the system looks them up and sends each a confirmation email.','The nomination is not active until both Proposer and Seconder click their confirmation links. You can track this on the My Nominations tab.','You may only stand for one post at a time. If you already have an active nomination and try for a second, the system blocks you and asks you to withdraw the first one first.','Phase 2 is a separate window for mandatory or minimum-required posts with no valid nomination after Phase 1 closes. In Phase 2, a proposer nominates another member; the candidate receives a consent email and then adds a seconder.']},
+      {el:'Batch Rep eligibility',tag:'Constitutional basis',title:'Batch Rep nominations are restricted to the relevant batch bracket',body:['Each Batch Representative seat covers a group of batches (e.g. 1985-1995). Only members from within that bracket may nominate for, propose, or second a Batch Rep nomination. The system enforces this automatically.','Similarly, the Organising Secretary post may be designated as restricted to a specific batch. This is configured by the EC before handover and shown prominently from when nominations open.','If the designated batch produces no valid nomination in Phase 1, the post opens to all members in Phase 2. The system handles this transition automatically when the RO advances the election.']}
+    ]},
+    {id:'my-noms',label:'My Nominations',mk:'mynoms',callouts:[
+      {el:'My Nominations dashboard',tag:'What this is',title:'Track all nominations you are involved in',body:['Shows every nomination linked to your roll number — whether you are the candidate, proposer, or seconder. For each one you see the current status and any action required from you.','Status badges at a glance: Pending (waiting for confirmations), Confirmed (all parties confirmed, awaiting scrutiny), Accepted, Rejected, Withdrawn.']},
+      {el:'Withdraw button',tag:'How to use it',title:'You can withdraw your candidature up to the withdrawal deadline',body:['If you are the candidate, you may withdraw at any time before the candidature withdrawal deadline — end of day immediately following candidate list publication (D+1 at 17:00).','After the deadline, the system locks the withdraw function. No withdrawal is permitted under any circumstances after this point. This is a constitutional requirement, not an administrative rule.','If your nomination is rejected at scrutiny, you have 48 hours to file an appeal. The appeal button appears automatically on rejected nominations during the scrutiny and candidates_published phases.']},
+      {el:'Appeal button',tag:'How to use it',title:'Filing an appeal after scrutiny rejection',body:['If the RO rejects your nomination, you receive a written rejection with reasons. An Appeal button appears on that nomination during the candidates_published phase.','You have 48 hours from notification to file an appeal. The Appeals Panel — chaired by the Deputy RO, with two members from the published RO panel — decides within 48 hours.','If upheld, your nomination is reinstated and goes back into the scrutiny queue. If dismissed, the rejection stands and you are notified in writing. The voting window cannot open while any appeal is pending.']},
+      {el:'Add seconder (Phase 2)',tag:'How to use it',title:'Adding a seconder to a Phase 2 nomination',body:['In Phase 2, a nomination can be submitted by a proposer without a seconder initially. Once you as the candidate accept your consent via the email link, you may add a seconder yourself from My Nominations.','The proposer can also add a seconder — both paths are available to ensure completion even if one party is temporarily unavailable.','The seconder receives a confirmation email and must click the link. Until both the seconder confirmation and your consent are recorded, the nomination is not complete.']}
+    ]}
+  ]},
+  {id:'receipts',label:'My Receipts',screens:[
+    {id:'receipts-main',label:'Receipts and verification',mk:'receipts',callouts:[
+      {el:'My Receipts tab',tag:'What this is',title:'Your receipt tokens are your proof of participation',body:['After you vote, your receipt tokens are stored here permanently. Each token corresponds to one post you voted on. You see the post name, timestamp, and your session token.','You can return to this tab at any time — even after the election — to retrieve your tokens. Each can be entered on the public vote verification page to confirm it exists.','A reminder is shown prominently: these tokens confirm your vote was recorded but reveal nothing about which candidate you chose. This is by design — your vote is secret.']}
+    ]}
+  ]},
+  {id:'complaints-v',label:'Complaints',screens:[
+    {id:'complaints-voter',label:'File a complaint',mk:'cmp-voter',callouts:[
+      {el:'File a complaint',tag:'What this is',title:'Any voter may raise a complaint about election conduct',body:['If you believe there has been a breach of the Code of Conduct, an irregularity in the process, or any other election-related concern, you may file a complaint with the RO using this form.','You can name the member your complaint is about if applicable, or leave it as a general process complaint. The complaint is submitted to the RO and logged in the system.','The RO will review and respond. Statuses: Filed, Under Review, Resolved (Upheld), Resolved (Dismissed), or Referred to EC. You can track the status here.']}
+    ]}
+  ]},
+  {id:'help',label:'Help',screens:[
+    {id:'help-main',label:'Help and FAQ',mk:'help',callouts:[
+      {el:'Help tab',tag:'What this is',title:'Contact details and frequently asked questions',body:['The Help tab contains a plain-language FAQ covering the most common questions about logging in, voting, nominations, and receipts.','It also shows the RO contact details for issues that cannot be resolved through the system — such as if your registered email is incorrect and you cannot receive an OTP.','During the voting window, the RO is reachable through the contact details shown here. Any contact made and action taken by the RO is logged in the AdminLog.']}
+    ]}
+  ]}
+]},
+{id:'ro',label:'⚖️ Return. Officer',source:'Admin panel',tabs:[
+  {id:'elections',label:'Elections',def:true,screens:[
+    {id:'elections-main',label:'Elections and pipeline',mk:'elections',callouts:[
+      {el:'Elections tab',tag:'What this is',title:'The Elections tab is the control centre for the full pipeline',body:['Every step of the election — from creation to declaration — is controlled from this tab. You see a list of all elections and a Manage panel for the current one.','The election status controls the entire system. Advancing the status from one phase to the next unlocks the next set of tools and locks the previous ones. You cannot skip phases.','The pipeline: Draft → Nominations Open → Phase 2 (if needed) → Scrutiny → Candidates Published → Active → Paused (if needed) → Results Declared. Each transition has a gate that must be satisfied.']},
+      {el:'Create election',tag:'How to use it',title:'Creating an election sets the framework for the entire process',body:['When you create an election you set the title, V-Day (AGM day), key dates, and post structure. The four mandatory posts — President, VP (Senior), General Secretary, Treasurer — are pre-loaded and cannot be removed.','You may add further posts and mark additional posts as required minimum. The Organising Secretary batch designation is set here.','All key dates are editable after creation. Any change to published dates automatically notifies all members and is logged in AdminLog.']},
+      {el:'Advance status',tag:'How to use it',title:'Each status transition has gates that must be satisfied',body:['You cannot advance to the next phase unless all gates are satisfied. For example you cannot move to Active if any appeal is pending, or if a mandatory post has no accepted candidate without a GB resolution on file.','The 72-hour hard floor between candidates_published and active is unconditional — the button will not activate before this window has elapsed regardless of any other condition. This is constitutionally required.','The Org Secy restriction transition requires you to confirm that batch communications have been sent before the system records the restriction.']},
+      {el:'Mandatory posts gate',tag:'Constitutional basis',title:'Voting cannot open if a mandatory post has no accepted candidate',body:['The four mandatory posts must each have at least one accepted candidate before you can activate voting. If any mandatory post is unfilled after all extensions the election halts.','In this case the matter goes to the General Body. The GB may vote to (a) proceed with the post vacant, or (b) halt the entire election and call fresh elections with all nomination data preserved.','If the GB resolves to proceed, you record the resolution in the system. This lifts the hard-block and allows activation. No RO discretionary override exists — only a recorded GB resolution. GB resolution upload is a planned feature.']},
+      {el:'Nomination extensions',tag:'How to use it',title:'Extending the nomination window — and stage compression',body:['You may extend in increments of 2 to 7 days, up to two standard extensions. Extensions are required where mandatory or minimum-required posts have no valid nomination.','For mandatory posts, after two standard extensions are exhausted, you may add further extensions in 2-7 day increments with no cap — until the post is filled or AGM day arrives.','Stage compression shortens a window to recover time where an earlier stage has overrun. Voting window can be compressed to a minimum of 5 days (from 7); scrutiny to 3 days minimum. Not available once voting has opened. These controls are planned for a future build.']},
+      {el:'Purge trial data',tag:'How to use it',title:'Clearing trial data before the real election',body:['Available only on elections marked as Trial Elections. Deletes all votes, nominations, receipts, OTPs, and complaints from the trial and resets the election to Draft status.','Requires you to type CONFIRM PURGE to prevent accidental deletion. Once executed it is irreversible.','Intended workflow: run the trial election to completion, review the AdminLog, purge, then create the real election.']}
+    ]}
+  ]},
+  {id:'noms-ro',label:'Nominations',screens:[
+    {id:'noms-ro-main',label:'Nominations management',mk:'noms-ro',callouts:[
+      {el:'Nominations tab',tag:'What this is',title:'All nominations filed — with status, confirmation state, and actions',body:['Shows every nomination received. You see candidate, post, proposer, seconder, and confirmation status of each party.','Nominations grouped by status: Pending, Confirmed (ready for scrutiny), Accepted, Rejected, Withdrawn.','From here you can resend confirmation emails to parties who have not yet clicked their links. A Consent Resend button is available for candidates who missed the consent email.']},
+      {el:'Resend confirmation',tag:'How to use it',title:'Resend email confirmations where a party has not responded',body:['If a proposer, seconder, or candidate has not clicked their confirmation email, you can resend it. The system generates a fresh confirmation link and sends it to the registered email.','All resend actions are logged in AdminLog with timestamp and your admin ID — creating an audit trail of outreach before a nomination lapsed.']}
+    ]}
+  ]},
+  {id:'scrutiny',label:'Scrutiny',screens:[
+    {id:'scrutiny-main',label:'6-item scrutiny checklist',mk:'scrutiny',callouts:[
+      {el:'Scrutiny checklist',tag:'How to use it',title:'Each nomination is assessed against a 6-item checklist before you decide',body:['For every confirmed nomination you work through: (1) Life member status, (2) No outstanding disciplinary action, (3) Candidate eligibility for the specific post (tenure bar, prior EC service), (4) One-post-per-person rule satisfied, (5) No active accepted nomination for another post in this election, (6) Supporting documents provided where required.','You mark each item pass/fail. The system auto-assesses items it can verify — life member status, one-post check — and flags the rest for manual review.','Scrutiny runs in parallel with the open nomination window — you do not need to wait for the window to close before beginning. Any confirmed nomination can be scrutinised at any time.']},
+      {el:'Accept / Reject',tag:'How to use it',title:'Accepting or rejecting — with undo available until candidates are published',body:['Once you complete the checklist, you accept or reject. Rejection requires a written reason which is sent to the candidate by email. Acceptance moves the nomination to the Candidates tab.','You can undo an acceptance or rejection at any time while the election is in scrutiny status — before the candidate list is published. Once published, reversals are locked.','The one-post-per-person rule is checked at both submission and acceptance. If a candidate already has an accepted nomination for another post, the system blocks acceptance of a second.']},
+      {el:'Tenure bar check',tag:'Constitutional basis',title:'Members with 6+ consecutive EC years are barred from re-election',body:['Any member who has held any EC post (excluding Batch Representative) for 6 consecutive years is not eligible to stand, unless they have been out of the EC for at least 2 years. A single 1-year absence does not break the count.','Checking this is a scrutiny responsibility. The ECOfficerBoardDatabase module (planned) will populate historical EC service records to support automated checking. Until built the RO verifies manually.','For President: the candidate must have held one of five senior posts for at least 2 years at any time in the preceding 15 years.']},
+      {el:'EC referral (planned)',tag:'Coming soon',title:'Referring a nomination to the EC for clarification — planned feature',body:['Where scrutiny reveals a matter requiring institutional knowledge — such as a disciplinary record not in the system — the SOP allows the RO to refer the query to the EC and wait for a response before deciding.','The EC referral panel is designed as Layer 2 of the Scrutiny tab. It will show open referrals, EC responses, and allow the RO to proceed once the response is received.','This feature is planned for a future build.']}
+    ]}
+  ]},
+  {id:'candidates',label:'Candidates',screens:[
+    {id:'candidates-main',label:'Candidate list and publication',mk:'candidates',callouts:[
+      {el:'Candidates tab',tag:'What this is',title:'Accepted candidate list grouped by post',body:['After scrutiny, accepted nominations appear here grouped by post. Each post shows: Contested (2+ candidates), Uncontested (exactly 1 candidate), or Vacant (no candidates).','An uncontested candidate is declared elected without proceeding to a vote. These do not appear on the ballot. They are announced formally at the AGM alongside voted results.','Vacant non-mandatory posts are filled by co-option by the incoming EC after the election.']},
+      {el:'Publish candidates',tag:'How to use it',title:'Publishing starts the 72-hour appeals clock',body:['When you publish, the system transitions to candidates_published. This starts two clocks simultaneously: the 48-hour appeals filing window, and the 72-hour hard floor before voting can open.','The candidature withdrawal deadline is end of day D+1 (17:00 the next day). The system locks the withdrawal function automatically at that point.','All members are notified of the published candidate list. Rejected candidates receive their rejection notices with written reasons at this point if not already sent.']}
+    ]}
+  ]},
+  {id:'voters-ro',label:'Voters',screens:[
+    {id:'voters-ro-main',label:'Certified voter roll',mk:'voters-ro',callouts:[
+      {el:'Voters tab',tag:'What this is',title:'The certified voter roll — read-only after certification',body:['Shows the certified voter roll — the definitive list of members eligible to vote. It is paginated and searchable by name or roll number.','Email addresses are visible only to RO_ADMIN and DEPUTY_RO. Scrutineers and Observers see names and batch years only.','The roll is frozen at certification. No additions, deletions, or corrections may be made after certification under any circumstance.']}
+    ]}
+  ]},
+  {id:'roll-draft',label:'Roll Draft',screens:[
+    {id:'roll-draft-main',label:'Objections and certification',mk:'roll-draft',callouts:[
+      {el:'Roll Draft tab',tag:'What this is',title:'The voter roll draft is published for objections before certification',body:['The EC uploads the draft voter roll with verification categories from the VVA at handover. You receive it here. Before certifying, you publish it for an objection window so members can flag errors.','Each row has a verification category: Verified (member confirmed their email), Unresponsive (no reply to verification emails), or Undelivered (email bounced or address not found).','During the objection window, members can contact you about errors. You record objection outcomes against each disputed row — Retained, Removed, or Resolved.']},
+      {el:'Certify voter roll',tag:'How to use it',title:'Certification copies the finalised roll to the Voters sheet and locks it',body:['When satisfied — objection window closed, all objections resolved — you click Certify. The system copies all retained rows from Roll Draft to the Voters sheet, records the certification timestamp, and locks the roll.','After certification the Roll Draft tab is hidden (not deleted) and retained as a read-only historical record showing every objection and how it was handled.','You cannot uncertify or modify the voter roll after certification. This is a hard system constraint with no override.']}
+    ]}
+  ]},
+  {id:'tally',label:'Tally',screens:[
+    {id:'tally-main',label:'Tally and results declaration',mk:'tally',callouts:[
+      {el:'Tally blackout',tag:'Security design',title:'Live vote counts are hidden from all roles while voting is open',body:['While the election is in active or paused status, the tally screen is blacked out for all roles — RO, Scrutineers, Observers, everyone. No live vote distribution is visible to anyone.','What is visible during the voting window: aggregate participation counts — total votes cast per post as a percentage of the roll. This allows observers to see turnout without seeing how votes are distributed between candidates.','The full tally is revealed only after the voting window closes. This is a core ballot secrecy safeguard.']},
+      {el:'Tally verification',tag:'How to use it',title:'After voting closes you verify tally totals match the VotedLog counts',body:['After close of voting the system generates the tally. For each post you verify that total votes in the tally equals the number of voters recorded as having participated in the VotedLog. Any discrepancy must be investigated before declaration.','NOTA votes are counted and displayed separately. They do not affect who is elected, but a high NOTA count is significant information for the membership.','In a tie between two or more candidates you conduct a draw of lots in the presence of the Scrutineers. The result of the draw is final.']},
+      {el:'Tally co-sign',tag:'How to use it',title:'Scrutineers must co-sign the tally before you can declare results',body:['After verification you open the tally co-sign session. Each Scrutineer reviews the tally on their own device and co-signs using the tally co-sign function. Their co-sign is recorded with a timestamp.','Once all Scrutineers have co-signed the Declare Results button becomes available. This two-party sign-off is a constitutional requirement — you cannot declare unilaterally.','Declared results show every candidate, every vote count, turnout per post, NOTA row, and the elected badge on winners. The declaration is timestamped and becomes part of the permanent election record.']}
+    ]}
+  ]},
+  {id:'handover',label:'Handover',screens:[
+    {id:'handover-main',label:'Handover checklist',mk:'handover',callouts:[
+      {el:'Handover checklist',tag:'How to use it',title:'Completed at the conclusion of the election',body:['After results are declared you complete the handover checklist: election record filed, AdminLog preserved, script version recorded, GitHub commit hash noted, all Scrutineer co-signs confirmed, Appeals Panel records filed, and EC accounts locked.','The final step is EC accounts lockout — the two-layer lockout that disables all EC_OFFICER accounts at application level AND prompts the outgoing EC to change the Google Workspace account password in front of the Scrutineers.','The election record is compiled and filed with the incoming General Secretary on the day the election period concludes. A future build will generate this as a PDF automatically.']}
+    ]}
+  ]},
+  {id:'complaints-ro',label:'Complaints',screens:[
+    {id:'complaints-ro-main',label:'Manage complaints',mk:'cmp-ro',callouts:[
+      {el:'Complaints tab',tag:'What this is',title:'All complaints filed by voters managed and resolved by the RO',body:['Every complaint filed by a voter appears here. You see who filed it, when, and who it is against. You update the status — Filed, Under Review, Resolved Upheld, Resolved Dismissed, or Referred to EC — add RO notes, and record the resolution.','All complaint handling is logged in AdminLog. The resolution and your notes are visible to the complainant through their Complaints tab in the Voter panel.']}
+    ]}
+  ]},
+  {id:'appeals-ro',label:'Appeals',screens:[
+    {id:'appeals-ro-main',label:'Manage appeals',mk:'appeals-ro',callouts:[
+      {el:'Appeals pending warning',tag:'Security design',title:'Voting cannot activate while any appeal is pending',body:['The Appeals tab shows a prominent warning banner if any appeal is pending. This is a hard system gate — you cannot advance the election to active status while appeals remain open.','You must record a decision — Upheld or Dismissed — on every appeal before voting can open. There is no override or bypass for this gate.']},
+      {el:'Record appeal decision',tag:'How to use it',title:'Deciding an appeal — the RO is recused, the Deputy RO chairs',body:['Note: the RO is recused from the Appeals Panel. The Deputy RO chairs, with two members from the published RO panel. The RO role here is only to record the Panel decision in the system.','If upheld: the nomination is automatically reinstated to pending_scrutiny and re-enters the scrutiny queue. The RO must scrutinise it again from scratch.','If dismissed: the rejection stands. The candidate is notified in writing with the Panel reasons. The system records the decision and the gate is cleared for that appeal.']}
+    ]}
+  ]},
+  {id:'admins',label:'Admins',screens:[
+    {id:'admins-main',label:'Admin account management',mk:'admins',callouts:[
+      {el:'Admins tab',tag:'What this is',title:'All admin roles are managed from this tab',body:['Shows all admin accounts: Deputy RO, TEM, Scrutineers, and Observers. You see each account status (Active/Disabled) and activation history.','You create accounts here and the system sends activation emails. Each account type has a different activation flow — Scrutineers click an acceptance link; Observers click an accreditation link; TEM receives a Declaration of Impartiality.']},
+      {el:'Deputy RO activation',tag:'How to use it',title:'The Deputy RO is inactive until you explicitly activate them',body:['The Deputy RO account exists from the time of appointment but has no active permissions until you click Activate. Activation is witnessed and logged.','Note: if the Deputy RO is serving on the Appeals Panel they must recuse themselves from the DRO role during that period. When the Appeals Panel process concludes you reactivate them.','The Deputy RO can be simultaneously active alongside you if required. Either party can trigger deactivation. All changes logged in AdminLog.']},
+      {el:'TEM authorisation (planned)',tag:'Coming soon',title:'TEM write actions require a per-action Authorisation ID from you — planned feature',body:['The Technical Election Manager has full read access but every write action requires a valid Authorisation ID that you issue in advance. The TEM tier is designed this way so technical work can be delegated without granting policy-level authority.','Authorisation can be scoped to specific actions or granted as ALL_ACTIONS for the duration of a technical session. All TEM actions are logged under the TEM AdminID.','The TEM Authorisation tab (S45) is planned for a future build.']}
+    ]}
+  ]},
+  {id:'log',label:'Log',screens:[
+    {id:'log-main',label:'AdminLog — full audit trail',mk:'log',callouts:[
+      {el:'AdminLog',tag:'Security design',title:'Every significant action is logged with timestamp, actor, and detail',body:['The AdminLog records every write action — status changes, scrutiny decisions, complaint updates, appeal decisions, nomination acceptances, voter roll certification, tally co-signs, and account changes.','Scrutineers have read-only access to the AdminLog from the beginning of the election period. This is their primary audit function — they can see the full history of every action taken.','The log is paginated and filterable. It cannot be edited or deleted. It forms part of the permanent election record.']}
+    ]}
+  ]},
+  {id:'settings',label:'Settings',screens:[
+    {id:'settings-main',label:'System settings and verification',mk:'settings',callouts:[
+      {el:'Settings tab',tag:'What this is',title:'System configuration and the three-point code verification',body:['Settings shows the Deploy URL, GitHub repository link, script version, and sheet protection status. Before a live election you complete the code verification protocol: confirm the deploy URL, verify the script version matches the published GitHub commit, and confirm sheet protections are active.','The GitHub commit hash recorded at handover serves as the trust anchor — Scrutineers can verify that the code running in production matches the publicly audited code on GitHub.','Sheet protections, once applied from this tab, restrict direct editing of protected sheets to Google Workspace admin access only — a second layer beyond the application-level role controls.']}
+    ]}
+  ]}
+]},
+{id:'deputy-ro',label:'🔑 Deputy RO',source:'Admin panel',tabs:[
+  {id:'dep-el',label:'Elections',def:true,screens:[
+    {id:'dep-el-main',label:'Same access as RO when activated',mk:'dep-elections',callouts:[
+      {el:'Deputy RO role',tag:'What this is',title:'Identical access to the RO — but only when activated',body:['The Deputy RO panel is identical to the Returning Officer when activated: all the same tabs, all the same functions. The difference is the activation gate — you have no permissions until the RO explicitly activates you.','The Deputy RO steps in if the RO is temporarily unavailable, or handles specific responsibilities such as the Appeals Panel that the RO is recused from.','You see: Elections, Nominations, Scrutiny, Candidates, Voters, Tally, Handover, and Log. You do not see the Settings tab — that remains with the RO.']},
+      {el:'Appeals Panel chairmanship',tag:'Constitutional basis',title:'The Deputy RO chairs the Appeals Panel — and must recuse from the DRO role during this',body:['When a candidate appeal is filed the Appeals Panel convenes: Deputy RO as chair, plus two members from the published RO panel. The RO is recused entirely.','While serving on the Appeals Panel the Deputy RO should be deactivated in the system — you cannot exercise DRO powers and serve on the Panel simultaneously. The RO reactivates you once the Panel process concludes.','The RO records the Panel decision in the system — the DRO is not the one entering the decision.']}
+    ]}
+  ]}
+]},
+{id:'tem',label:'⚙️ TEM',source:'Admin panel',tabs:[
+  {id:'tem-tab',label:'Elections',def:true,screens:[
+    {id:'tem-main',label:'TEM panel — read + scoped write',mk:'tem-main',callouts:[
+      {el:'TEM role',tag:'What this is',title:'Full read access and scoped write access with RO authorisation',body:['The Technical Election Manager is an optional appointment — typically an alumni with technical expertise, or an external professional. The TEM may be a non-alumni, in which case their roll number field is left blank.','The TEM can read everything in the system — all tabs, AdminLog, all data — without any authorisation. This read access is available from the moment of appointment.','Any write action requires a valid Authorisation ID issued by the RO before the action. The RO scopes the authorisation to specific actions or grants blanket ALL_ACTIONS for a defined technical session.']},
+      {el:'Declaration of Impartiality',tag:'Constitutional basis',title:'The TEM signs a Declaration of Impartiality before activation',body:['Before the TEM account is activated the system sends them a Declaration of Impartiality (Appendix G1) to sign. This commits them to technical neutrality and records any conflicts of interest.','The signed declaration is witnessed by the RO and filed in the election record. Until the signed declaration is received and confirmed the TEM account remains inactive.','The TEM cannot advance election status, make scrutiny decisions, or access the tally during the voting window — these are reserved for RO-tier roles.']},
+      {el:'TEM AuthorisationID (planned)',tag:'Coming soon',title:'The Authorisation ID system — planned feature',body:['The TEM Authorisation tab (S45) will be built in a future session. It will allow the RO to issue Authorisation IDs scoped to specific action types, with an expiry and a log of all uses.','Until this module is built TEM tier write actions are handled by the RO directly. The TEM can still be appointed and given read access.']}
+    ]}
+  ]}
+]},
+{id:'scrutineer',label:'🔍 Scrutineer',source:'Admin panel',tabs:[
+  {id:'sc-tally',label:'Tally',def:true,screens:[
+    {id:'sc-tally-main',label:'Tally — Scrutineer view',mk:'sc-tally',callouts:[
+      {el:'Scrutineer appointment',tag:'What this is',title:'Who Scrutineers are and how they are appointed',body:['Scrutineers are appointed by the Executive Committee — not by the Returning Officer. This is a deliberate constitutional design: the EC appoints Scrutineers as an independent check on the process, separate from the RO authority.','Scrutineers must be Life Members with no conflict of interest. They sign a Declaration of Impartiality (Appendix G2), witnessed by the General Secretary.','The system sends each Scrutineer an activation link. They click it to accept the role and activate their account. No login is possible before acceptance.']},
+      {el:'Tally co-sign',tag:'How to use it',title:'Part B — you co-sign the tally after verifying it',body:['After the voting window closes the RO opens a tally co-sign session. You see the full tally — post by post, candidate by candidate, including NOTA counts. You verify that the totals match the VotedLog participation counts.','If you are satisfied you co-sign using the tally co-sign function. Your signature is recorded with a timestamp. The RO can only declare results after all Scrutineers have co-signed.','Scrutineers: your role is an independent check on the process — not on the RO personally. You are checking that the system has correctly counted and recorded votes as designed.']},
+      {el:'Tally blackout (Scrutineer)',tag:'Security design',title:'You cannot see vote distribution while voting is open',body:['Like all other roles Scrutineers cannot see live vote counts during the active voting window. The tally is blacked out. You can see aggregate participation counts — total votes cast per post as a percentage — but not how votes are distributed between candidates.','This blackout is unconditional and applies to all roles in the system without exception.']}
+    ]}
+  ]},
+  {id:'sc-scrutiny',label:'Scrutiny',screens:[
+    {id:'sc-scrutiny-main',label:'Scrutiny — read-only',mk:'sc-scrutiny',callouts:[
+      {el:'Scrutiny read-only',tag:'What this is',title:'Scrutineers can see scrutiny outcomes but not change them',body:['You have read-only access to the Scrutiny tab. You can see which nominations were accepted, which were rejected, and the checklist outcomes for each. You cannot modify any decision.','This visibility is part of your audit function — you can verify that the scrutiny process was applied consistently before you co-sign the tally.']}
+    ]}
+  ]},
+  {id:'sc-votedlog',label:'Voted Log',screens:[
+    {id:'sc-vl-main',label:'VotedLog — participation records',mk:'sc-votedlog',callouts:[
+      {el:'VotedLog',tag:'Security design',title:'The VotedLog shows who voted — but never how they voted',body:['The VotedLog contains one entry per voter per post for which they cast a vote. Each entry has the voter roll number, the post, the timestamp, and the receipt token. It does not contain any information about which candidate was chosen.','The Votes sheet — separate, inaccessible to all roles except via the system counting function — contains anonymised vote data without any voter identity. These two sheets can never be joined. This is the core ballot secrecy architecture.','During tally verification you use the VotedLog to confirm participation counts per post, then compare against the Tally totals. A discrepancy means the system has miscounted — investigate before co-signing.']}
+    ]}
+  ]},
+  {id:'sc-handover',label:'Handover',screens:[
+    {id:'sc-ho-main',label:'Part A confirmation',mk:'sc-handover',callouts:[
+      {el:'Part A verification',tag:'How to use it',title:'Part A happens before voting opens — you verify the system',body:['Part A is your confirmation before the voting window opens that: (a) the script version running in production matches the published GitHub commit, (b) the voter roll count matches your independently obtained figure, (c) sheet protections are confirmed active.','You record Part A confirmation in the system. This is a gate item on the RO checklist before activating voting.','Part B is the post-poll confirmation: witnessing the tally co-sign and the results declaration.']}
+    ]}
+  ]}
+]},
+{id:'observer',label:'👁️ Observer',source:'Admin panel',tabs:[
+  {id:'obs-tally',label:'Tally',def:true,screens:[
+    {id:'obs-tally-main',label:'Observer — participation dashboard',mk:'obs-tally',callouts:[
+      {el:'Observer accreditation',tag:'What this is',title:'Observers are accredited by the RO and activated near the voting window',body:['Observers are external or independent parties accredited by the Returning Officer. They receive an accreditation link and must click it to accept the terms and activate their account.','Observers are typically activated just before or during the voting window. They have read-only access to specific views only.']},
+      {el:'Live participation dashboard',tag:'What this is',title:'During voting Observers see aggregate turnout only — no vote distribution',body:['During the active voting window you see a real-time participation dashboard showing total votes cast for each post as a percentage of the voter roll. Aggregate data only.','You cannot see how individual voters voted, which candidates are leading, or any breakdown by candidate. This information is hidden from all roles during the voting window.','If you believe the participation figures are irregular you record your observation in writing and submit it to the RO immediately.']},
+      {el:'What Observers cannot see',tag:'Security design',title:'Observer access is deliberately limited to protect ballot secrecy',body:['Observers cannot see: the voter roll, how individual voters voted, live tally distribution during active voting, AdminLog, scrutiny decisions, or nomination details beyond the public board.','After results are declared Observers can see the full declared results along with all other participants.']}
+    ]}
+  ]}
+]},
+{id:'ec-officer',label:'📋 EC Officer',source:'EC Officer panel',tabs:[
+  {id:'ec-overview',label:'Overview',def:true,screens:[
+    {id:'ec-ov-main',label:'Election status and handover checklist',mk:'ec-overview',callouts:[
+      {el:'EC Officer role',tag:'What this is',title:'The EC Officer panel is for pre-handover duties — then it locks',body:['Three EC Officers have system access: General Secretary, President, and Vice President(s). The panel covers the period before handover to the RO — uploading the voter roll draft, managing the verification link, and sending handover messages.','At the moment of handover — when the RO completes the handover checklist and locks EC accounts — all EC Officer accounts are disabled at application level. The outgoing EC is also asked to change the Google Workspace account password in front of the Scrutineers as a second-layer lockout.','This lockout is constitutional design, not a technical limitation. It ensures the EC has no further access to the election system from the moment control passes to the RO.']},
+      {el:'EC handover checklist',tag:'How to use it',title:'The EC completes its side of the handover before the RO takes over',body:['Before handover the EC must complete: voter roll draft prepared and uploaded, VVA link deactivated, Scrutineers appointed and declared, RO appointment letter issued, election schedule framework prepared, and a handover message sent to the RO.','The Overview tab shows the current election status and the EC checklist items. Completed items are marked; outstanding items are flagged.']}
+    ]}
+  ]},
+  {id:'ec-voter-roll',label:'Voter Roll',screens:[
+    {id:'ec-vr-main',label:'Upload voter roll draft',mk:'ec-voter-roll',callouts:[
+      {el:'Voter Roll tab',tag:'How to use it',title:'Upload the voter roll draft with verification categories',body:['The EC prepares the voter roll draft using the separate Voter Verification App (VVA) — a standalone application that manages the email verification campaign with the full membership.','After the VVA cutoff date you export the verified roll as a CSV. Each row includes voter data plus a verification category: Verified, Unresponsive, or Undelivered. You upload this CSV here.','The system parses the CSV, checks column mapping, and stores it in the VoterRollDraft tab. From this point it is the RO responsibility. You do not modify the draft after upload.']},
+      {el:'VVA link control',tag:'What this is',title:'The VVA is a separate system — linked from the landing page before handover',body:['The Voter Verification App (VVA) is a standalone system where members can verify their registered email address before the election. The link is published on the EMS landing page and active during the EC verification campaign.','You deactivate the VVA link from this tab on the cutoff date. After deactivation the landing page stops showing the verification link. Members who did not verify in time are categorised as Unresponsive or Undelivered in the draft roll.']}
+    ]}
+  ]},
+  {id:'ec-messages',label:'Messages',screens:[
+    {id:'ec-msg-main',label:'Messages to the RO',mk:'ec-messages',callouts:[
+      {el:'Messages tab',tag:'What this is',title:'One-way message channel from EC to RO during the pre-handover period',body:['The Messages tab allows the EC to send structured communications to the RO — handover notes, schedule frameworks, member contact updates, or other information the RO needs before taking over.','Messages sent here are visible to the RO in the Admin panel. All messages are timestamped and logged. This creates a clean paper trail of what was communicated at handover.']}
+    ]}
+  ]},
+  {id:'ec-landing',label:'Landing Page',screens:[
+    {id:'ec-lp-main',label:'Landing page content (planned)',mk:'ec-landing',callouts:[
+      {el:'Landing Page tab',tag:'Coming soon',title:'EC-managed landing page content — planned feature',body:['This tab will allow the EC to update specific content on the public-facing EMS landing page — such as the election schedule description, contact details, and announcements — without touching the system code.','The LandingPageContent module is planned for a future build. Currently the landing page content is managed directly in the code.']}
+    ]}
+  ]}
+]}
+]; // end ROLES
+
+// ============================================================
+// MOCKUP RENDERERS
+// ============================================================
+function mk(id, callouts) {
+  var h = '';
+  switch(id) {
+
+  case 'ballot':
+    h = '<div class="mk-card">'
+      + '<div class="mk-trial">⚡ TRIAL ELECTION — votes do not count</div>'
+      + '<div class="mk-body">'
+      + cbt('Election status banner', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:#1a3a5c;margin-bottom:5px;">POST: PRESIDENT</div>'
+      + '<div style="font-size:10px;margin-bottom:4px;">Select one candidate:</div>'
+      + '<div style="font-size:10px;padding:3px 0;"><span class="mk-radio"></span>Rajan Menon (Batch 1988)</div>'
+      + '<div style="font-size:10px;padding:3px 0;"><span class="mk-radio"></span>Suresh Nair (Batch 1992)</div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;">'
+      + cbt('NOTA option', callouts) + cbt('Ballot eligibility filter', callouts)
+      + '</div></div>'
+      + '<div style="margin-top:8px;">' + cbt('Cast Your Vote button', callouts) + '</div>'
+      + '<div style="margin-top:5px;">' + cbt('Receipt token', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'nomboard':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Nominations Board</div>'
+      + '<div class="mk-sub">Confirmed nominations · Scrutiny pending</div>'
+      + cbt('Nominations board', callouts)
+      + '<div class="mk-row" style="margin-top:8px;"><div class="mk-row-head"><span><b>President</b></span><span class="mk-badge mk-badge-amber">Pending scrutiny</span></div><div style="font-size:10px;margin-top:3px;">Rajan Menon · Batch 1988</div></div>'
+      + '<div class="mk-row"><div class="mk-row-head"><span><b>General Secretary</b></span><span class="mk-badge mk-badge-amber">Pending scrutiny</span></div><div style="font-size:10px;margin-top:3px;">Anil Kumar · Batch 1994</div></div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">'
+      + cbt('Nominate myself button', callouts) + cbt('Batch Rep eligibility', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'mynoms':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">My Nominations</div>'
+      + cbt('My Nominations dashboard', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div class="mk-row-head"><div><b style="font-size:10px;">General Secretary</b><br><span style="font-size:9px;color:#888;">As Candidate</span></div><span class="mk-badge mk-badge-amber">Scrutiny</span></div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">'
+      + cbt('Withdraw button', callouts) + cbt('Appeal button', callouts)
+      + '</div></div>'
+      + '<div style="margin-top:6px;">' + cbt('Add seconder (Phase 2)', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'receipts':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">My Receipts</div>'
+      + cbt('My Receipts tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;"><b style="font-size:10px;">President</b><br><span style="font-size:9px;color:#888;">Token: a3f2…9d1c · 14 Jun 2026 14:32</span></div>'
+      + '<div class="mk-row"><b style="font-size:10px;">General Secretary</b><br><span style="font-size:9px;color:#888;">Token: b9e1…4f7a · 14 Jun 2026 14:33</span></div>'
+      + '<div style="margin-top:6px;background:#fffbf0;border:1px solid #fde68a;border-radius:4px;padding:5px 8px;font-size:9px;">🔒 Tokens confirm your vote exists. They do not reveal your choice.</div>'
+      + '</div></div>';
+    break;
+
+  case 'cmp-voter':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Complaints</div>'
+      + cbt('File a complaint', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div style="font-size:10px;margin-bottom:4px;">Against (optional): <span style="color:#bbb;">roll no. or leave blank</span></div>'
+      + '<div style="background:#fff;border:1px solid #c8d4e0;border-radius:3px;padding:5px 7px;min-height:30px;font-size:9px;color:#bbb;">Describe your concern…</div>'
+      + '<div style="margin-top:6px;background:#1a3a5c;color:#fff;border-radius:3px;padding:7px;text-align:center;font-size:11px;font-weight:700;">Submit Complaint</div>'
+      + '</div></div></div>';
+    break;
+
+  case 'help':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Help & FAQ</div>'
+      + cbt('Help tab', callouts)
+      + '<div style="border-bottom:1px solid #c8d4e0;padding:5px 0;font-size:10px;color:#1a3a5c;">I did not receive my OTP — what do I do?</div>'
+      + '<div style="border-bottom:1px solid #c8d4e0;padding:5px 0;font-size:10px;color:#1a3a5c;">Can I change my vote after submitting?</div>'
+      + '<div style="padding:5px 0;font-size:10px;color:#1a3a5c;">What is NOTA?</div>'
+      + '<div style="margin-top:8px;font-size:10px;color:#555;">📧 Contact RO: returning.officer@sskzmoba.org</div>'
+      + '</div></div>';
+    break;
+
+  case 'elections':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Elections</div>'
+      + cbt('Elections tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div class="mk-row-head"><b style="font-size:10px;">SSKZM OBA Election 2026</b><span class="mk-badge mk-badge-green">Active</span></div>'
+      + '<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">'
+      + cbt('Create election', callouts)
+      + cbt('Advance status', callouts)
+      + cbt('Mandatory posts gate', callouts)
+      + cbt('Nomination extensions', callouts)
+      + cbt('Purge trial data', callouts)
+      + '</div></div></div></div>';
+    break;
+
+  case 'noms-ro':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Nominations</div>'
+      + cbt('Nominations tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;"><div class="mk-row-head"><span style="font-size:10px;"><b>Rajan Menon</b> · President</span><span class="mk-badge mk-badge-green" style="font-size:9px;">Confirmed</span></div></div>'
+      + '<div class="mk-row"><div class="mk-row-head"><span style="font-size:10px;"><b>Priya Iyer</b> · Treasurer</span><span class="mk-badge mk-badge-amber" style="font-size:9px;">Pending</span></div></div>'
+      + '<div style="margin-top:6px;">' + cbt('Resend confirmation', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'scrutiny':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Scrutiny — Rajan Menon / President</div>'
+      + cbt('Scrutiny checklist', callouts)
+      + ['Life member verified','No disciplinary action','Eligibility for post','One-post rule satisfied','No active accepted nom. for another post','Supporting docs received'].map(function(item, i) {
+          return '<div class="mk-checklist-row"><span class="' + (i<4?'mk-check-y':'mk-check-w') + '">' + (i<4?'✓':'⚠') + '</span><span>' + item + '</span></div>';
+        }).join('')
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">'
+      + cbt('Accept / Reject', callouts)
+      + cbt('Tenure bar check', callouts)
+      + cbt('EC referral (planned)', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'candidates':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Candidates</div>'
+      + cbt('Candidates tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;"><div class="mk-row-head"><div><b style="font-size:10px;">President</b><br><span style="font-size:9px;color:#888;">2 candidates</span></div><span class="mk-badge mk-badge-blue">Contested</span></div></div>'
+      + '<div class="mk-row"><div class="mk-row-head"><div><b style="font-size:10px;">Treasurer</b><br><span style="font-size:9px;color:#888;">1 candidate</span></div><span class="mk-badge mk-badge-green">Uncontested</span></div></div>'
+      + '<div style="margin-top:6px;">' + cbt('Publish candidates', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'voters-ro':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Certified Voter Roll</div>'
+      + '<div class="mk-sub">1,247 eligible voters · Certified 1 Jun 2026</div>'
+      + cbt('Voters tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;font-size:10px;">'
+      + '<div style="display:flex;font-weight:700;color:#888;margin-bottom:3px;font-size:9px;"><span style="flex:1;">Name</span><span style="width:55px;">Batch</span><span style="width:30px;">✓</span></div>'
+      + '<div style="display:flex;padding:3px 0;border-top:1px solid #e0e7f0;"><span style="flex:1;">Rajan Menon</span><span style="width:55px;color:#888;">1988</span><span style="width:30px;color:#059669;">✓</span></div>'
+      + '<div style="display:flex;padding:3px 0;border-top:1px solid #e0e7f0;"><span style="flex:1;">Priya Iyer</span><span style="width:55px;color:#888;">1994</span><span style="width:30px;color:#059669;">✓</span></div>'
+      + '</div></div></div>';
+    break;
+
+  case 'roll-draft':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Roll Draft</div>'
+      + cbt('Roll Draft tab', callouts)
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0;">'
+      + '<div class="mk-row" style="margin:0;">Verified: 1,102</div>'
+      + '<div class="mk-row" style="margin:0;">Unresponsive: 98</div>'
+      + '<div class="mk-row" style="margin:0;">Undelivered: 47</div>'
+      + '</div>'
+      + cbt('Certify voter roll', callouts)
+      + '</div></div>';
+    break;
+
+  case 'tally':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Tally</div>'
+      + cbt('Tally blackout', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:#1a3a5c;margin-bottom:5px;">President</div>'
+      + ['Rajan Menon:421','Suresh Nair:387','NOTA:39'].map(function(s){var p=s.split(':');return '<div class="mk-bar-wrap"><span class="mk-bar-label">' + p[0] + '</span><div class="mk-bar-track"><div class="mk-bar-fill" style="width:' + Math.round(parseInt(p[1])/5) + '%"></div></div><span class="mk-bar-val">' + p[1] + '</span></div>';}).join('')
+      + '</div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">'
+      + cbt('Tally verification', callouts) + cbt('Tally co-sign', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'handover':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Handover Checklist</div>'
+      + cbt('Handover checklist', callouts)
+      + ['Election record filed','AdminLog preserved','Script version recorded','GitHub commit noted','Scrutineer co-signs confirmed','Appeals Panel record filed','EC accounts locked'].map(function(item,i){return '<div class="mk-checklist-row"><span class="'+(i<5?'mk-check-y':'mk-check-o')+'">'+(i<5?'✓':'○')+'</span><span>'+item+'</span></div>';}).join('')
+      + '</div></div>';
+    break;
+
+  case 'cmp-ro':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Complaints</div>'
+      + cbt('Complaints tab', callouts)
+      + '<div class="mk-warn" style="margin-top:8px;"><b>CMP-001</b> · Filed 10 Jun · Status: Under Review<br>Against: Suresh Nair · Code of conduct breach</div>'
+      + '</div></div>';
+    break;
+
+  case 'appeals-ro':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Appeals</div>'
+      + '<div class="mk-warn">⚠️ <b>1 appeal pending.</b> Voting cannot activate.</div>'
+      + '<div style="margin-top:6px;">' + cbt('Appeals pending warning', callouts) + '</div>'
+      + '<div style="margin-top:5px;">' + cbt('Record appeal decision', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'admins':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Admins</div>'
+      + cbt('Admins tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;"><div class="mk-row-head"><span style="font-size:10px;">Capt. Soni (Retd) — Deputy RO</span><span class="mk-badge mk-badge-gray">Inactive</span></div></div>'
+      + '<div class="mk-row"><div class="mk-row-head"><span style="font-size:10px;">Ravi Krishnan — Scrutineer</span><span class="mk-badge mk-badge-green">Active</span></div></div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">'
+      + cbt('Deputy RO activation', callouts) + cbt('TEM authorisation (planned)', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'log':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">AdminLog</div>'
+      + cbt('AdminLog', callouts)
+      + '<div style="border-bottom:1px solid #f0f4f8;padding:5px 0;font-size:9px;"><span style="color:#888;">14:32</span> · <b>RO_ADMIN</b> · election_status_updated<br><span style="color:#888;">draft → nominations_open</span></div>'
+      + '<div style="padding:5px 0;font-size:9px;"><span style="color:#888;">13:11</span> · <b>RO_ADMIN</b> · nomination_accepted<br><span style="color:#888;">NOM-001 · President · Rajan Menon</span></div>'
+      + '</div></div>';
+    break;
+
+  case 'settings':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Settings</div>'
+      + cbt('Settings tab', callouts)
+      + [['Script version','v2.4.1'],['GitHub','sskzmoba/ems · a3f…'],['Sheet protections','Active ✓']].map(function(r){return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f4f8;font-size:10px;"><span style="color:#888;">'+r[0]+'</span><span style="font-weight:700;color:#1a3a5c;">'+r[1]+'</span></div>';}).join('')
+      + '</div></div>';
+    break;
+
+  case 'dep-elections':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Deputy RO — Elections</div>'
+      + '<div class="mk-warn">🔑 Inactive until RO activates you. Then: identical access to RO.</div>'
+      + '<div style="margin-top:6px;">' + cbt('Deputy RO role', callouts) + '</div>'
+      + '<div style="margin-top:5px;">' + cbt('Appeals Panel chairmanship', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'tem-main':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Technical Election Manager</div>'
+      + '<div class="mk-info">📖 Full read access &nbsp;·&nbsp; ✏️ Write requires AuthorisationID from RO</div>'
+      + '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">'
+      + cbt('TEM role', callouts)
+      + cbt('Declaration of Impartiality', callouts)
+      + cbt('TEM AuthorisationID (planned)', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'sc-tally':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Tally — Scrutineer</div>'
+      + '<div class="mk-soon">⬛ Tally blacked out during active voting</div>'
+      + '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">'
+      + cbt('Scrutineer appointment', callouts)
+      + cbt('Tally co-sign', callouts)
+      + cbt('Tally blackout (Scrutineer)', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'sc-scrutiny':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Scrutiny (read-only)</div>'
+      + '<div class="mk-row" style="margin-top:6px;font-size:10px;">🔒 View only — you cannot modify scrutiny decisions</div>'
+      + '<div style="margin-top:6px;">' + cbt('Scrutiny read-only', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'sc-votedlog':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Voted Log</div>'
+      + cbt('VotedLog', callouts)
+      + '<div class="mk-row" style="margin-top:8px;font-size:9px;">'
+      + '<div style="display:flex;font-weight:700;color:#888;margin-bottom:3px;"><span style="flex:1;">Roll No</span><span style="width:65px;">Post</span><span style="width:50px;">Token</span></div>'
+      + '<div style="display:flex;padding:2px 0;border-top:1px solid #e0e7f0;"><span style="flex:1;">SSK1988042</span><span style="width:65px;color:#888;">President</span><span style="width:50px;color:#888;">a3f2…</span></div>'
+      + '<div style="display:flex;padding:2px 0;border-top:1px solid #e0e7f0;"><span style="flex:1;">SSK1992018</span><span style="width:65px;color:#888;">President</span><span style="width:50px;color:#888;">b9e1…</span></div>'
+      + '</div></div></div>';
+    break;
+
+  case 'sc-handover':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Handover — Scrutineer (Part A)</div>'
+      + cbt('Part A verification', callouts)
+      + ['Script version matches GitHub commit','Voter roll count verified','Sheet protections confirmed active'].map(function(item,i){return '<div class="mk-checklist-row"><span class="'+(i<2?'mk-check-y':'mk-check-o')+'">'+(i<2?'✓':'○')+'</span><span>'+item+'</span></div>';}).join('')
+      + '</div></div>';
+    break;
+
+  case 'obs-tally':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Observer — Participation Dashboard</div>'
+      + cbt('Observer accreditation', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:#1a3a5c;margin-bottom:5px;">Live participation (voting open)</div>'
+      + [['President','68%'],['General Secretary','61%'],['Treasurer','72%']].map(function(p){return '<div class="mk-bar-wrap"><span class="mk-bar-label">'+p[0]+'</span><div class="mk-bar-track"><div class="mk-bar-fill" style="width:'+p[1]+'"></div></div><span class="mk-bar-val">'+p[1]+'</span></div>';}).join('')
+      + '</div>'
+      + '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">'
+      + cbt('Live participation dashboard', callouts)
+      + cbt('What Observers cannot see', callouts)
+      + '</div></div></div>';
+    break;
+
+  case 'ec-overview':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">EC Officer — Overview</div>'
+      + cbt('EC Officer role', callouts)
+      + ['Voter roll draft uploaded','VVA link deactivated','Scrutineers appointed & declared','RO appointment letter issued','Election schedule framework sent','Handover message sent to RO'].map(function(item,i){return '<div class="mk-checklist-row"><span class="'+(i<3?'mk-check-y':'mk-check-o')+'">'+(i<3?'✓':'○')+'</span><span style="font-size:10px;">'+item+'</span></div>';}).join('')
+      + '<div style="margin-top:6px;">' + cbt('EC handover checklist', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'ec-voter-roll':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Voter Roll</div>'
+      + cbt('Voter Roll tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;">'
+      + '<div style="font-size:10px;color:#888;margin-bottom:4px;">Upload verified roll CSV from VVA export</div>'
+      + '<div style="background:#fff;border:1px dashed #c8d4e0;border-radius:3px;padding:10px;text-align:center;font-size:10px;color:#888;">📁 Tap to upload voter_roll_2026.csv</div>'
+      + '</div>'
+      + '<div style="margin-top:6px;">' + cbt('VVA link control', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  case 'ec-messages':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Messages to RO</div>'
+      + cbt('Messages tab', callouts)
+      + '<div class="mk-row" style="margin-top:8px;font-size:10px;"><b>Handover notes</b> · 1 Jun 2026 · <span style="color:#888;">Read</span><br><span style="color:#888;">Voter roll attached. VVA deactivated at 18:00.</span></div>'
+      + '</div></div>';
+    break;
+
+  case 'ec-landing':
+    h = '<div class="mk-card"><div class="mk-body">'
+      + '<div class="mk-title">Landing Page</div>'
+      + '<div class="mk-soon">⏳ This module is planned — not yet built</div>'
+      + '<div style="margin-top:6px;">' + cbt('Landing Page tab', callouts) + '</div>'
+      + '</div></div>';
+    break;
+
+  default:
+    h = '<div class="mk-row" style="color:#888;font-size:10px;">Screen: ' + id + '</div>';
+  }
+  return h;
+}
+
+// ============================================================
+// HELPER — render a callout button
+// ============================================================
+function cbt(elLabel, callouts) {
+  for (var i = 0; i < callouts.length; i++) {
+    if (callouts[i].el === elLabel) {
+      var soon = callouts[i].tag === 'Coming soon';
+      return '<button class="cbt' + (soon ? ' soon' : '') + '" onclick="TUT.openDrawer(\'' + escQ(elLabel) + '\')">'
+        + (soon ? '⏳' : '💬') + ' ' + escQ2(elLabel) + '</button>';
+    }
+  }
+  return '';
+}
+
+function escQ(s)  { return s.replace(/'/g, "\\'"); }
+function escQ2(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ============================================================
+// STATE
+// ============================================================
+var TUT = {
+  roleIdx: 0,
+  tabIdx: 0,
+  screenIdx: 0,
+  currentCallouts: [],
+
+  init: function() {
+    this.renderRoleBar();
+    this.selectRole(0);
+  },
+
+  // ── Role bar ──
+  renderRoleBar: function() {
+    var bar = document.getElementById('role-bar');
+    var html = '';
+    for (var i = 0; i < ROLES.length; i++) {
+      html += '<button class="role-btn' + (i === 0 ? ' active' : '') + '" onclick="TUT.selectRole(' + i + ')">' + ROLES[i].label + '</button>';
+    }
+    bar.innerHTML = html;
+  },
+
+  selectRole: function(idx) {
+    this.roleIdx = idx;
+    this.tabIdx = 0;
+    this.screenIdx = 0;
+    var role = ROLES[idx];
+
+    // Update role bar active state
+    var btns = document.getElementById('role-bar').querySelectorAll('.role-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = 'role-btn' + (i === idx ? ' active' : '');
+    }
+
+    // Panel source label
+    document.getElementById('panel-source-label').textContent = role.source;
+
+    // Find default tab
+    for (var t = 0; t < role.tabs.length; t++) {
+      if (role.tabs[t].def) { this.tabIdx = t; break; }
+    }
+
+    this.renderTabBar();
+    this.selectTab(this.tabIdx);
+    this.renderScreenIndex();
+  },
+
+  // ── Tab bar ──
+  renderTabBar: function() {
+    var role = ROLES[this.roleIdx];
+    var bar = document.getElementById('tab-bar');
+    var html = '';
+    for (var i = 0; i < role.tabs.length; i++) {
+      html += '<button class="tab-btn' + (i === this.tabIdx ? ' active' : '') + '" onclick="TUT.selectTab(' + i + ')">' + role.tabs[i].label + '</button>';
+    }
+    bar.innerHTML = html;
+  },
+
+  selectTab: function(idx) {
+    this.tabIdx = idx;
+    this.screenIdx = 0;
+    var role = ROLES[this.roleIdx];
+
+    // Update tab bar active
+    var btns = document.getElementById('tab-bar').querySelectorAll('.tab-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = 'tab-btn' + (i === idx ? ' active' : '');
+    }
+
+    var tab = role.tabs[idx];
+
+    // Sub-screen bar
+    var ssbar = document.getElementById('subscreen-bar');
+    if (tab.screens.length > 1) {
+      var ssh = '';
+      for (var s = 0; s < tab.screens.length; s++) {
+        ssh += '<button class="subscreen-btn' + (s === 0 ? ' active' : '') + '" onclick="TUT.selectScreen(' + s + ')">' + tab.screens[s].label + '</button>';
+      }
+      ssbar.innerHTML = ssh;
+      ssbar.style.display = 'flex';
+    } else {
+      ssbar.style.display = 'none';
+    }
+
+    this.renderScreen();
+    this.renderScreenIndex();
+  },
+
+  selectScreen: function(idx) {
+    this.screenIdx = idx;
+    var tab = ROLES[this.roleIdx].tabs[this.tabIdx];
+
+    // Update subscreen bar
+    var btns = document.getElementById('subscreen-bar').querySelectorAll('.subscreen-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = 'subscreen-btn' + (i === idx ? ' active' : '');
+    }
+
+    this.renderScreen();
+    this.renderScreenIndex();
+  },
+
+  // ── Screen ──
+  renderScreen: function() {
+    var role = ROLES[this.roleIdx];
+    var tab  = role.tabs[this.tabIdx];
+    var screen = tab.screens[this.screenIdx];
+    this.currentCallouts = screen.callouts;
+
+    // Screen label bar
+    document.getElementById('screen-role-label').innerHTML = '<b>' + role.label + '</b> &nbsp;·&nbsp; ' + screen.label;
+    document.getElementById('screen-source-label').textContent = role.source;
+
+    // Mockup
+    document.getElementById('mockup-area').innerHTML = mk(screen.mk, screen.callouts);
+
+    // Callout index
+    this.renderCalloutIndex(screen.callouts);
+  },
+
+  // ── Callout index ──
+  renderCalloutIndex: function(callouts) {
+    var label = document.getElementById('callout-index-label');
+    var wrap  = document.getElementById('callout-index-wrap');
+    label.textContent = 'All callouts on this screen (' + callouts.length + ')';
+    var html = '';
+    for (var i = 0; i < callouts.length; i++) {
+      var soon = callouts[i].tag === 'Coming soon';
+      html += '<button class="cbt' + (soon ? ' soon' : '') + '" onclick="TUT.openDrawer(\'' + escQ(callouts[i].el) + '\')">'
+            + (soon ? '⏳' : '💬') + ' ' + escQ2(callouts[i].el) + '</button>';
+    }
+    wrap.innerHTML = html;
+  },
+
+  // ── Screen index ──
+  renderScreenIndex: function() {
+    var role = ROLES[this.roleIdx];
+    var screens = [];
+    for (var t = 0; t < role.tabs.length; t++) {
+      for (var s = 0; s < role.tabs[t].screens.length; s++) {
+        screens.push({ screen: role.tabs[t].screens[s], tabLabel: role.tabs[t].label, tabIdx: t, screenIdx: s });
+      }
+    }
+
+    var curScreen = role.tabs[this.tabIdx].screens[this.screenIdx];
+    var label = document.getElementById('screen-index-label');
+    label.textContent = 'All screens in this role (' + screens.length + ')';
+
+    var wrap = document.getElementById('screen-index-wrap');
+    var html = '';
+    for (var i = 0; i < screens.length; i++) {
+      var item = screens[i];
+      var isActive = item.screen.id === curScreen.id;
+      html += '<button class="screen-index-btn' + (isActive ? ' active' : '') + '" onclick="TUT.jumpToScreen(' + item.tabIdx + ',' + item.screenIdx + ')">'
+            + '<span><span class="screen-index-tab">' + item.tabLabel + ' ·</span>' + item.screen.label + '</span>'
+            + '<span class="screen-index-count">' + item.screen.callouts.length + '✦</span>'
+            + '</button>';
+    }
+    wrap.innerHTML = html;
+  },
+
+  jumpToScreen: function(tabIdx, screenIdx) {
+    if (tabIdx !== this.tabIdx) {
+      this.tabIdx = tabIdx;
+      this.screenIdx = screenIdx;
+      this.renderTabBar();
+      var tab = ROLES[this.roleIdx].tabs[tabIdx];
+      var ssbar = document.getElementById('subscreen-bar');
+      if (tab.screens.length > 1) {
+        var ssh = '';
+        for (var s = 0; s < tab.screens.length; s++) {
+          ssh += '<button class="subscreen-btn' + (s === screenIdx ? ' active' : '') + '" onclick="TUT.selectScreen(' + s + ')">' + tab.screens[s].label + '</button>';
+        }
+        ssbar.innerHTML = ssh;
+        ssbar.style.display = 'flex';
+      } else {
+        ssbar.style.display = 'none';
+      }
+    } else {
+      this.screenIdx = screenIdx;
+    }
+    this.renderScreen();
+    this.renderScreenIndex();
+  },
+
+  // ── Drawer ──
+  openDrawer: function(elLabel) {
+    var callout = null;
+    for (var i = 0; i < this.currentCallouts.length; i++) {
+      if (this.currentCallouts[i].el === elLabel) { callout = this.currentCallouts[i]; break; }
+    }
+    if (!callout) return;
+
+    var soon = callout.tag === 'Coming soon';
+    var tagColors = TAG_COLORS[callout.tag] || TAG_COLORS['What this is'];
+
+    var box = document.getElementById('drawer-box');
+    box.className = 'drawer-box' + (soon ? ' soon' : '');
+
+    var tagEl = document.getElementById('drawer-tag');
+    tagEl.textContent = callout.tag;
+    tagEl.style.background = tagColors.bg;
+    tagEl.style.color = tagColors.text;
+
+    document.getElementById('drawer-title').textContent = callout.title;
+
+    var bodyHtml = '';
+    for (var p = 0; p < callout.body.length; p++) {
+      bodyHtml += '<p class="drawer-para">' + callout.body[p] + '</p>';
+    }
+    document.getElementById('drawer-body').innerHTML = bodyHtml;
+
+    var overlay = document.getElementById('drawer-overlay');
+    overlay.className = 'drawer-overlay open';
+    document.body.style.overflow = 'hidden';
+  },
+
+  closeDrawer: function() {
+    document.getElementById('drawer-overlay').className = 'drawer-overlay';
+    document.body.style.overflow = '';
+  }
+};
+
+function closeDrawer(e) {
+  if (e.target === document.getElementById('drawer-overlay')) {
+    TUT.closeDrawer();
+  }
+}
+
+// Boot
+TUT.init();
+</script>
