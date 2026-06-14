@@ -13,6 +13,33 @@ var VoterPanel = (function() {
   var _votedPosts  = [];
   var _receipts    = [];
   var _newReceipts = [];
+  var _voterBatch        = '';
+  var _orgSecyBatch      = '';
+  var _orgSecyRestricted = false;
+
+  function _getBatchBracket(batchYear) {
+    var yr = parseInt(batchYear);
+    if (isNaN(yr)) return '';
+    var brackets = [
+      { from:1965, to:1970, label:'1965-70' },
+      { from:1971, to:1975, label:'1971-75' },
+      { from:1976, to:1980, label:'1976-80' },
+      { from:1981, to:1985, label:'1981-85' },
+      { from:1986, to:1990, label:'1986-90' },
+      { from:1991, to:1995, label:'1991-95' },
+      { from:1996, to:2000, label:'1996-00' },
+      { from:2001, to:2005, label:'2001-05' },
+      { from:2006, to:2010, label:'2006-10' },
+      { from:2011, to:2015, label:'2011-15' },
+      { from:2016, to:2020, label:'2016-20' },
+      { from:2021, to:2025, label:'2021-25' },
+      { from:2026, to:2030, label:'2026-30' }
+    ];
+    for (var i = 0; i < brackets.length; i++) {
+      if (yr >= brackets[i].from && yr <= brackets[i].to) return brackets[i].label;
+    }
+    return '';
+  }
 
   var TABS = [
     { id: 'ballot',      label: 'My Ballot'   },
@@ -64,6 +91,9 @@ var VoterPanel = (function() {
           return;
         }
         _election = res.election;
+        _voterBatch        = res.voterBatch || '';
+        _orgSecyBatch      = res.election ? (res.election.orgSecyBatch      || '') : '';
+        _orgSecyRestricted = res.election ? (res.election.orgSecyRestricted || false) : false;
         if (!_election) { c.innerHTML = _noElectionCard(); return; }
         _renderBallotForStatus(c, _election.status);
       })
@@ -570,7 +600,7 @@ var VoterPanel = (function() {
   }
 
   function _renderPhase2Form() {
-    var posts = [
+    var allPosts = [
       'President','Vice President',
       'General Secretary','Joint Secretary',
       'Treasurer','Organising Secretary',
@@ -582,6 +612,18 @@ var VoterPanel = (function() {
       'Batch Representative 2016-20','Batch Representative 2021-25',
       'Batch Representative 2026-30'
     ];
+    var voterBracket = _getBatchBracket(_voterBatch);
+    var posts = allPosts.filter(function(p) {
+      if (p.indexOf('Batch Representative') !== 0 && p !== 'Organising Secretary') return true;
+      if (p.indexOf('Batch Representative') === 0) {
+        return p === 'Batch Representative ' + voterBracket;
+      }
+      if (p === 'Organising Secretary') {
+        if (_orgSecyRestricted && _orgSecyBatch) return _voterBatch === _orgSecyBatch;
+        return true;
+      }
+      return true;
+    });
     var postOptions = '<option value="">— Select a post —</option>';
     for (var i = 0; i < posts.length; i++) {
       postOptions += '<option value="' + escHtml(posts[i]) + '">' + escHtml(posts[i]) + '</option>';
@@ -736,7 +778,7 @@ var VoterPanel = (function() {
   }
 
   function _renderNominationForm() {
-    var posts = [
+    var allPosts = [
       'President','Vice President',
       'General Secretary','Joint Secretary',
       'Treasurer','Organising Secretary',
@@ -748,6 +790,18 @@ var VoterPanel = (function() {
       'Batch Representative 2016-20','Batch Representative 2021-25',
       'Batch Representative 2026-30'
     ];
+    var voterBracket = _getBatchBracket(_voterBatch);
+    var posts = allPosts.filter(function(p) {
+      if (p.indexOf('Batch Representative') !== 0 && p !== 'Organising Secretary') return true;
+      if (p.indexOf('Batch Representative') === 0) {
+        return p === 'Batch Representative ' + voterBracket;
+      }
+      if (p === 'Organising Secretary') {
+        if (_orgSecyRestricted && _orgSecyBatch) return _voterBatch === _orgSecyBatch;
+        return true;
+      }
+      return true;
+    });
     var postOptions = '<option value="">— Select a post —</option>';
     for (var i = 0; i < posts.length; i++) {
       postOptions += '<option value="' + escHtml(posts[i]) + '">' +
@@ -1029,7 +1083,9 @@ var VoterPanel = (function() {
             '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
             'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
             '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>' : '') +
-          (nom.phase2 && nom.role === 'proposer' && !nom.secConfirmed && !nom.secRoll ?
+          (nom.phase2 && !nom.secRoll &&
+           (nom.role === 'proposer' ||
+            (nom.role === 'candidate' && nom.consentStatus === 'accepted')) ?
             '<div style="margin-bottom:8px;">' +
               '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Add Seconder</div>' +
               '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
@@ -1039,7 +1095,7 @@ var VoterPanel = (function() {
                 'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Look up</button>' +
               '</div>' +
               '<div id="sec-name-' + escHtml(nom.id) + '" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:6px;"></div>' +
-              '<button onclick="VoterPanel._submitAddSeconder(\'' + escHtml(nom.id) + '\')" ' +
+              '<button onclick="VoterPanel._submitAddSeconder(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.role) + '\')" ' +
               'style="width:100%;padding:10px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
               'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">➕ Add Seconder</button>' +
             '</div>' : '') +
@@ -1096,7 +1152,7 @@ var VoterPanel = (function() {
       .lookupVoterName(App.token, roll);
   }
 
-  function _submitAddSeconder(nomId) {
+  function _submitAddSeconder(nomId, role) {
     var rollEl = document.getElementById('sec-roll-' + nomId);
     if (!rollEl) return;
     var secRoll = rollEl.value.trim();
@@ -1111,7 +1167,7 @@ var VoterPanel = (function() {
         showMyNominations();
       })
       .withFailureHandler(function() { showToast('Connection error.', true); })
-      .addSeconder(App.token, nomId, secRoll);
+      [role === 'candidate' ? 'candidateAddSeconder' : 'addSeconder'](App.token, nomId, secRoll);
   }
 
   return {

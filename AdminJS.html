@@ -639,7 +639,23 @@ _renderManageScreen: function(el) {
         '<label for="manage-declare">Declaration Day</label>' +
         '<input type="date" id="manage-declare" ' +
           'value="' + escHtml(el.declarationDay || '') + '" ' +
-          'style="margin-bottom:24px;" />' +
+          'style="margin-bottom:16px;" />' +
+
+        '<label for="manage-orgsecy-batch">Organising Secretary — Designated Batch Year</label>' +
+        '<input type="number" id="manage-orgsecy-batch" ' +
+          'value="' + escHtml(el.orgSecyBatch || '') + '" ' +
+          'placeholder="e.g. 1988 (leave blank if not yet decided)" ' +
+          'min="1965" max="2030" ' +
+          'style="margin-bottom:10px;" />' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">' +
+          '<input type="checkbox" id="manage-orgsecy-restricted" ' +
+            (el.orgSecyRestricted ? 'checked' : '') +
+            ' style="width:20px;height:20px;cursor:pointer;" />' +
+          '<label for="manage-orgsecy-restricted" ' +
+            'style="font-size:.88rem;color:#374151;cursor:pointer;margin:0;">' +
+            'Post restricted to designated batch' +
+          '</label>' +
+        '</div>' +
 
         '<button class="btn btn-primary" id="btn-save-election" ' +
           'onclick="AdminPanel._saveElection(\'' + escHtml(el.id) + '\')" ' +
@@ -691,10 +707,12 @@ _renderManageScreen: function(el) {
             'Delete Election' +
           '</button>' +
         '</div>' +
-      '</div>' +
+      '</div>'
 
-      // Purge trial data — trial elections only
-      (el.isTrial && isRO ?
+    : '') +
+
+    // Purge trial data — trial elections only
+    (el.isTrial && isRO ?
         '<div class="panel-card" style="margin-bottom:12px;border:1.5px solid #f59e0b;">' +
           '<div class="panel-card-header" style="background:#fef3c7;color:#92400e;">⚠️ Purge Trial Data</div>' +
           '<div class="panel-card-body">' +
@@ -733,8 +751,7 @@ _renderManageScreen: function(el) {
             '</button>' +
           '</div>' +
         '</div>'
-      : '')
-    : '') +
+      : '') +
     '';
 
   content.innerHTML = html;
@@ -770,7 +787,7 @@ _advanceStatusMsg: function(status) {
   return msgs[status] || 'Advance election to next stage.';
 },
 
-_advanceStatus: function(id, nextStatus) {
+_advanceStatus: function(id, nextStatus, overrideNote) {
   var btn = document.getElementById('btn-advance-status');
   var errEl = document.getElementById('advance-status-error');
   if (btn) { btn.textContent = 'Advancing…'; btn.disabled = true; }
@@ -781,6 +798,42 @@ _advanceStatus: function(id, nextStatus) {
       if (res && res.success) {
         showToast('Status updated.');
         AdminPanel.switchTab('elections');
+      } else if (res && res.requiresOrgSecyComms) {
+        // Show mandatory communication confirmation
+        if (btn) { btn.textContent = '▶ ' + (nextStatus === 'nominations_open_phase2' ? 'Open Phase 2 Nominations' : 'Advance'); btn.disabled = false; }
+        var msg = res.message;
+        var lifted = res.orgSecyLifted;
+        var batch  = res.orgBatch;
+        var panel = document.getElementById('orgsecy-comms-panel');
+        if (!panel) {
+          panel = document.createElement('div');
+          panel.id = 'orgsecy-comms-panel';
+          var errParent = errEl ? errEl.parentNode : null;
+          if (errParent) errParent.insertBefore(panel, errEl);
+        }
+        panel.innerHTML =
+          '<div style="background:' + (lifted ? '#fef3c7' : '#eff6ff') + ';border:1.5px solid ' +
+          (lifted ? '#f59e0b' : '#93c5fd') + ';border-radius:6px;padding:14px;margin-top:10px;">' +
+            '<div style="font-weight:700;color:' + (lifted ? '#92400e' : '#1e40af') +
+              ';font-size:.9rem;margin-bottom:8px;">' +
+              (lifted ? '⚠️ Org Secy Restriction Lifted' : 'ℹ️ Org Secy Restriction Maintained') +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;">' + escHtml(msg) + '</div>' +
+            '<div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+              'Confirm you have communicated this to all members:' +
+            '</div>' +
+            '<textarea id="orgsecy-comms-text" rows="2" ' +
+              'placeholder="e.g. Email/WhatsApp sent to all members on 14 June 2026 at 3pm..." ' +
+              'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;' +
+              'border-radius:4px;box-sizing:border-box;margin-bottom:10px;resize:vertical;"></textarea>' +
+            '<div id="orgsecy-comms-err" style="color:#b91c1c;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+            '<button onclick="AdminPanel._confirmOrgSecyComms(\'' + escHtml(id) + '\',\'' +
+              escHtml(nextStatus) + '\')" ' +
+              'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+              'I have communicated this — Advance to Phase 2' +
+            '</button>' +
+          '</div>';
       } else {
         if (errEl) {
           errEl.textContent = (res && res.message) || 'Failed to update status.';
@@ -796,7 +849,21 @@ _advanceStatus: function(id, nextStatus) {
       }
       if (btn) { btn.textContent = '▶ Open Nominations'; btn.disabled = false; }
     })
-    .updateElectionStatus(App.token, id, nextStatus);
+    .updateElectionStatus(App.token, id, nextStatus, overrideNote || '');
+},
+
+_confirmOrgSecyComms: function(id, nextStatus) {
+  var textEl = document.getElementById('orgsecy-comms-text');
+  var errEl  = document.getElementById('orgsecy-comms-err');
+  var text   = textEl ? textEl.value.trim() : '';
+  if (!text) {
+    if (errEl) { errEl.textContent = 'Please describe how you communicated this to members.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  var panel = document.getElementById('orgsecy-comms-panel');
+  if (panel) panel.innerHTML = '<div style="padding:10px;font-size:.85rem;color:#6b7280;">Recording…</div>';
+  AdminPanel._advanceStatus(id, nextStatus, 'orgsecy_comms_confirmed | ' + text);
 },
 
 _saveElection: function(id) {
@@ -808,11 +875,13 @@ _saveElection: function(id) {
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
 
   var data = {
-    description:   document.getElementById('manage-desc').value.trim(),
-    ecContact:     document.getElementById('manage-eccontact').value.trim(),
-    vDay:          document.getElementById('manage-vday').value,
-    votingCloseDay:document.getElementById('manage-vclose').value,
-    declarationDay:document.getElementById('manage-declare').value
+    description:       document.getElementById('manage-desc').value.trim(),
+    ecContact:         document.getElementById('manage-eccontact').value.trim(),
+    vDay:              document.getElementById('manage-vday').value,
+    votingCloseDay:    document.getElementById('manage-vclose').value,
+    declarationDay:    document.getElementById('manage-declare').value,
+    orgSecyBatch:      (document.getElementById('manage-orgsecy-batch') || {value:''}).value.trim(),
+    orgSecyRestricted: !!(document.getElementById('manage-orgsecy-restricted') || {}).checked
   };
 
   google.script.run
@@ -1550,6 +1619,15 @@ _renderNominationsList: function(noms) {
           // Action buttons — RO_ADMIN only
           (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
             ? '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+
+                // Resend consent (Phase 2 only, consent not yet given)
+                (n.phase2 && n.consentStatus !== 'accepted'
+                  ? '<button onclick="AdminPanel._resendConfirm(\'' +
+                      escHtml(n.id) + '\',\'consent\')" ' +
+                      'style="flex:1;min-width:110px;padding:9px 6px;font-size:.78rem;' +
+                      'background:#fff;color:#7c3aed;border:1px solid #c4b5fd;' +
+                      'border-radius:4px;cursor:pointer;">↺ Consent</button>'
+                  : '') +
 
                 // Resend proposer (only if not confirmed)
                 (!n.propConfirmed
