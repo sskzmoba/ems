@@ -45,6 +45,7 @@ var VoterPanel = (function() {
     { id: 'ballot',      label: 'My Ballot'   },
     { id: 'nominations', label: 'Nominations' },
     { id: 'receipts',    label: 'My Receipts' },
+    { id: 'complaints',  label: 'Complaints'  },
     { id: 'help',        label: 'Help'        }
   ];
 
@@ -74,6 +75,10 @@ var VoterPanel = (function() {
     if (tabId === 'receipts') {
       setTimeout(function() { _loadReceipts(); }, 0);
       return _spinner('Loading your receipts…');
+    }
+    if (tabId === 'complaints') {
+      setTimeout(function() { _loadComplaints(); }, 0);
+      return _spinner('Loading complaints…');
     }
     if (tabId === 'help') {
       return _renderHelp();
@@ -152,7 +157,7 @@ var VoterPanel = (function() {
         _election.isTrial ? 'trial' : '');
       return;
     }
-    if (status === 'declared') { c.innerHTML = _declaredCard(); return; }
+    if (status === 'declared') { _declaredCard(); return; }
     if (status === 'draft') {
       c.innerHTML = _statusCard('📋', 'Election Pending',
         'An election has been created but has not been opened yet. Watch for announcements.',
@@ -397,13 +402,105 @@ var VoterPanel = (function() {
   }
 
   function _declaredCard() {
-    return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:24px 16px;text-align:center;">' +
-      '<div style="font-size:2.5rem;margin-bottom:12px;">🏆</div>' +
-      '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">Results Declared</div>' +
-      '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;">The election results have been declared. Thank you for participating.</div>' +
-      '<button onclick="VoterPanel.switchToNominations()" style="width:100%;padding:14px;background:#1a3a5c;' +
-      'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-      '📋 View Results</button></div>';
+    var c = document.getElementById('voter-content');
+    if (c) c.innerHTML = _spinner('Loading results…');
+    var elecId = _election ? _election.id : null;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c) return;
+        if (!res || !res.success) {
+          c.innerHTML = _errorCard(res && res.message ? res.message : 'Could not load results.');
+          return;
+        }
+        c.innerHTML = _renderDeclaredResults(res);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML = _errorCard('Connection error loading results.');
+      })
+      .getDeclaredResults(App.token, elecId);
+  }
+
+  function _renderDeclaredResults(res) {
+    var html =
+      '<div style="text-align:center;padding:16px 0 20px;">' +
+        '<div style="font-size:2.5rem;margin-bottom:8px;">🏆</div>' +
+        '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">' + escHtml(res.electionTitle) + '</div>' +
+        '<div style="font-size:.82rem;color:#059669;font-weight:600;margin-top:4px;">Results Declared</div>' +
+      '</div>';
+
+    var posts = res.posts || [];
+    if (posts.length === 0) {
+      html += '<div style="text-align:center;padding:24px;color:#6b7280;font-size:.9rem;">No results data available.</div>';
+      return html;
+    }
+
+    for (var i = 0; i < posts.length; i++) {
+      var post = posts[i];
+      var seats = post.seatCount || 1;
+      var seatLabel = seats > 1 ? ' (' + seats + ' seats)' : '';
+
+      html +=
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+        'padding:14px 16px;margin-bottom:14px;">' +
+
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;' +
+          'margin-bottom:10px;gap:8px;">' +
+            '<div style="font-size:.95rem;font-weight:700;color:#1a3a5c;">' +
+              escHtml(post.post) + seatLabel +
+            '</div>' +
+            (post.turnout ? '<div style="font-size:.75rem;color:#6b7280;white-space:nowrap;">' +
+              post.turnout + ' voted</div>' : '') +
+          '</div>';
+
+      var cands = post.candidates || [];
+      for (var j = 0; j < cands.length; j++) {
+        var cand = cands[j];
+        var isElected = cand.elected;
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
+          (j < cands.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + '">' +
+            '<div style="width:26px;text-align:center;font-size:1rem;flex-shrink:0;">' +
+              (isElected ? '✅' : '<span style="color:#d1d5db;">○</span>') +
+            '</div>' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-size:.9rem;font-weight:' + (isElected ? '700' : '400') + ';' +
+              'color:' + (isElected ? '#065f46' : '#374151') + ';">' +
+                escHtml(cand.name) +
+                (isElected ? ' <span style="font-size:.75rem;background:#d1fae5;color:#065f46;' +
+                'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>' : '') +
+              '</div>' +
+              '<div style="font-size:.75rem;color:#6b7280;">Batch ' + escHtml(cand.batch) + '</div>' +
+            '</div>' +
+            '<div style="font-size:.88rem;font-weight:' + (isElected ? '700' : '400') + ';' +
+            'color:' + (isElected ? '#065f46' : '#6b7280') + ';flex-shrink:0;min-width:40px;text-align:right;">' +
+              cand.votes + ' vote' + (cand.votes !== 1 ? 's' : '') +
+            '</div>' +
+          '</div>';
+      }
+
+      if (post.nota !== null && post.nota > 0) {
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;' +
+          'border-top:1px solid #f3f4f6;margin-top:2px;">' +
+            '<div style="width:26px;text-align:center;flex-shrink:0;color:#9ca3af;">—</div>' +
+            '<div style="flex:1;font-size:.82rem;color:#9ca3af;">NOTA</div>' +
+            '<div style="font-size:.82rem;color:#9ca3af;flex-shrink:0;min-width:40px;text-align:right;">' +
+              post.nota + ' vote' + (post.nota !== 1 ? 's' : '') +
+            '</div>' +
+          '</div>';
+      }
+
+      html += '</div>';
+    }
+
+    html +=
+      '<div style="text-align:center;padding:16px 8px 8px;font-size:.78rem;color:#9ca3af;line-height:1.5;">' +
+        'Vote counts are published as part of the election record per the SSKZM OBA Elections SOP.' +
+      '</div>';
+
+    return html;
   }
 
   function _ballotCompleteCard(totalPosts) {
@@ -1083,6 +1180,28 @@ var VoterPanel = (function() {
             '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
             'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
             '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>' : '') +
+          (nom.status === 'rejected' && nom.role === 'candidate' &&
+           (_election && (_election.status === 'scrutiny' || _election.status === 'candidates_published')) ?
+            '<button onclick="VoterPanel._showAppealForm(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.post) + '\')" ' +
+            'style="width:100%;padding:12px;background:#fff;color:#b45309;border:1.5px solid #b45309;' +
+            'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">' +
+            '⚖️ File an Appeal</button>' +
+            '<div id="appeal-form-' + escHtml(nom.id) + '" style="display:none;' +
+            'background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px;margin-bottom:8px;">' +
+              '<div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:8px;">Appeal against rejection — ' + escHtml(nom.post) + '</div>' +
+              '<textarea id="appeal-text-' + escHtml(nom.id) + '" rows="4" ' +
+              'placeholder="State the grounds for your appeal. Include any facts or documents that support your case." ' +
+              'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #fde68a;border-radius:4px;' +
+              'box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>' +
+              '<div style="display:flex;gap:8px;">' +
+                '<button onclick="VoterPanel._submitAppeal(\'' + escHtml(nom.id) + '\')" ' +
+                'style="flex:1;padding:11px;background:#b45309;color:#fff;border:none;border-radius:4px;' +
+                'font-size:.88rem;cursor:pointer;min-height:44px;">Submit Appeal</button>' +
+                '<button onclick="VoterPanel._hideAppealForm(\'' + escHtml(nom.id) + '\')" ' +
+                'style="padding:11px 14px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
+                'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Cancel</button>' +
+              '</div>' +
+            '</div>' : '') +
           (nom.phase2 && !nom.secRoll &&
            (nom.role === 'proposer' ||
             (nom.role === 'candidate' && nom.consentStatus === 'accepted')) ?
@@ -1111,6 +1230,35 @@ var VoterPanel = (function() {
         '</div>';
     }
     return html;
+  }
+
+  function _showAppealForm(nomId) {
+    var form = document.getElementById('appeal-form-' + nomId);
+    if (form) form.style.display = 'block';
+  }
+
+  function _hideAppealForm(nomId) {
+    var form = document.getElementById('appeal-form-' + nomId);
+    if (form) form.style.display = 'none';
+  }
+
+  function _submitAppeal(nomId) {
+    var textEl = document.getElementById('appeal-text-' + nomId);
+    if (!textEl) return;
+    var text = textEl.value.trim();
+    if (!text) { showToast('Please enter the grounds for your appeal.', true); return; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Appeal submission failed.', true);
+          return;
+        }
+        showToast('Appeal filed. Reference: ' + res.appealId);
+        _loadMyNominations();
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .fileAppeal(App.token, nomId, text);
   }
 
   function _confirmWithdraw(nomId, postName) {
@@ -1170,6 +1318,168 @@ var VoterPanel = (function() {
       [role === 'candidate' ? 'candidateAddSeconder' : 'addSeconder'](App.token, nomId, secRoll);
   }
 
+  // ── COMPLAINTS TAB ────────────────────────────────────────
+
+  function _loadComplaints() {
+    var c = document.getElementById('voter-content');
+    if (!c || _currentTab !== 'complaints') return;
+    var elecId = _election ? _election.id : null;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c || _currentTab !== 'complaints') return;
+        if (!res || !res.success) {
+          c.innerHTML = _errorCard(res && res.message ? res.message : 'Could not load complaints.');
+          return;
+        }
+        c.innerHTML = _renderComplaintsTab(res.complaints || []);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML = _errorCard('Connection error.');
+      })
+      .getMyComplaints(App.token, elecId);
+  }
+
+  function _renderComplaintsTab(complaints) {
+    var statusLabels = {
+      filed:               'Filed — Awaiting Review',
+      under_review:        'Under Review',
+      resolved_upheld:     'Resolved — Upheld',
+      resolved_dismissed:  'Resolved — Dismissed',
+      referred_to_ec:      'Referred to Executive Committee'
+    };
+    var statusColors = {
+      filed:               '#fef3c7',
+      under_review:        '#eff6ff',
+      resolved_upheld:     '#d1fae5',
+      resolved_dismissed:  '#f3f4f6',
+      referred_to_ec:      '#fce7f3'
+    };
+    var statusTextColors = {
+      filed:               '#92400e',
+      under_review:        '#1d4ed8',
+      resolved_upheld:     '#065f46',
+      resolved_dismissed:  '#374151',
+      referred_to_ec:      '#9d174d'
+    };
+
+    var html =
+      '<div style="padding:4px 0 14px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">Code of Conduct Complaints</div>' +
+        '<div style="font-size:.82rem;color:#6b7280;line-height:1.5;">Use this form to report violations of the election Code of Conduct. ' +
+        'All complaints are reviewed by the Returning Officer.</div>' +
+      '</div>';
+
+    // ── File new complaint form ──
+    html +=
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:18px;">' +
+        '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">📝 File a New Complaint</div>' +
+        '<div style="margin-bottom:10px;">' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Roll No. (optional)</label>' +
+          '<input type="text" id="cmp-against-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+            'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '</div>' +
+        '<div style="margin-bottom:10px;">' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Name (optional)</label>' +
+          '<input type="text" id="cmp-against" placeholder="Full name of member" ' +
+            'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '</div>' +
+        '<div style="margin-bottom:10px;">' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Batch (optional)</label>' +
+          '<input type="text" id="cmp-against-batch" placeholder="e.g. 1995" inputmode="numeric" ' +
+            'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '</div>' +
+        '<div style="margin-bottom:10px;">' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Channel / Platform where violation occurred</label>' +
+          '<input type="text" id="cmp-channel" placeholder="e.g. WhatsApp group, Facebook, email" ' +
+            'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '</div>' +
+        '<div style="margin-bottom:14px;">' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Complaint details <span style="color:#b91c1c;">*</span></label>' +
+          '<textarea id="cmp-text" rows="4" placeholder="Describe the violation in detail. Include dates, times, and any other relevant information." ' +
+            'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;resize:vertical;"></textarea>' +
+        '</div>' +
+        '<button onclick="VoterPanel._submitComplaint()" ' +
+          'style="width:100%;padding:13px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+          'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">Submit Complaint</button>' +
+      '</div>';
+
+    // ── My complaints list ──
+    if (complaints.length === 0) {
+      html +=
+        '<div style="text-align:center;padding:24px 16px;color:#6b7280;">' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">📭</div>' +
+          '<div style="font-size:.9rem;">You have not filed any complaints for this election.</div>' +
+        '</div>';
+    } else {
+      html += '<div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px;">' +
+        'Your Complaints (' + complaints.length + ')</div>';
+      for (var i = 0; i < complaints.length; i++) {
+        var cmp = complaints[i];
+        var st  = cmp.status || 'filed';
+        var stLabel = statusLabels[st] || st;
+        var stBg    = statusColors[st]     || '#f3f4f6';
+        var stColor = statusTextColors[st] || '#374151';
+        var dateStr = cmp.filedAt ? cmp.filedAt.toString().split('T')[0] : '';
+        html +=
+          '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">' +
+              '<div style="font-size:.78rem;color:#6b7280;">' + escHtml(cmp.id) + '<br>' + escHtml(dateStr) + '</div>' +
+              '<span style="font-size:.75rem;background:' + stBg + ';color:' + stColor + ';padding:3px 9px;' +
+                'border-radius:10px;font-weight:600;white-space:nowrap;">' + escHtml(stLabel) + '</span>' +
+            '</div>' +
+            (cmp.againstName ? '<div style="font-size:.82rem;color:#374151;margin-bottom:6px;">Against: <strong>' + escHtml(cmp.againstName) + '</strong></div>' : '') +
+            '<div style="font-size:.85rem;color:#374151;line-height:1.5;margin-bottom:6px;">' + escHtml(cmp.complaintText) + '</div>' +
+            (cmp.resolution ? ('<div style="background:#f9fafb;border-radius:4px;padding:8px 10px;font-size:.8rem;color:#374151;margin-top:6px;"><strong>RO Resolution:</strong> ' + escHtml(cmp.resolution) + '</div>') : '') +
+          '</div>';
+      }
+    }
+
+    return html;
+  }
+
+  function _submitComplaint() {
+    var againstRollEl  = document.getElementById('cmp-against-roll');
+    var againstEl      = document.getElementById('cmp-against');
+    var againstBatchEl = document.getElementById('cmp-against-batch');
+    var channelEl      = document.getElementById('cmp-channel');
+    var textEl         = document.getElementById('cmp-text');
+    if (!textEl) return;
+    var text = textEl.value.trim();
+    if (!text) { showToast('Please enter complaint details.', true); return; }
+    var againstRoll  = againstRollEl  ? againstRollEl.value.trim().toUpperCase()  : '';
+    var againstName  = againstEl      ? againstEl.value.trim()                    : '';
+    var againstBatch = againstBatchEl ? againstBatchEl.value.trim()               : '';
+    var against      = againstName + (againstBatch ? ' (Batch ' + againstBatch + ')' : '');
+    var channel = channelEl ? channelEl.value.trim() : '';
+    var elecId  = _election ? _election.id : null;
+
+    var btn = document.querySelector('button[onclick="VoterPanel._submitComplaint()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Complaint'; }
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Submission failed.', true);
+          return;
+        }
+        showToast('Complaint filed. Reference: ' + res.complaintId);
+        if (textEl)         textEl.value         = '';
+        if (againstRollEl)  againstRollEl.value  = '';
+        if (againstEl)      againstEl.value      = '';
+        if (againstBatchEl) againstBatchEl.value = '';
+        if (channelEl)      channelEl.value      = '';
+        _loadComplaints();
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Complaint'; }
+        showToast('Connection error.', true);
+      })
+      .fileComplaint(App.token, elecId, text, against, againstRoll, channel);
+  }
+
   return {
     init: init,
     submitVote: submitVote,
@@ -1187,7 +1497,11 @@ var VoterPanel = (function() {
     _lookupRoll: _lookupRoll,
     _submitNomination: _submitNomination,
     _backToBallot: _backToBallot,
-    _confirmWithdraw: _confirmWithdraw
+    _confirmWithdraw: _confirmWithdraw,
+    _showAppealForm: _showAppealForm,
+    _hideAppealForm: _hideAppealForm,
+    _submitAppeal: _submitAppeal,
+    _submitComplaint: _submitComplaint
   };
 
 })();

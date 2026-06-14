@@ -5020,7 +5020,7 @@ function getNominationsBoard(token, electionId) {
 // fileComplaint — voter submits a complaint
 // Access: any authenticated session
 // ============================================================
-function fileComplaint(token, electionId, complaintText, againstName, channel) {
+function fileComplaint(token, electionId, complaintText, againstName, againstRoll, channel) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
 
@@ -5038,7 +5038,7 @@ function fileComplaint(token, electionId, complaintText, againstName, channel) {
     electionId || '',
     sess.identity,
     now,
-    '',                          // AgainstRoll — blank, RO fills if needed
+    againstRoll || '',
     againstName || '',
     complaintText.trim(),
     channel || '',
@@ -5079,6 +5079,7 @@ function getComplaints(token, electionId) {
       electionId:    r[COL_CMP.ELEC_ID].toString(),
       filedByRoll:   r[COL_CMP.FILED_BY_ROLL].toString(),
       filedAt:       r[COL_CMP.FILED_AT].toString(),
+      againstRoll:   r[COL_CMP.AGAINST_ROLL].toString(),
       againstName:   r[COL_CMP.AGAINST_NAME].toString(),
       complaintText: r[COL_CMP.COMPLAINT_TEXT].toString(),
       channel:       r[COL_CMP.CHANNEL].toString(),
@@ -5090,6 +5091,39 @@ function getComplaints(token, electionId) {
   }
 
   // Most recent first
+  complaints.sort(function(a, b) {
+    return new Date(b.filedAt) - new Date(a.filedAt);
+  });
+
+  return { success: true, complaints: complaints };
+}
+
+// ============================================================
+// getMyComplaints — returns complaints filed by current voter
+// Access: any authenticated session
+// ============================================================
+function getMyComplaints(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var rows = sheetData(SHEETS.COMPLAINTS);
+  var complaints = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r[COL_CMP.FILED_BY_ROLL].toString() !== sess.identity.toString()) continue;
+    if (electionId && r[COL_CMP.ELEC_ID].toString() !== electionId.toString()) continue;
+    complaints.push({
+      id:            r[COL_CMP.ID].toString(),
+      filedAt:       r[COL_CMP.FILED_AT].toString(),
+      againstName:   r[COL_CMP.AGAINST_NAME].toString(),
+      complaintText: r[COL_CMP.COMPLAINT_TEXT].toString(),
+      channel:       r[COL_CMP.CHANNEL].toString(),
+      status:        r[COL_CMP.STATUS].toString(),
+      resolution:    r[COL_CMP.RESOLUTION].toString(),
+      resolvedAt:    r[COL_CMP.RESOLVED_AT].toString()
+    });
+  }
+
   complaints.sort(function(a, b) {
     return new Date(b.filedAt) - new Date(a.filedAt);
   });
@@ -6125,6 +6159,143 @@ function candidateAddSeconder(token, nomId, secRoll) {
     'Candidate added seconder ' + secRoll + ' for nomination ' + nomId, '', elecId);
 
   return { success: true, message: 'Seconder added. A confirmation email has been sent to ' + secName + '.' };
+}
+
+// ============================================================
+// getDeclaredResults — public results for declared election
+// Access: any authenticated session
+// ============================================================
+function getDeclaredResults(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  // Find the election — use provided ID or find most recent declared election
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  if (electionId) {
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+        elec = elecRows[i]; break;
+      }
+    }
+  } else {
+    // Find most recently declared election
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_STATUS].toString() === 'declared') {
+        if (!elec || elecRows[i][COL.ELEC_CREATED_AT] > elec[COL.ELEC_CREATED_AT]) {
+          elec = elecRows[i];
+        }
+      }
+    }
+  }
+
+  if (!elec) return { success: false, message: 'No declared election found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
+    return { success: false, message: 'Results have not yet been declared.' };
+  }
+
+  var resultVis = 'full_tally';
+  var showCounts = true;
+  var showAll    = true;
+
+  // Load candidates for this election
+  var candRows = sheetData(SHEETS.CANDIDATES);
+  var postMap  = {}; // postName -> { order, seatCount, candidates: [] }
+  for (var c = 0; c < candRows.length; c++) {
+    var cr = candRows[c];
+    if (cr[COL.CAND_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var post  = cr[COL.CAND_POST].toString();
+    var seats = parseInt(cr[COL.CAND_SEAT_COUNT].toString()) || 1;
+    if (!postMap[post]) {
+      postMap[post] = {
+        order:     parseInt(cr[COL.CAND_POST_ORDER] || 999),
+        seatCount: seats,
+        candidates: []
+      };
+    }
+    postMap[post].candidates.push({
+      id:    cr[COL.CAND_ID].toString(),
+      name:  cr[COL.CAND_NAME].toString(),
+      batch: cr[COL.CAND_BATCH].toString(),
+      votes: 0
+    });
+  }
+
+  // Count votes
+  var voteRows = sheetData(SHEETS.VOTES);
+  var postNota = {};
+  for (var v = 0; v < voteRows.length; v++) {
+    var vr = voteRows[v];
+    if (vr[COL.VOTE_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var vcid  = vr[COL.VOTE_CAND_ID].toString();
+    var vpost = vr[COL.VOTE_POST].toString();
+    if (vcid === 'NOTA') {
+      postNota[vpost] = (postNota[vpost] || 0) + 1;
+    } else {
+      for (var post2 in postMap) {
+        for (var k = 0; k < postMap[post2].candidates.length; k++) {
+          if (postMap[post2].candidates[k].id === vcid) {
+            postMap[post2].candidates[k].votes++;
+          }
+        }
+      }
+    }
+  }
+
+  // Participation per post from VotedLog
+  var vlogRows = sheetData(SHEETS.VOTED_LOG);
+  var postVoters = {};
+  for (var l = 0; l < vlogRows.length; l++) {
+    var lr = vlogRows[l];
+    if (lr[COL.LOG_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var lpost = lr[COL.LOG_POST].toString();
+    var lroll = lr[COL.LOG_ROLL].toString();
+    if (!postVoters[lpost]) postVoters[lpost] = {};
+    postVoters[lpost][lroll] = true;
+  }
+
+  // Build result posts
+  var posts = Object.keys(postMap).sort(function(a, b) {
+    return postMap[a].order - postMap[b].order;
+  });
+
+  var postResults = posts.map(function(postName) {
+    var group    = postMap[postName];
+    var seats    = group.seatCount || 1;
+    var nota     = postNota[postName] || 0;
+    var turnout  = postVoters[postName] ? Object.keys(postVoters[postName]).length : 0;
+
+    // Sort candidates by votes descending
+    var cands = group.candidates.slice().sort(function(a, b) { return b.votes - a.votes; });
+
+    // Mark elected (top N by seat count, unless NOTA wins)
+    for (var ci = 0; ci < cands.length; ci++) {
+      cands[ci].elected = (ci < seats);
+    }
+
+    return {
+      post:      postName,
+      seatCount: seats,
+      turnout:   turnout,
+      nota:      nota,
+      candidates: cands.map(function(cd) {
+        return {
+          name:    cd.name,
+          batch:   cd.batch,
+          votes:   cd.votes,
+          elected: cd.elected
+        };
+      })
+    };
+  });
+
+  return {
+    success:      true,
+    electionId:   elec[COL.ELEC_ID].toString(),
+    electionTitle: elec[COL.ELEC_TITLE].toString(),
+    resultVis:    resultVis,
+    posts:        postResults
+  };
 }
 
 // ============================================================
