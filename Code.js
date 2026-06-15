@@ -538,6 +538,50 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
             }
           }
         }
+
+        // Block if any mandatory post has no candidate
+        var MANDATORY_POSTS = ['President', 'Vice President', 'General Secretary', 'Treasurer'];
+        var candRows2 = sheetData(SHEETS.CANDIDATES);
+        var filledPosts = {};
+        for (var cp = 0; cp < candRows2.length; cp++) {
+          if (candRows2[cp][COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
+          var pName = candRows2[cp][COL.CAND_POST].toString().trim();
+          filledPosts[pName] = true;
+        }
+        var vacantMandatory = [];
+        for (var mp = 0; mp < MANDATORY_POSTS.length; mp++) {
+          if (!filledPosts[MANDATORY_POSTS[mp]]) {
+            vacantMandatory.push(MANDATORY_POSTS[mp]);
+          }
+        }
+        if (vacantMandatory.length > 0) {
+          // Check if a GB resolution document has been uploaded for this election
+          var docRows = sheetData(SHEETS.DOC_STORE);
+          var hasGBRes = false;
+          for (var dr = 0; dr < docRows.length; dr++) {
+            if (docRows[dr][COL.DOC_ELEC_ID].toString() !== electionId.toString()) continue;
+            if (docRows[dr][COL.DOC_CATEGORY].toString() !== 'gb_resolution_mandatory_post') continue;
+            if ((docRows[dr][COL.DOC_NOTES] || '').toString().indexOf('DELETED') === 0) continue;
+            hasGBRes = true;
+            break;
+          }
+          if (!hasGBRes) {
+            return {
+              success:              false,
+              requiresGBResolution: true,
+              vacantPosts:          vacantMandatory,
+              message:              'Cannot activate voting — the following mandatory post' +
+                                    (vacantMandatory.length > 1 ? 's have' : ' has') +
+                                    ' no candidate: ' + vacantMandatory.join(', ') + '. ' +
+                                    'Upload a General Body resolution to proceed.'
+            };
+          }
+          // GB resolution present — log the override and allow
+          appendAdminLog(sess.identity, 'mandatory_post_gb_override',
+            'Voting activated with vacant mandatory post(s): ' + vacantMandatory.join(', ') +
+            '. GB resolution document on file.',
+            '', electionId);
+        }
       }
       // ────────────────────────────────────────────────────────
 
@@ -1010,6 +1054,14 @@ function doGet(e) {
     if (action === 'tutorial') {
       return HtmlService.createHtmlOutput(buildTutorialPage())
         .setTitle('SSKZM OBA — How It Works')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
+    // R16 — Public results page
+    if (action === 'results') {
+      var elecId = e.parameter.electionId || '';
+      return HtmlService.createHtmlOutput(buildResultsPage(elecId))
+        .setTitle('Election Results — SSKZM OBA')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
@@ -1695,6 +1747,132 @@ function buildConsentResultPage(res, action) {
 function buildTutorialPage() {
   var body = HtmlService.createHtmlOutputFromFile('TutorialPage').getContent();
   return standaloneShell('How It Works — SSKZM OBA Elections', body);
+}
+
+// ============================================================
+// R17 — buildResultsPage
+// Public declared results page. No authentication required.
+// Served at ?action=results (optional ?electionId=xxx)
+// ============================================================
+function buildResultsPage(electionId) {
+  var res = getPublicResults(electionId || '');
+
+  if (!res.success) {
+    var body =
+      '<div style="text-align:center;padding:32px 0;">' +
+        '<div style="font-size:2.5rem;margin-bottom:12px;">🗳️</div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">Results Not Yet Available</div>' +
+        '<div style="font-size:.88rem;color:#6b7280;line-height:1.6;">' + escHtml(res.message) + '</div>' +
+        '<div style="margin-top:24px;">' +
+          '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.85rem;color:#1a3a5c;">← Back to Election Home</a>' +
+        '</div>' +
+      '</div>';
+    return standaloneShell('Election Results — SSKZM OBA', body);
+  }
+
+  // ── Results HTML ──────────────────────────────────────────
+  var html =
+    '<div style="text-align:center;padding:16px 0 20px;">' +
+      '<div style="font-size:2.5rem;margin-bottom:8px;">🏆</div>' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">' + escHtml(res.electionTitle) + '</div>' +
+      '<div style="font-size:.82rem;color:#059669;font-weight:600;margin-top:4px;">Results Declared</div>' +
+    '</div>';
+
+  var posts = res.posts || [];
+  if (posts.length === 0) {
+    html += '<div style="text-align:center;padding:24px;color:#6b7280;font-size:.9rem;">No results data available.</div>';
+  } else {
+    for (var i = 0; i < posts.length; i++) {
+      var post      = posts[i];
+      var seats     = post.seatCount || 1;
+      var seatLabel = seats > 1 ? ' (' + seats + ' seats)' : '';
+
+      html +=
+        '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;' +
+        'padding:14px 16px;margin-bottom:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;' +
+          'margin-bottom:10px;gap:8px;">' +
+            '<div style="font-size:.95rem;font-weight:700;color:#1a3a5c;">' +
+              escHtml(post.post) + escHtml(seatLabel) +
+            '</div>' +
+            (post.turnout
+              ? '<div style="font-size:.75rem;color:#6b7280;white-space:nowrap;">' + post.turnout + ' voted</div>'
+              : '') +
+          '</div>';
+
+      var cands = post.candidates || [];
+      for (var j = 0; j < cands.length; j++) {
+        var cand      = cands[j];
+        var isElected = cand.elected;
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
+          (j < cands.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + '">' +
+            '<div style="width:26px;text-align:center;font-size:1rem;flex-shrink:0;">' +
+              (isElected ? '✅' : '<span style="color:#d1d5db;">○</span>') +
+            '</div>' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-size:.9rem;font-weight:' + (isElected ? '700' : '400') + ';' +
+              'color:' + (isElected ? '#065f46' : '#374151') + ';">' +
+                escHtml(cand.name) +
+                (isElected
+                  ? ' <span style="font-size:.72rem;background:#d1fae5;color:#065f46;' +
+                    'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>'
+                  : '') +
+              '</div>' +
+              '<div style="font-size:.75rem;color:#6b7280;">Batch ' + escHtml(cand.batch.toString()) + '</div>' +
+            '</div>' +
+            '<div style="font-size:.88rem;font-weight:' + (isElected ? '700' : '400') + ';' +
+            'color:' + (isElected ? '#065f46' : '#6b7280') + ';flex-shrink:0;min-width:40px;text-align:right;">' +
+              cand.votes + ' vote' + (cand.votes !== 1 ? 's' : '') +
+            '</div>' +
+          '</div>';
+      }
+
+      if (post.nota > 0) {
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;' +
+          'border-top:1px solid #f3f4f6;margin-top:2px;">' +
+            '<div style="width:26px;text-align:center;flex-shrink:0;color:#9ca3af;">—</div>' +
+            '<div style="flex:1;font-size:.82rem;color:#9ca3af;">NOTA</div>' +
+            '<div style="font-size:.82rem;color:#9ca3af;flex-shrink:0;min-width:40px;text-align:right;">' +
+              post.nota + ' vote' + (post.nota !== 1 ? 's' : '') +
+            '</div>' +
+          '</div>';
+      }
+
+      html += '</div>';
+    }
+  }
+
+  // ── Token verification block ──────────────────────────────
+  var verifyBase = DEPLOY_URL + '?action=verifyToken&voteId=';
+  html +=
+    '<div style="background:#f0f4f8;border:1px solid #c8d4e0;border-radius:8px;' +
+    'padding:16px;margin-top:8px;margin-bottom:16px;">' +
+      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:6px;">🔍 Verify Your Vote</div>' +
+      '<div style="font-size:.82rem;color:#555;margin-bottom:10px;line-height:1.5;">' +
+        'Enter your vote receipt token to confirm your vote was counted.' +
+      '</div>' +
+      '<form method="GET" action="' + DEPLOY_URL + '" target="_blank"' +
+      ' style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<input type="hidden" name="action" value="verifyToken" />' +
+        '<input name="voteId" type="text" placeholder="Paste receipt token here"' +
+        ' style="flex:1;min-width:0;padding:10px 12px;border:1px solid #ccc;border-radius:4px;' +
+        'font-size:.88rem;box-sizing:border-box;" />' +
+        '<button type="submit"' +
+        ' style="padding:10px 18px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;' +
+        'font-size:.88rem;font-weight:600;cursor:pointer;white-space:nowrap;min-height:44px;">Verify</button>' +
+      '</form>' +
+    '</div>' +
+
+    '<div style="text-align:center;padding:8px 0 4px;font-size:.75rem;color:#9ca3af;line-height:1.5;">' +
+      'Vote counts are published as part of the election record per the SSKZM OBA Elections SOP.' +
+    '</div>' +
+    '<div style="text-align:center;margin-top:16px;margin-bottom:8px;">' +
+      '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.83rem;color:#1a3a5c;">← Back to Election Home</a>' +
+    '</div>';
+
+  return standaloneShell('Election Results — SSKZM OBA', html);
 }
 
 // ============================================================
@@ -6013,6 +6191,116 @@ function getDeclaredResults(token, electionId) {
 }
 
 // ============================================================
+// getPublicResults — unauthenticated results for declared election
+// Access: PUBLIC — no session required
+// Only returns data when election status = 'declared'
+// electionId optional — omit to get most recent declared election
+// ============================================================
+function getPublicResults(electionId) {
+  // Find the election
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  if (electionId) {
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+        elec = elecRows[i]; break;
+      }
+    }
+  } else {
+    // Most recently created declared election
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_STATUS].toString() === 'declared') {
+        if (!elec || elecRows[i][COL.ELEC_CREATED_AT] > elec[COL.ELEC_CREATED_AT]) {
+          elec = elecRows[i];
+        }
+      }
+    }
+  }
+
+  if (!elec) return { success: false, message: 'No declared election found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
+    return { success: false, message: 'Results have not yet been declared for this election.' };
+  }
+
+  // Load candidates
+  var candRows = sheetData(SHEETS.CANDIDATES);
+  var postMap = {};
+  for (var c = 0; c < candRows.length; c++) {
+    var cr = candRows[c];
+    if (cr[COL.CAND_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var post  = cr[COL.CAND_POST].toString();
+    var seats = parseInt(cr[COL.CAND_SEAT_COUNT].toString()) || 1;
+    if (!postMap[post]) {
+      postMap[post] = { order: parseInt(cr[COL.CAND_POST_ORDER] || 999), seatCount: seats, candidates: [] };
+    }
+    postMap[post].candidates.push({ id: cr[COL.CAND_ID].toString(), name: cr[COL.CAND_NAME].toString(), batch: cr[COL.CAND_BATCH].toString(), votes: 0 });
+  }
+
+  // Count votes
+  var voteRows = sheetData(SHEETS.VOTES);
+  var postNota = {};
+  for (var v = 0; v < voteRows.length; v++) {
+    var vr = voteRows[v];
+    if (vr[COL.VOTE_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var vcid  = vr[COL.VOTE_CAND_ID].toString();
+    var vpost = vr[COL.VOTE_POST].toString();
+    if (vcid === 'NOTA') {
+      postNota[vpost] = (postNota[vpost] || 0) + 1;
+    } else {
+      for (var post2 in postMap) {
+        for (var k = 0; k < postMap[post2].candidates.length; k++) {
+          if (postMap[post2].candidates[k].id === vcid) {
+            postMap[post2].candidates[k].votes++;
+          }
+        }
+      }
+    }
+  }
+
+  // Participation per post from VotedLog
+  var vlogRows = sheetData(SHEETS.VOTED_LOG);
+  var postVoters = {};
+  for (var l = 0; l < vlogRows.length; l++) {
+    var lr = vlogRows[l];
+    if (lr[COL.LOG_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
+    var lpost = lr[COL.LOG_POST].toString();
+    var lroll = lr[COL.LOG_ROLL].toString();
+    if (!postVoters[lpost]) postVoters[lpost] = {};
+    postVoters[lpost][lroll] = true;
+  }
+
+  // Build post results
+  var posts = Object.keys(postMap).sort(function(a, b) {
+    return postMap[a].order - postMap[b].order;
+  });
+
+  var postResults = posts.map(function(postName) {
+    var group   = postMap[postName];
+    var seats   = group.seatCount || 1;
+    var nota    = postNota[postName] || 0;
+    var turnout = postVoters[postName] ? Object.keys(postVoters[postName]).length : 0;
+    var cands   = group.candidates.slice().sort(function(a, b) { return b.votes - a.votes; });
+    for (var ci = 0; ci < cands.length; ci++) { cands[ci].elected = (ci < seats); }
+    return {
+      post:      postName,
+      seatCount: seats,
+      turnout:   turnout,
+      nota:      nota,
+      candidates: cands.map(function(cd) {
+        return { name: cd.name, batch: cd.batch, votes: cd.votes, elected: cd.elected };
+      })
+    };
+  });
+
+  return {
+    success:       true,
+    electionId:    elec[COL.ELEC_ID].toString(),
+    electionTitle: elec[COL.ELEC_TITLE].toString(),
+    posts:         postResults
+  };
+}
+
+// ============================================================
 // purgeTrialData — clears all transactional data for a
 // trial election. Preserves Voters, Admins, Elections row,
 // and AdminLog.
@@ -6232,3 +6520,133 @@ function certifyVoterRoll(token, electionId) {
   return { success: true, certified: certifiedCount, removed: removedCount };
 }
 
+// ============================================================
+// DOCUMENT STORE MODULE
+// Stores election documents in Google Drive under a structured
+// folder hierarchy: SSKZM OBA Elections / {ElectionTitle}
+// DocStore sheet records metadata + Drive URL for each document.
+// ============================================================
+
+function getOrCreateElectionFolder(electionId, electionTitle) {
+  var ROOT_FOLDER_NAME = 'SSKZM OBA Elections';
+  var rootIter = DriveApp.getFoldersByName(ROOT_FOLDER_NAME);
+  var rootFolder;
+  if (rootIter.hasNext()) {
+    rootFolder = rootIter.next();
+  } else {
+    rootFolder = DriveApp.createFolder(ROOT_FOLDER_NAME);
+  }
+  var subName = electionId + ' — ' + electionTitle;
+  var subIter = rootFolder.getFoldersByName(subName);
+  var subFolder;
+  if (subIter.hasNext()) {
+    subFolder = subIter.next();
+  } else {
+    subFolder = rootFolder.createFolder(subName);
+  }
+  return subFolder;
+}
+
+function storeDocument(token, electionId, category, filename, base64Data, mimeType, notes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+  if (!electionId || !category || !filename || !base64Data) {
+    return { success: false, message: 'Missing required fields.' };
+  }
+  if (base64Data.length > 7000000) {
+    return { success: false, message: 'File too large. Maximum size is 5MB.' };
+  }
+
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elecTitle = electionId;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elecTitle = elecRows[i][COL.ELEC_TITLE].toString();
+      break;
+    }
+  }
+
+  try {
+    var decoded  = Utilities.newBlob(
+      Utilities.base64Decode(base64Data),
+      mimeType || 'application/octet-stream',
+      filename
+    );
+    var folder   = getOrCreateElectionFolder(electionId, elecTitle);
+    var file     = folder.createFile(decoded);
+    var driveUrl = file.getUrl();
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var docId  = 'DOC-' + electionId + '-' + Date.now();
+    var now    = new Date().toISOString();
+    var sh     = getSheet(SHEETS.DOC_STORE);
+    var newRow = [];
+    newRow[COL.DOC_ID]            = docId;
+    newRow[COL.DOC_ELEC_ID]       = electionId;
+    newRow[COL.DOC_CATEGORY]      = category;
+    newRow[COL.DOC_UPLOADER_ROLL] = sess.identity;
+    newRow[COL.DOC_UPLOADER_ROLE] = sess.role;
+    newRow[COL.DOC_FILENAME]      = filename;
+    newRow[COL.DOC_GDRIVE_URL]    = driveUrl;
+    newRow[COL.DOC_UPLOADED_AT]   = now;
+    newRow[COL.DOC_NOTES]         = notes || '';
+    newRow[COL.DOC_LINKED_TAB]    = '';
+    sh.appendRow(newRow);
+
+    appendAdminLog(sess.identity, 'document_uploaded',
+      'Document uploaded: ' + filename + ' | Category: ' + category + ' | DocID: ' + docId,
+      '', electionId);
+
+    return { success: true, docId: docId, driveUrl: driveUrl };
+
+  } catch (err) {
+    return { success: false, message: 'Upload failed: ' + err.toString() };
+  }
+}
+
+function getDocuments(token, electionId, category) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'SCRUTINEER', 'OBSERVER', 'TEM'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+
+  var rows = sheetData(SHEETS.DOC_STORE);
+  var docs = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r[COL.DOC_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (category && r[COL.DOC_CATEGORY].toString() !== category) continue;
+    if ((r[COL.DOC_NOTES] || '').toString().indexOf('DELETED') === 0) continue;
+    docs.push({
+      docId:      r[COL.DOC_ID].toString(),
+      category:   r[COL.DOC_CATEGORY].toString(),
+      filename:   r[COL.DOC_FILENAME].toString(),
+      driveUrl:   r[COL.DOC_GDRIVE_URL].toString(),
+      uploadedBy: r[COL.DOC_UPLOADER_ROLL].toString(),
+      uploadedAt: r[COL.DOC_UPLOADED_AT].toString(),
+      notes:      r[COL.DOC_NOTES].toString()
+    });
+  }
+  return { success: true, docs: docs };
+}
+
+function deleteDocument(token, docId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  var sh   = getSheet(SHEETS.DOC_STORE);
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL.DOC_ID].toString() === docId.toString()) {
+      sh.getRange(i + 1, COL.DOC_NOTES + 1).setValue(
+        'DELETED by ' + sess.identity + ' at ' + new Date().toISOString()
+      );
+      appendAdminLog(sess.identity, 'document_deleted',
+        'Document soft-deleted: ' + docId, '', rows[i][COL.DOC_ELEC_ID].toString());
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Document not found.' };
+}
