@@ -22,6 +22,7 @@ var AdminPanel = (function() {
       { id:'adminlog',         label:'Log' },
       { id:'complaints',       label:'Complaints' },
       { id:'appeals',          label:'Appeals' },
+      { id:'documents',        label:'Documents' },
       { id:'settings',         label:'Settings' }
     ],
     DEPUTY_RO: [
@@ -159,6 +160,14 @@ var AdminPanel = (function() {
         '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
         '<div class="spinner"></div>' +
         '<div style="font-size:.85rem;margin-top:12px;">Loading nominations…</div>' +
+        '</div></div>';
+    }
+    if (tabId === 'documents') {
+      setTimeout(function() { AdminPanel._loadDocumentsTab(); }, 0);
+      return '<div id="documents-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading documents…</div>' +
         '</div></div>';
     }
     if (tabId === 'settings') {
@@ -671,6 +680,76 @@ _renderManageScreen: function(el) {
       '</div>' +
     '</div>' +
 
+    // Election Schedule card
+    '<div class="panel-card" style="margin-bottom:12px;" id="schedule-card">' +
+      '<div class="panel-card-header">📅 Election Schedule</div>' +
+      '<div class="panel-card-body">' +
+        (el.isTrial ?
+          '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;' +
+          'padding:10px 14px;font-size:.82rem;color:#92400e;margin-bottom:14px;">' +
+          '⚠️ <strong>Trial mode</strong> — SOP floor checks are not enforced for trial elections.' +
+          '</div>' : '') +
+        '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
+          '<div style="flex:1;">' +
+            '<label style="font-size:.82rem;font-weight:600;color:#374151;">AGM Day (V-Day)</label>' +
+            '<input type="date" id="sched-vday" style="width:100%;box-sizing:border-box;' +
+            'padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;" />' +
+          '</div>' +
+          '<div style="display:flex;align-items:flex-end;">' +
+            '<button onclick="AdminPanel._schedAutoCalc()" ' +
+            'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:4px;cursor:pointer;font-size:.82rem;min-height:44px;white-space:nowrap;">' +
+            '⚡ Auto-fill</button>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:.78rem;color:#6b7280;margin-bottom:14px;">' +
+          'Enter V-Day and click Auto-fill to calculate all dates per SOP. You can then adjust individual dates.' +
+        '</div>' +
+
+        // Schedule mode selector
+        '<label style="font-size:.82rem;font-weight:600;color:#374151;">Schedule Mode</label>' +
+        '<select id="sched-mode" style="width:100%;padding:10px;font-size:.9rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;margin-bottom:14px;box-sizing:border-box;">' +
+          (el.isTrial ?
+            '<option value="trial_internal">Trial — Internal (EC only)</option>' +
+            '<option value="trial_member">Trial — Member-facing</option>' :
+            '<option value="live_draft">Draft (EC publishes, labelled Draft)</option>' +
+            '<option value="live">Live (RO finalised schedule)</option>'
+          ) +
+        '</select>' +
+
+        // All 13 date fields
+        AdminPanel._schedDateRow('sched-voter-cutoff',  'Voter Roll Cutoff',          'V-47') +
+        AdminPanel._schedDateRow('sched-nom-open',      'Nominations Open',           'V-38') +
+        AdminPanel._schedDateRow('sched-vr-pub',        'Voter Roll Published',        'V-33') +
+        AdminPanel._schedDateRow('sched-p1-close',      'Phase 1 Close',              'V-31') +
+        AdminPanel._schedDateRow('sched-vr-obj',        'Voter Roll Objection Closes','V-26') +
+        AdminPanel._schedDateRow('sched-nom-close',     'Nominations Close',          'V-24') +
+        AdminPanel._schedDateRow('sched-vr-cert',       'Voter Roll Certified',       'V-24') +
+        AdminPanel._schedDateRow('sched-cand-pub',      'Candidates Published',       'V-19') +
+        AdminPanel._schedDateRow('sched-withdrawal',    'Withdrawal Deadline',        'V-18') +
+        AdminPanel._schedDateRow('sched-voting-open',   'Voting Opens',               'V-16') +
+        AdminPanel._schedDateRow('sched-voting-close',  'Voting Closes',              'V-9') +
+        AdminPanel._schedDateRow('sched-declaration',   'Results Declared',           'V-7') +
+
+        '<div id="sched-warnings" style="margin-bottom:14px;display:none;"></div>' +
+        '<div id="sched-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+        '<div id="sched-ok" style="color:#16a34a;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+
+        '<div style="display:flex;gap:10px;">' +
+          '<button onclick="AdminPanel._saveSchedule(\'' + escHtml(el.id) + '\')" ' +
+          'style="flex:1;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save Schedule</button>' +
+          (!el.isTrial ?
+            '<button onclick="AdminPanel._publishSchedule(\'' + escHtml(el.id) + '\')" ' +
+            'id="btn-publish-sched" ' +
+            'style="flex:1;padding:12px;background:#059669;color:#fff;border:none;' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">🌐 Publish</button>'
+            : '') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
     // Delete — draft only
     (isDraft ?
       '<div class="panel-card" style="margin-bottom:24px;border:1px solid #fca5a5;">' +
@@ -755,6 +834,11 @@ _renderManageScreen: function(el) {
     '';
 
   content.innerHTML = html;
+
+  // Load existing schedule into form after DOM is set
+  setTimeout(function() {
+    AdminPanel._loadScheduleIntoForm(el.id);
+  }, 0);
 },
 
 _advanceStatusMsg: function(status) {
@@ -1515,7 +1599,81 @@ _renderNominationsShell: function(elections) {
   });
   selHtml += '</select>';
 
-  c.innerHTML = selHtml + '<div id="nom-list-area">' +
+  var isRO = (App.role || '').toUpperCase() === 'RO_ADMIN';
+  var selElec = elections.length ? elections[0] : null;
+  var nomOpen = selElec && (selElec.status === 'nominations_open' || selElec.status === 'nominations_open_phase2');
+
+  var manualBtn = (isRO && nomOpen) ?
+    '<button onclick="AdminPanel._toggleManualNomForm()" ' +
+    'style="width:100%;padding:12px;margin-bottom:12px;background:#fff;color:#1a3a5c;' +
+    'border:1.5px solid #1a3a5c;border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">'+
+    '✏️ Manual Entry</button>' +
+    '<div id="manual-nom-form" style="display:none;background:#f8fafc;border:1.5px solid #1a3a5c;' +
+    'border-radius:6px;padding:16px;margin-bottom:14px;">' +
+      '<div style="font-weight:600;color:#1a3a5c;margin-bottom:14px;font-size:.95rem;">Manual Nomination Entry</div>' +
+
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Candidate Roll No.</label>' +
+      '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
+        '<input type="text" id="mn-cand-roll" placeholder="Roll number" ' +
+        'style="flex:1;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '<button onclick="AdminPanel._mnLookup(\'cand\')" ' +
+        'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;min-height:44px;">Look up</button>' +
+      '</div>' +
+      '<div id="mn-cand-name" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:12px;"></div>' +
+
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Post</label>' +
+      '<select id="mn-post" style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;margin-bottom:12px;box-sizing:border-box;">' +
+        '<option value="">— Select post —</option>' +
+        ['President','Vice President','General Secretary','Joint Secretary','Treasurer',
+         'Organising Secretary',
+         'Batch Representative 1965-70','Batch Representative 1971-75',
+         'Batch Representative 1976-80','Batch Representative 1981-85',
+         'Batch Representative 1986-90','Batch Representative 1991-95',
+         'Batch Representative 1996-00','Batch Representative 2001-05',
+         'Batch Representative 2006-10','Batch Representative 2011-15',
+         'Batch Representative 2016-20','Batch Representative 2021-25',
+         'Batch Representative 2026-30'
+        ].map(function(p){ return '<option value="'+p+'">'+p+'</option>'; }).join('') +
+      '</select>' +
+
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Proposer Roll No.</label>' +
+      '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
+        '<input type="text" id="mn-prop-roll" placeholder="Roll number" ' +
+        'style="flex:1;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '<button onclick="AdminPanel._mnLookup(\'prop\')" ' +
+        'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;min-height:44px;">Look up</button>' +
+      '</div>' +
+      '<div id="mn-prop-name" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:12px;"></div>' +
+
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Seconder Roll No. <span style="font-weight:400;color:#6b7280;">(optional)</span></label>' +
+      '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
+        '<input type="text" id="mn-sec-roll" placeholder="Roll number (optional)" ' +
+        'style="flex:1;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+        '<button onclick="AdminPanel._mnLookup(\'sec\')" ' +
+        'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;min-height:44px;">Look up</button>' +
+      '</div>' +
+      '<div id="mn-sec-name" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:12px;"></div>' +
+
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Bio <span style="font-weight:400;color:#6b7280;">(optional, max 300 chars)</span></label>' +
+      '<textarea id="mn-bio" rows="3" maxlength="300" placeholder="Brief bio or statement" ' +
+      'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;' +
+      'box-sizing:border-box;resize:vertical;margin-bottom:14px;"></textarea>' +
+
+      '<div id="mn-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+      '<div id="mn-ok" style="color:#16a34a;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+
+      '<div style="display:flex;gap:10px;">' +
+        '<button onclick="AdminPanel._submitManualNom()" ' +
+        'style="flex:1;padding:12px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;' +
+        'font-size:.9rem;cursor:pointer;min-height:44px;">Submit Nomination</button>' +
+        '<button onclick="AdminPanel._toggleManualNomForm()" ' +
+        'style="padding:12px 16px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
+        'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">Cancel</button>' +
+      '</div>' +
+    '</div>'
+    : '';
+
+  c.innerHTML = selHtml + manualBtn + '<div id="nom-list-area">' +
     '<div style="text-align:center;padding:24px;color:#6b7280;">' +
     '<div class="spinner"></div></div></div>';
 },
@@ -1523,6 +1681,260 @@ _renderNominationsShell: function(elections) {
 _onNomElecChange: function(elecId) {
   AdminPanel._nominationsSelectedElec = elecId;
   AdminPanel._loadNominationsList(elecId);
+},
+
+// Helper — renders a single date row in the schedule form
+_schedDateRow: function(id, label, vRef) {
+  return '<div style="margin-bottom:12px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;">' +
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">' + escHtml(label) + '</label>' +
+      '<span style="font-size:.72rem;color:#9ca3af;">' + escHtml(vRef) + '</span>' +
+    '</div>' +
+    '<input type="date" id="' + id + '" ' +
+    'style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;' +
+    'border-radius:4px;font-size:.88rem;" />' +
+    '<div id="' + id + '-warn" style="font-size:.78rem;margin-top:2px;display:none;"></div>' +
+  '</div>';
+},
+
+// Auto-calculate all dates from V-Day
+_schedAutoCalc: function() {
+  var vDay = document.getElementById('sched-vday').value;
+  if (!vDay) {
+    alert('Please enter V-Day (AGM date) first.');
+    return;
+  }
+  var anchor = new Date(vDay);
+  function vMinus(days) {
+    var d = new Date(anchor.getTime());
+    d.setDate(d.getDate() - days);
+    return d.toISOString().substring(0, 10);
+  }
+  document.getElementById('sched-voter-cutoff').value  = vMinus(47);
+  document.getElementById('sched-nom-open').value      = vMinus(38);
+  document.getElementById('sched-vr-pub').value        = vMinus(33);
+  document.getElementById('sched-p1-close').value      = vMinus(31);
+  document.getElementById('sched-vr-obj').value        = vMinus(26);
+  document.getElementById('sched-nom-close').value     = vMinus(24);
+  document.getElementById('sched-vr-cert').value       = vMinus(24);
+  document.getElementById('sched-cand-pub').value      = vMinus(19);
+  document.getElementById('sched-withdrawal').value    = vMinus(18);
+  document.getElementById('sched-voting-open').value   = vMinus(16);
+  document.getElementById('sched-voting-close').value  = vMinus(9);
+  document.getElementById('sched-declaration').value   = vMinus(7);
+},
+
+// Load existing schedule into the form
+_loadScheduleIntoForm: function(elecId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) return; // no schedule yet — form stays blank
+      var f = function(id, val) {
+        var el = document.getElementById(id);
+        if (el && val) el.value = val.substring(0, 10);
+      };
+      f('sched-vday',         res.vDay);
+      f('sched-voter-cutoff', res.voterRollCutoff);
+      f('sched-nom-open',     res.nomOpenDate);
+      f('sched-vr-pub',       res.voterRollPubDate);
+      f('sched-p1-close',     res.phase1CloseDate);
+      f('sched-vr-obj',       res.voterRollObjDeadline);
+      f('sched-nom-close',    res.nomCloseDate);
+      f('sched-vr-cert',      res.voterRollCertDate);
+      f('sched-cand-pub',     res.candidatesPubDate);
+      f('sched-withdrawal',   res.withdrawalDeadline);
+      f('sched-voting-open',  res.votingOpenDate);
+      f('sched-voting-close', res.votingCloseDate);
+      f('sched-declaration',  res.declarationDate);
+      var modeEl = document.getElementById('sched-mode');
+      if (modeEl && res.scheduleMode) modeEl.value = res.scheduleMode;
+      // Show published status
+      if (res.published) {
+        var okEl = document.getElementById('sched-ok');
+        if (okEl) {
+          okEl.innerHTML = '🌐 Published to Landing Page on ' + res.publishedAt.substring(0, 10);
+          okEl.style.display = 'block';
+        }
+      }
+    })
+    .withFailureHandler(function() {})
+    .getElectionSchedule(App.token, elecId);
+},
+
+// Collect form values and save schedule
+_saveSchedule: function(elecId) {
+  var errEl = document.getElementById('sched-error');
+  var okEl  = document.getElementById('sched-ok');
+  var warnEl = document.getElementById('sched-warnings');
+  if (errEl)  { errEl.style.display  = 'none'; errEl.innerHTML  = ''; }
+  if (okEl)   { okEl.style.display   = 'none'; okEl.innerHTML   = ''; }
+  if (warnEl) { warnEl.style.display = 'none'; warnEl.innerHTML = ''; }
+
+  function val(id) {
+    var el = document.getElementById(id);
+    return el ? el.value : '';
+  }
+
+  var schedData = {
+    scheduleMode:         val('sched-mode'),
+    vDay:                 val('sched-vday'),
+    voterRollCutoff:      val('sched-voter-cutoff'),
+    nomOpenDate:          val('sched-nom-open'),
+    voterRollPubDate:     val('sched-vr-pub'),
+    phase1CloseDate:      val('sched-p1-close'),
+    voterRollObjDeadline: val('sched-vr-obj'),
+    nomCloseDate:         val('sched-nom-close'),
+    voterRollCertDate:    val('sched-vr-cert'),
+    candidatesPubDate:    val('sched-cand-pub'),
+    withdrawalDeadline:   val('sched-withdrawal'),
+    votingOpenDate:       val('sched-voting-open'),
+    votingCloseDate:      val('sched-voting-close'),
+    declarationDate:      val('sched-declaration')
+  };
+
+  if (!schedData.vDay) {
+    if (errEl) { errEl.innerHTML = 'V-Day (AGM date) is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (errEl) { errEl.innerHTML = escHtml(res && res.message ? res.message : 'Save failed.'); errEl.style.display = 'block'; }
+        return;
+      }
+      if (okEl) { okEl.innerHTML = '✓ Schedule saved.'; okEl.style.display = 'block'; }
+      // Show any soft warnings
+      if (res.warnings && res.warnings.length > 0) {
+        var html = '';
+        res.warnings.forEach(function(w) {
+          var color = w.severity === 'block' ? '#fef2f2' : '#fffbeb';
+          var border = w.severity === 'block' ? '#fca5a5' : '#fbbf24';
+          var icon = w.severity === 'block' ? '🔴' : '🟡';
+          html += '<div style="background:' + color + ';border:1px solid ' + border + ';' +
+            'border-radius:4px;padding:8px 12px;margin-bottom:6px;font-size:.8rem;">' +
+            icon + ' ' + escHtml(w.message) + '</div>';
+        });
+        if (warnEl) { warnEl.innerHTML = html; warnEl.style.display = 'block'; }
+      }
+      // Sync vday and dates back to the main manage form fields
+      var vdayEl = document.getElementById('manage-vday');
+      if (vdayEl && schedData.vDay) vdayEl.value = schedData.vDay;
+      var vcEl = document.getElementById('manage-vclose');
+      if (vcEl && schedData.votingCloseDate) vcEl.value = schedData.votingCloseDate;
+      var declEl = document.getElementById('manage-declare');
+      if (declEl && schedData.declarationDate) declEl.value = schedData.declarationDate;
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.innerHTML = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    })
+    .setElectionSchedule(App.token, elecId, schedData);
+},
+
+// Publish schedule to Landing Page
+_publishSchedule: function(elecId) {
+  if (!confirm('Publish this schedule to the Landing Page? It will be visible to all members.')) return;
+  var errEl = document.getElementById('sched-error');
+  var okEl  = document.getElementById('sched-ok');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (errEl) { errEl.innerHTML = escHtml(res && res.message ? res.message : 'Publish failed.'); errEl.style.display = 'block'; }
+        return;
+      }
+      if (okEl) { okEl.innerHTML = '🌐 Schedule published to Landing Page.'; okEl.style.display = 'block'; }
+      var btn = document.getElementById('btn-publish-sched');
+      if (btn) { btn.textContent = '✓ Published'; btn.disabled = true; }
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
+    })
+    .publishSchedule(App.token, elecId);
+},
+
+_toggleManualNomForm: function() {
+  var f = document.getElementById('manual-nom-form');
+  if (!f) return;
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  // Clear form on open
+  if (f.style.display === 'block') {
+    ['mn-cand-roll','mn-prop-roll','mn-sec-roll','mn-bio'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = '';
+    });
+    ['mn-cand-name','mn-prop-name','mn-sec-name','mn-error','mn-ok'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+    });
+    var sel = document.getElementById('mn-post'); if (sel) sel.value = '';
+  }
+},
+
+_mnLookup: function(role) {
+  var rollEl  = document.getElementById('mn-' + role + '-roll');
+  var nameEl  = document.getElementById('mn-' + role + '-name');
+  if (!rollEl || !nameEl) return;
+  var roll = rollEl.value.trim();
+  if (!roll) { nameEl.innerHTML = ''; nameEl.style.display = 'none'; return; }
+  nameEl.style.color = '#9ca3af';
+  nameEl.innerHTML = 'Looking up…';
+  nameEl.style.display = 'block';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        nameEl.style.color = '#059669';
+        nameEl.innerHTML = '✓ ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch.toString()) + ')' : '');
+      } else {
+        nameEl.style.color = '#c0392b';
+        nameEl.innerHTML = '✗ ' + escHtml((res && res.message) || 'Not found on voter roll');
+      }
+    })
+    .withFailureHandler(function() {
+      nameEl.style.color = '#c0392b';
+      nameEl.innerHTML = '✗ Connection error';
+    })
+    .lookupVoterName(App.token, roll);
+},
+
+_submitManualNom: function() {
+  var errEl = document.getElementById('mn-error');
+  var okEl  = document.getElementById('mn-ok');
+  if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+  if (okEl)  { okEl.style.display  = 'none'; okEl.innerHTML  = ''; }
+
+  var candRoll = (document.getElementById('mn-cand-roll') || {}).value || '';
+  var post     = (document.getElementById('mn-post')      || {}).value || '';
+  var propRoll = (document.getElementById('mn-prop-roll') || {}).value || '';
+  var secRoll  = (document.getElementById('mn-sec-roll')  || {}).value || '';
+  var bio      = (document.getElementById('mn-bio')       || {}).value || '';
+  var elecId   = AdminPanel._nominationsSelectedElec;
+
+  if (!candRoll.trim()) { _mnErr('Candidate roll number is required.'); return; }
+  if (!post)            { _mnErr('Please select a post.'); return; }
+  if (!propRoll.trim()) { _mnErr('Proposer roll number is required.'); return; }
+
+  function _mnErr(msg) {
+    if (errEl) { errEl.innerHTML = msg; errEl.style.display = 'block'; }
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (errEl) { errEl.innerHTML = escHtml((res && res.message) || 'Submission failed.'); errEl.style.display = 'block'; }
+        return;
+      }
+      if (okEl) {
+        okEl.innerHTML = '✓ Nomination entered: ' + escHtml(res.candName) + ' for ' + escHtml(res.post);
+        okEl.style.display = 'block';
+      }
+      // Refresh list and collapse form after 1.5s
+      setTimeout(function() {
+        AdminPanel._toggleManualNomForm();
+        AdminPanel._loadNominationsList(elecId);
+      }, 1500);
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.innerHTML = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    })
+    .submitNominationManual(App.token, elecId, candRoll, post, propRoll, secRoll, bio);
 },
 
 _loadNominationsList: function(elecId) {
@@ -4085,6 +4497,175 @@ _deleteDoc: function(docId, elecId, category) {
       }
       showToast('Document deleted.');
       AdminPanel._loadDocuments(elecId, category);
+    })
+    .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
+    .deleteDocument(App.token, docId);
+},
+
+  // ── DOCUMENTS TAB ─────────────────────────────────────────
+_loadDocumentsTab: function() {
+  var content = document.getElementById('documents-content');
+  if (!content) return;
+
+  // Get current election from elections tab state
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!content) return;
+      if (!res || !res.success || !res.elections || res.elections.length === 0) {
+        content.innerHTML =
+          '<div style="padding:24px;text-align:center;color:#6b7280;font-size:.9rem;">' +
+          'No elections found.</div>';
+        return;
+      }
+      content.innerHTML = AdminPanel._renderDocumentsTab(res.elections);
+    })
+    .withFailureHandler(function() {
+      if (content) content.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_renderDocumentsTab: function(elections) {
+  var html =
+    '<div style="padding:4px 0 16px;">' +
+      '<div style="font-size:.78rem;color:#6b7280;margin-bottom:12px;">' +
+        'All documents uploaded for each election. Click a filename to open in Google Drive.' +
+      '</div>';
+
+  // Election selector if more than one election
+  if (elections.length > 1) {
+    html += '<div style="margin-bottom:14px;">' +
+      '<label style="font-size:.83rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Election</label>' +
+      '<select id="doc-elec-selector" onchange="AdminPanel._switchDocElection()"' +
+      ' style="width:100%;padding:9px 10px;border:1px solid #ccc;border-radius:4px;font-size:.88rem;">';
+    elections.forEach(function(e) {
+      html += '<option value="' + escHtml(e.id) + '">' + escHtml(e.title) +
+        ' (' + escHtml(e.status) + ')</option>';
+    });
+    html += '</select></div>';
+  }
+
+  var firstElecId = elections[0].id;
+  html += '<div id="doc-tab-list-area">';
+  html += AdminPanel._renderDocTabList(firstElecId);
+  html += '</div>';
+  html += '</div>';
+  return html;
+},
+
+_switchDocElection: function() {
+  var sel = document.getElementById('doc-elec-selector');
+  if (!sel) return;
+  var area = document.getElementById('doc-tab-list-area');
+  if (area) area.innerHTML =
+    '<div style="padding:16px;text-align:center;color:#6b7280;font-size:.85rem;">' +
+    '<span class="spinner"></span></div>';
+  AdminPanel._renderDocTabListAsync(sel.value);
+},
+
+_renderDocTabListAsync: function(elecId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area = document.getElementById('doc-tab-list-area');
+      if (!area) return;
+      if (!res || !res.success) {
+        area.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.85rem;">Error loading documents.</div>';
+        return;
+      }
+      area.innerHTML = AdminPanel._buildDocList(elecId, res.docs);
+    })
+    .withFailureHandler(function() {
+      var area = document.getElementById('doc-tab-list-area');
+      if (area) area.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.85rem;">Connection error.</div>';
+    })
+    .getDocuments(App.token, elecId, '');
+},
+
+_renderDocTabList: function(elecId) {
+  // Synchronous shell — actual docs loaded via google.script.run
+  setTimeout(function() { AdminPanel._renderDocTabListAsync(elecId); }, 0);
+  return '<div style="padding:16px;text-align:center;color:#6b7280;font-size:.85rem;">' +
+    '<span class="spinner"></span></div>';
+},
+
+_buildDocList: function(elecId, docs) {
+  if (!docs || docs.length === 0) {
+    return '<div style="text-align:center;padding:32px 16px;color:#6b7280;font-size:.88rem;">' +
+      '📂 No documents uploaded for this election yet.</div>';
+  }
+
+  // Group by category
+  var byCategory = {};
+  docs.forEach(function(d) {
+    var cat = d.category || 'uncategorised';
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(d);
+  });
+
+  var catLabels = {
+    'gb_resolution_mandatory_post': 'GB Resolution — Mandatory Post Waiver',
+    'manual_ro_nomination':         'Manual RO Nomination Documents',
+    'scrutineer_declaration':       'Scrutineer Declaration of Impartiality',
+    'handover_document':            'Handover Documents',
+    'other':                        'Other Documents'
+  };
+
+  var html = '';
+  Object.keys(byCategory).forEach(function(cat) {
+    var label = catLabels[cat] || cat;
+    html +=
+      '<div style="margin-bottom:18px;">' +
+        '<div style="font-size:.8rem;font-weight:700;color:#6b7280;text-transform:uppercase;' +
+        'letter-spacing:.04em;padding:8px 0 6px;border-bottom:1px solid #e5e7eb;' +
+        'margin-bottom:8px;">' + escHtml(label) + '</div>';
+
+    byCategory[cat].forEach(function(d) {
+      var ts = d.uploadedAt
+        ? d.uploadedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC'
+        : '';
+      html +=
+        '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;' +
+        'border-bottom:1px solid #f3f4f6;flex-wrap:wrap;">' +
+          '<div style="font-size:1.2rem;flex-shrink:0;margin-top:2px;">📄</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-size:.88rem;font-weight:600;">' +
+              '<a href="' + escHtml(d.driveUrl) + '" target="_blank"' +
+              ' style="color:#1a3a5c;text-decoration:underline;">' +
+                escHtml(d.filename) +
+              '</a>' +
+            '</div>' +
+            '<div style="font-size:.75rem;color:#6b7280;margin-top:2px;">' +
+              'Uploaded by ' + escHtml(d.uploadedBy) + ' · ' + escHtml(ts) +
+              (d.notes ? ' · ' + escHtml(d.notes) : '') +
+            '</div>' +
+          '</div>' +
+          '<button onclick="AdminPanel._deleteDocFromTab(\'' + escHtml(d.docId) + '\',' +
+            '\'' + escHtml(elecId) + '\')"' +
+            ' style="padding:5px 12px;background:#fff;color:#c0392b;border:1px solid #c0392b;' +
+            'border-radius:4px;font-size:.78rem;cursor:pointer;flex-shrink:0;min-height:36px;">' +
+            'Delete' +
+          '</button>' +
+        '</div>';
+    });
+
+    html += '</div>';
+  });
+
+  return html;
+},
+
+_deleteDocFromTab: function(docId, elecId) {
+  if (!confirm('Delete this document? The record will be removed from the list. ' +
+      'The file is retained in Google Drive as an audit trail.')) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast((res && res.message) || 'Delete failed.', true); return;
+      }
+      showToast('Document deleted.');
+      AdminPanel._renderDocTabListAsync(elecId);
     })
     .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
     .deleteDocument(App.token, docId);

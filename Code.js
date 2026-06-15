@@ -75,6 +75,7 @@ var COL = {
   ELEC_MODE:18,       ELEC_TRIAL:19,        ELEC_BYPASS_FLOORS:20,
   ELEC_VDAY:21,       ELEC_VOTE_CLOSE:22,   ELEC_DECLARE_DAY:23,
   ELEC_SGM_DATE:24,   ELEC_CERTIFIED_AT:25, ELEC_SEAT_CONFIG:26,
+  ELEC_CAND_PUB_AT:27,
 
   // ── Candidates (13 cols, 0–12) ───────────────────────────
   CAND_ID:0,          CAND_ELEC_ID:1,       CAND_POST:2,
@@ -162,10 +163,42 @@ var COL_APL = {
 };
 var COL_OBS   = {};  // Observations — 11 cols
 var COL_ECDB  = {};  // ECOfficerBoardDatabase — 9 cols
-var COL_SCHED = {};  // ElectionSchedule — 21 cols
+var COL_SCHED = {
+  SCHED_ID:              0,
+  ELEC_ID:               1,
+  SCHED_MODE:            2,  // live | trial_internal | trial_member
+  VDAY:                  3,
+  VOTER_ROLL_CUTOFF:     4,  // V-47
+  NOM_OPEN:              5,  // V-38
+  VOTER_ROLL_PUB:        6,  // V-33
+  PHASE1_CLOSE:          7,  // V-31
+  VOTER_ROLL_OBJ_CLOSE:  8,  // V-26
+  NOM_CLOSE:             9,  // V-24
+  VOTER_ROLL_CERT:       10, // V-24
+  CAND_PUB:              11, // V-19
+  WITHDRAWAL_DEADLINE:   12, // V-18 (D+1)
+  VOTING_OPEN:           13, // V-16
+  VOTING_CLOSE:          14, // V-9
+  DECLARATION:           15, // V-7
+  PUBLISHED:             16, // Boolean
+  PUBLISHED_AT:          17,
+  UPDATED_AT:            18,
+  UPDATED_BY:            19,
+  EXTENDED_BEYOND_VDAY:  20
+};
+
+// LandingPageContent COL constants
+var COL_LPC = {
+  KEY:          0,
+  VALUE:        1,
+  TYPE:         2,  // date | text | url | boolean
+  LABEL:        3,
+  PUBLIC:       4,  // Boolean
+  UPDATED_BY:   5,
+  UPDATED_AT:   6
+};
 var COL_TEMA  = {};  // TEMAuth — 12 cols
 var COL_RPL   = {};  // ROPanelLog — 15 cols
-var COL_LPC   = {};  // LandingPageContent — 7 cols
 
 // ── EC POSTS — 21 posts in display order ─────────────────────
 
@@ -244,6 +277,440 @@ function now() {
 
 function generateId() {
   return Utilities.getUuid();
+}
+
+// ============================================================
+// calcScheduleFromVDay — derives all key election dates from
+// V-Day (AGM date). Returns object with all date fields as
+// ISO date strings (YYYY-MM-DD). Mode affects floor enforcement
+// only — dates are always calculated regardless of mode.
+// vDay: JS Date or ISO string
+// ============================================================
+function calcScheduleFromVDay(vDay) {
+  var anchor = new Date(vDay);
+  if (isNaN(anchor.getTime())) return null;
+
+  // Helper: add/subtract days from anchor, return YYYY-MM-DD string
+  function vMinus(days) {
+    var d = new Date(anchor.getTime());
+    d.setDate(d.getDate() - days);
+    return d.toISOString().substring(0, 10);
+  }
+  function vPlus(days) {
+    var d = new Date(anchor.getTime());
+    d.setDate(d.getDate() + days);
+    return d.toISOString().substring(0, 10);
+  }
+
+  var candPubDate = vMinus(19);
+
+  return {
+    vDay:                anchor.toISOString().substring(0, 10),
+    voterRollCutoff:     vMinus(47),
+    nomOpenDate:         vMinus(38),
+    voterRollPubDate:    vMinus(33),
+    phase1CloseDate:     vMinus(31),
+    voterRollObjDeadline:vMinus(26),
+    nomCloseDate:        vMinus(24),
+    voterRollCertDate:   vMinus(24),
+    candidatesPubDate:   candPubDate,
+    withdrawalDeadline:  vMinus(18),  // end of D+1 from V-19 = V-18
+    votingOpenDate:      vMinus(16),  // min 72hrs after V-19
+    votingCloseDate:     vMinus(9),
+    declarationDate:     vMinus(7)
+  };
+}
+
+// SOP floor checks for live elections — returns array of warning objects
+// Each: { field, label, severity: 'block'|'warn', message }
+function checkScheduleFloors(sched) {
+  var warnings = [];
+  var today = new Date();
+  today.setHours(0,0,0,0);
+
+  function d(str) { return str ? new Date(str) : null; }
+  function daysBetween(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  var vDay      = d(sched.vDay);
+  var candPub   = d(sched.candidatesPubDate);
+  var votOpen   = d(sched.votingOpenDate);
+  var votClose  = d(sched.votingCloseDate);
+  var decl      = d(sched.declarationDate);
+  var nomClose  = d(sched.nomCloseDate);
+  var nomOpen   = d(sched.nomOpenDate);
+  var p1Close   = d(sched.phase1CloseDate);
+
+  // Hard blocks
+  if (vDay && candPub && votOpen) {
+    var gapCandToVoting = daysBetween(candPub, votOpen);
+    if (gapCandToVoting < 3) {
+      warnings.push({ field: 'votingOpenDate', severity: 'block',
+        label: 'Voting Open Date',
+        message: 'Voting must open at least 72 hours (3 days) after candidates are published. Current gap: ' + gapCandToVoting + ' day(s).' });
+    }
+  }
+  if (vDay && votClose) {
+    var daysToClose = daysBetween(votClose, vDay);
+    if (daysToClose < 9) {
+      warnings.push({ field: 'votingCloseDate', severity: 'block',
+        label: 'Voting Close Date',
+        message: 'Voting must close not later than V-9 (' + daysToClose + ' days before AGM). SOP minimum: 9 days.' });
+    }
+  }
+  if (vDay && decl) {
+    var daysToDecl = daysBetween(decl, vDay);
+    if (daysToDecl < 7) {
+      warnings.push({ field: 'declarationDate', severity: 'block',
+        label: 'Declaration Date',
+        message: 'Results must be declared not later than V-7 (' + daysToDecl + ' days before AGM). SOP minimum: 7 days.' });
+    }
+  }
+
+  // Soft warnings (compressible under Section 1.5)
+  if (nomOpen && p1Close) {
+    var phase1Days = daysBetween(nomOpen, p1Close);
+    if (phase1Days < 7) {
+      warnings.push({ field: 'phase1CloseDate', severity: 'warn',
+        label: 'Phase 1 Close',
+        message: 'Phase 1 nomination window is ' + phase1Days + ' day(s). SOP standard is 7 days (compressible to 5 under Section 1.5).' });
+    }
+  }
+  if (nomClose && candPub) {
+    var scrutinyDays = daysBetween(nomClose, candPub);
+    if (scrutinyDays < 5) {
+      warnings.push({ field: 'candidatesPubDate', severity: 'warn',
+        label: 'Scrutiny Period',
+        message: 'Scrutiny period is ' + scrutinyDays + ' day(s). SOP standard is 5 days (compressible to 3 under Section 1.5).' });
+    }
+  }
+  if (votOpen && votClose) {
+    var votingDays = daysBetween(votOpen, votClose);
+    if (votingDays < 7) {
+      warnings.push({ field: 'votingCloseDate', severity: 'warn',
+        label: 'Voting Window',
+        message: 'Voting window is ' + votingDays + ' day(s). SOP standard is 7 days (compressible to 5 under Section 1.5).' });
+    }
+  }
+
+  return warnings;
+}
+// IST = UTC+5:30 (+330 minutes). No locale dependency — pure arithmetic.
+// Example: pubAt = 2026-07-01T14:30:00Z (20:00 IST on 1 Jul)
+//          D+1 IST = 2 Jul 2026 23:59:59 IST = 2026-07-02T18:29:59Z
+function getISTDeadline(pubAtISO) {
+  var IST_OFFSET_MS = 330 * 60 * 1000; // UTC+5:30
+  var pubUtc = new Date(pubAtISO).getTime();
+  if (isNaN(pubUtc)) return null;
+  // Convert pub time to IST ms, get IST calendar date
+  var pubIstMs = pubUtc + IST_OFFSET_MS;
+  var pubIstDate = new Date(pubIstMs);
+  // D+1 in IST: year, month, day+1
+  var d1Year  = pubIstDate.getUTCFullYear();
+  var d1Month = pubIstDate.getUTCMonth();
+  var d1Day   = pubIstDate.getUTCDate() + 1;
+  // End of D+1 in IST = 23:59:59 IST = 18:29:59 UTC
+  var deadlineIst = Date.UTC(d1Year, d1Month, d1Day, 23, 59, 59) - IST_OFFSET_MS;
+  return new Date(deadlineIst);
+}
+
+// formatISTDeadline — returns human-readable IST string for display, e.g. "2 Jul 2026, 11:59 PM"
+function formatISTDeadline(pubAtISO) {
+  var dl = getISTDeadline(pubAtISO);
+  if (!dl) return '';
+  var IST_OFFSET_MS = 330 * 60 * 1000;
+  var istMs = dl.getTime() + IST_OFFSET_MS;
+  var d = new Date(istMs);
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear() + ', 11:59 PM';
+}
+
+// ============================================================
+// setElectionSchedule — creates or updates the schedule row
+// for an election. RO_ADMIN or EC_OFFICER may call this.
+// EC_OFFICER may only set draft schedules (mode auto-set).
+// Access: RO_ADMIN, EC_OFFICER
+// ============================================================
+function setElectionSchedule(token, electionId, schedData) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  // Verify election exists
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+
+  // Determine schedule mode
+  var isTrial = elec[COL.ELEC_TRIAL].toString() === 'true';
+  var mode = schedData.scheduleMode || (isTrial ? 'trial_internal' : 'live');
+  // EC Officer can only set trial or draft — not live
+  if (sess.role === 'EC_OFFICER' && mode === 'live') mode = 'live_draft';
+
+  // SOP floor checks for live elections
+  if (mode === 'live' && schedData.vDay) {
+    var floors = checkScheduleFloors(schedData);
+    var blocks = floors.filter(function(w) { return w.severity === 'block'; });
+    if (blocks.length > 0) {
+      return { success: false,
+        message: 'Schedule blocked — SOP floor violation(s): ' +
+          blocks.map(function(b) { return b.message; }).join(' | '),
+        warnings: floors };
+    }
+  }
+
+  // Check for existing schedule row
+  var schedSh = getSheet(SHEETS.ELECTION_SCHED);
+  var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  var existingRow = -1;
+  for (var s = 0; s < schedRows.length; s++) {
+    if (schedRows[s][COL_SCHED.ELEC_ID].toString() === electionId.toString()) {
+      existingRow = s + 1; break; // 0-indexed data → 1-indexed sheet row (header=0)
+    }
+  }
+
+  var ts = now().toISOString();
+  var row = new Array(21).fill('');
+  row[COL_SCHED.SCHED_ID]              = existingRow > 0 ? schedRows[existingRow - 1][COL_SCHED.SCHED_ID].toString() : generateId();
+  row[COL_SCHED.ELEC_ID]               = electionId;
+  row[COL_SCHED.SCHED_MODE]            = mode;
+  row[COL_SCHED.VDAY]                  = schedData.vDay                 || '';
+  row[COL_SCHED.VOTER_ROLL_CUTOFF]     = schedData.voterRollCutoff      || '';
+  row[COL_SCHED.NOM_OPEN]              = schedData.nomOpenDate           || '';
+  row[COL_SCHED.VOTER_ROLL_PUB]        = schedData.voterRollPubDate      || '';
+  row[COL_SCHED.PHASE1_CLOSE]          = schedData.phase1CloseDate       || '';
+  row[COL_SCHED.VOTER_ROLL_OBJ_CLOSE]  = schedData.voterRollObjDeadline  || '';
+  row[COL_SCHED.NOM_CLOSE]             = schedData.nomCloseDate           || '';
+  row[COL_SCHED.VOTER_ROLL_CERT]       = schedData.voterRollCertDate      || '';
+  row[COL_SCHED.CAND_PUB]              = schedData.candidatesPubDate      || '';
+  row[COL_SCHED.WITHDRAWAL_DEADLINE]   = schedData.withdrawalDeadline     || '';
+  row[COL_SCHED.VOTING_OPEN]           = schedData.votingOpenDate         || '';
+  row[COL_SCHED.VOTING_CLOSE]          = schedData.votingCloseDate        || '';
+  row[COL_SCHED.DECLARATION]           = schedData.declarationDate        || '';
+  row[COL_SCHED.PUBLISHED]             = existingRow > 0 ?
+    schedRows[existingRow - 1][COL_SCHED.PUBLISHED].toString() : 'false';
+  row[COL_SCHED.PUBLISHED_AT]          = existingRow > 0 ?
+    schedRows[existingRow - 1][COL_SCHED.PUBLISHED_AT].toString() : '';
+  row[COL_SCHED.UPDATED_AT]            = ts;
+  row[COL_SCHED.UPDATED_BY]            = sess.identity.toString();
+  row[COL_SCHED.EXTENDED_BEYOND_VDAY]  = 'false';
+
+  if (existingRow > 0) {
+    schedSh.getRange(existingRow + 1, 1, 1, 21).setValues([row]);
+  } else {
+    schedSh.appendRow(row);
+  }
+
+  // Sync key dates back to Elections sheet
+  var elecSh = getSheet(SHEETS.ELECTIONS);
+  var elecData = elecSh.getDataRange().getValues();
+  for (var e = 1; e < elecData.length; e++) {
+    if (elecData[e][COL.ELEC_ID].toString() === electionId.toString()) {
+      if (schedData.vDay)           elecSh.getRange(e+1, COL.ELEC_VDAY+1).setValue(schedData.vDay);
+      if (schedData.nomCloseDate)   elecSh.getRange(e+1, COL.ELEC_NOM_DEADLINE+1).setValue(schedData.nomCloseDate);
+      if (schedData.votingCloseDate) elecSh.getRange(e+1, COL.ELEC_VOTE_CLOSE+1).setValue(schedData.votingCloseDate);
+      if (schedData.declarationDate) elecSh.getRange(e+1, COL.ELEC_DECLARE_DAY+1).setValue(schedData.declarationDate);
+      break;
+    }
+  }
+
+  var warnings = (mode === 'live' && schedData.vDay) ? checkScheduleFloors(schedData) : [];
+
+  appendAdminLog(sess.identity, 'election_schedule_set',
+    'Schedule set for election ' + electionId + ' | Mode: ' + mode +
+    ' | VDay: ' + (schedData.vDay || 'not set'),
+    '', electionId);
+
+  return { success: true, warnings: warnings };
+}
+
+// ============================================================
+// getElectionSchedule — returns schedule for an election.
+// Access: any authenticated session
+// ============================================================
+function getElectionSchedule(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  for (var s = 0; s < schedRows.length; s++) {
+    if (schedRows[s][COL_SCHED.ELEC_ID].toString() === electionId.toString()) {
+      var r = schedRows[s];
+      return {
+        success:              true,
+        schedId:              r[COL_SCHED.SCHED_ID].toString(),
+        electionId:           r[COL_SCHED.ELEC_ID].toString(),
+        scheduleMode:         r[COL_SCHED.SCHED_MODE].toString(),
+        vDay:                 r[COL_SCHED.VDAY].toString(),
+        voterRollCutoff:      r[COL_SCHED.VOTER_ROLL_CUTOFF].toString(),
+        nomOpenDate:          r[COL_SCHED.NOM_OPEN].toString(),
+        voterRollPubDate:     r[COL_SCHED.VOTER_ROLL_PUB].toString(),
+        phase1CloseDate:      r[COL_SCHED.PHASE1_CLOSE].toString(),
+        voterRollObjDeadline: r[COL_SCHED.VOTER_ROLL_OBJ_CLOSE].toString(),
+        nomCloseDate:         r[COL_SCHED.NOM_CLOSE].toString(),
+        voterRollCertDate:    r[COL_SCHED.VOTER_ROLL_CERT].toString(),
+        candidatesPubDate:    r[COL_SCHED.CAND_PUB].toString(),
+        withdrawalDeadline:   r[COL_SCHED.WITHDRAWAL_DEADLINE].toString(),
+        votingOpenDate:       r[COL_SCHED.VOTING_OPEN].toString(),
+        votingCloseDate:      r[COL_SCHED.VOTING_CLOSE].toString(),
+        declarationDate:      r[COL_SCHED.DECLARATION].toString(),
+        published:            r[COL_SCHED.PUBLISHED].toString() === 'true',
+        publishedAt:          r[COL_SCHED.PUBLISHED_AT].toString(),
+        updatedAt:            r[COL_SCHED.UPDATED_AT].toString(),
+        updatedBy:            r[COL_SCHED.UPDATED_BY].toString()
+      };
+    }
+  }
+  return { success: false, message: 'No schedule found for this election.' };
+}
+
+// ============================================================
+// getPublicSchedule — no auth required. Returns published
+// schedule for the active live election only.
+// Used by Landing Page public widget.
+// ============================================================
+function getPublicSchedule() {
+  var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  for (var s = 0; s < schedRows.length; s++) {
+    var r = schedRows[s];
+    if (r[COL_SCHED.PUBLISHED].toString() === 'true' &&
+        r[COL_SCHED.SCHED_MODE].toString() === 'live') {
+      return {
+        success:              true,
+        vDay:                 r[COL_SCHED.VDAY].toString(),
+        nomOpenDate:          r[COL_SCHED.NOM_OPEN].toString(),
+        phase1CloseDate:      r[COL_SCHED.PHASE1_CLOSE].toString(),
+        nomCloseDate:         r[COL_SCHED.NOM_CLOSE].toString(),
+        candidatesPubDate:    r[COL_SCHED.CAND_PUB].toString(),
+        votingOpenDate:       r[COL_SCHED.VOTING_OPEN].toString(),
+        votingCloseDate:      r[COL_SCHED.VOTING_CLOSE].toString(),
+        declarationDate:      r[COL_SCHED.DECLARATION].toString(),
+        publishedAt:          r[COL_SCHED.PUBLISHED_AT].toString(),
+        isDraft:              r[COL_SCHED.SCHED_MODE].toString() === 'live_draft'
+      };
+    }
+  }
+  // Also return live_draft if published
+  for (var sd = 0; sd < schedRows.length; sd++) {
+    var rd = schedRows[sd];
+    if (rd[COL_SCHED.PUBLISHED].toString() === 'true' &&
+        rd[COL_SCHED.SCHED_MODE].toString() === 'live_draft') {
+      return {
+        success:           true,
+        vDay:              rd[COL_SCHED.VDAY].toString(),
+        nomOpenDate:       rd[COL_SCHED.NOM_OPEN].toString(),
+        phase1CloseDate:   rd[COL_SCHED.PHASE1_CLOSE].toString(),
+        nomCloseDate:      rd[COL_SCHED.NOM_CLOSE].toString(),
+        candidatesPubDate: rd[COL_SCHED.CAND_PUB].toString(),
+        votingOpenDate:    rd[COL_SCHED.VOTING_OPEN].toString(),
+        votingCloseDate:   rd[COL_SCHED.VOTING_CLOSE].toString(),
+        declarationDate:   rd[COL_SCHED.DECLARATION].toString(),
+        publishedAt:       rd[COL_SCHED.PUBLISHED_AT].toString(),
+        isDraft:           true
+      };
+    }
+  }
+  return { success: false, message: 'No published schedule available.' };
+}
+
+// ============================================================
+// publishSchedule — marks schedule as published to Landing Page.
+// EC_OFFICER: can publish live_draft only.
+// RO_ADMIN: can publish live or live_draft.
+// Trial schedules cannot be published.
+// Access: RO_ADMIN, EC_OFFICER
+// ============================================================
+function publishSchedule(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var schedSh   = getSheet(SHEETS.ELECTION_SCHED);
+  var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  for (var s = 0; s < schedRows.length; s++) {
+    if (schedRows[s][COL_SCHED.ELEC_ID].toString() !== electionId.toString()) continue;
+    var mode = schedRows[s][COL_SCHED.SCHED_MODE].toString();
+    if (mode === 'trial_internal' || mode === 'trial_member') {
+      return { success: false, message: 'Trial election schedules cannot be published to the Landing Page.' };
+    }
+    if (sess.role === 'EC_OFFICER' && mode === 'live') {
+      return { success: false, message: 'The live election schedule is managed by the Returning Officer.' };
+    }
+    var ts = now().toISOString();
+    schedSh.getRange(s + 2, COL_SCHED.PUBLISHED + 1).setValue(true);
+    schedSh.getRange(s + 2, COL_SCHED.PUBLISHED_AT + 1).setValue(ts);
+    appendAdminLog(sess.identity, 'schedule_published',
+      'Election schedule published to Landing Page | ElectionID: ' + electionId +
+      ' | Mode: ' + mode, '', electionId);
+    return { success: true };
+  }
+  return { success: false, message: 'No schedule found for this election.' };
+}
+
+// ============================================================
+// getLandingPageContent — returns all public landing page
+// content entries. No auth required.
+// ============================================================
+function getLandingPageContent() {
+  var rows = sheetData(SHEETS.LANDING_CONTENT);
+  var items = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL_LPC.KEY].toString() === '') continue;
+    items.push({
+      key:       rows[i][COL_LPC.KEY].toString(),
+      value:     rows[i][COL_LPC.VALUE].toString(),
+      type:      rows[i][COL_LPC.TYPE].toString(),
+      label:     rows[i][COL_LPC.LABEL].toString(),
+      public:    rows[i][COL_LPC.PUBLIC].toString() === 'true',
+      updatedBy: rows[i][COL_LPC.UPDATED_BY].toString(),
+      updatedAt: rows[i][COL_LPC.UPDATED_AT].toString()
+    });
+  }
+  return { success: true, items: items };
+}
+
+// ============================================================
+// setLandingPageContent — creates or updates a content entry.
+// Access: RO_ADMIN, EC_OFFICER
+// ============================================================
+function setLandingPageContent(token, key, value, type, label, publicVisible) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var sh   = getSheet(SHEETS.LANDING_CONTENT);
+  var rows = sheetData(SHEETS.LANDING_CONTENT);
+  var ts   = now().toISOString();
+  var existingRow = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL_LPC.KEY].toString() === key) { existingRow = i + 1; break; }
+  }
+
+  var row = [key, value, type || 'text', label || key,
+             publicVisible === true || publicVisible === 'true' ? true : false,
+             sess.identity.toString(), ts];
+
+  if (existingRow > 0) {
+    sh.getRange(existingRow + 1, 1, 1, 7).setValues([row]);
+  } else {
+    sh.appendRow(row);
+  }
+
+  appendAdminLog(sess.identity, 'landing_page_content_set',
+    'LandingPageContent updated | Key: ' + key + ' | Value: ' + value, '', '');
+  return { success: true };
 }
 
 function parseDate(val) {
@@ -627,39 +1094,6 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
       }
       // ────────────────────────────────────────────────────────
 
-      // ── GATE: draft → nominations_open ───────────────────────
-      if (currentStatus === 'draft' && newStatus === 'nominations_open') {
-        var orgBatch = rows[i][COL.ELEC_ORGSECY_BATCH].toString().trim();
-        if (orgBatch) {
-          sh.getRange(i + 1, COL.ELEC_ORGSECY_RESTRICTED + 1).setValue(true);
-          var voterRowsOS = sheetData(SHEETS.VOTERS);
-          var elecTitleOS = rows[i][COL.ELEC_TITLE].toString();
-          for (var vbOS = 0; vbOS < voterRowsOS.length; vbOS++) {
-            if (voterRowsOS[vbOS][COL.VOTER_BATCH].toString().trim() !== orgBatch) continue;
-            var vEmailOS = voterRowsOS[vbOS][COL.VOTER_EMAIL].toString().trim();
-            var vNameOS  = voterRowsOS[vbOS][COL.VOTER_NAME].toString().trim();
-            if (!vEmailOS) continue;
-            var subjectOS = 'SSKZM OBA Election — Organising Secretary: Priority Window for Batch ' + orgBatch;
-            var bodyOS =
-              '<p>Dear ' + vNameOS + ',</p>' +
-              '<p>Nominations are now open for the <strong>' + elecTitleOS + '</strong>.</p>' +
-              '<p>The post of <strong>Organising Secretary</strong> has been designated for ' +
-              'Batch <strong>' + orgBatch + '</strong> for this election.</p>' +
-              '<p><strong>Phase 1 (first 7 days):</strong> Only members of Batch ' + orgBatch +
-              ' may nominate for or propose/second a nomination for Organising Secretary.</p>' +
-              '<p><strong>Important:</strong> If no complete nomination (with proposer and ' +
-              'seconder confirmed) is received from Batch ' + orgBatch +
-              ' by the end of Phase 1, the post will be declared open to all Life Members for Phase 2.</p>' +
-              '<p>Please log in to the election portal to submit or support a nomination.</p>' +
-              '<p>SSKZM OBA Elections</p>';
-            try { sendEmailViaSendGrid(vEmailOS, subjectOS, bodyOS); } catch(e) {}
-          }
-          appendAdminLog(sess.identity, 'orgsecy_batch_restricted',
-            'Org Secy restricted to batch ' + orgBatch + '. Batch email sent.', '', electionId);
-        }
-      }
-      // ────────────────────────────────────────────────────────
-
       // ── GATE: nominations_open → nominations_open_phase2 ────
       if (currentStatus === 'nominations_open' && newStatus === 'nominations_open_phase2') {
         var orgBatchP2  = rows[i][COL.ELEC_ORGSECY_BATCH].toString().trim();
@@ -729,6 +1163,9 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
       // ────────────────────────────────────────────────────────
 
       sh.getRange(i + 1, COL.ELEC_STATUS + 1).setValue(newStatus);
+      if (newStatus === 'candidates_published') {
+        sh.getRange(i + 1, COL.ELEC_CAND_PUB_AT + 1).setValue(now().toISOString());
+      }
       appendAdminLog(sess.identity, 'election_status_changed',
         'Status: ' + currentStatus + ' → ' + newStatus +
         (overrideNote ? ' | ' + overrideNote : ''),
@@ -2886,40 +3323,8 @@ function getPublicElectionStatus() {
   }
 }
 
-// Returns landing page content blocks from LandingPageContent sheet.
-// Returns an empty object gracefully if the sheet is not yet set up.
-function getLandingPageContent(electionId) {
-  try {
-    var rows = sheetData(SHEETS.LANDING_CONTENT);
-    var content = {};
-    for (var i = 0; i < rows.length; i++) {
-      var key = rows[i][COL_LPC.KEY || 0].toString();
-      if (key) content[key] = rows[i][COL_LPC.VALUE || 1].toString();
-    }
-    return { success: true, content: content };
-  } catch (e) {
-    return { success: false, content: {} };
-  }
-}
-
-// Returns public-facing election schedule (filtered columns only).
-// Carries forward from Step 3 design.
-function getPublicSchedule(electionId) {
-  try {
-    if (!electionId) return { success: false, schedule: null };
-    var rows = sheetData(SHEETS.ELECTION_SCHED);
-    for (var i = 0; i < rows.length; i++) {
-      // COL_SCHED populated in Pass 3 — for now return raw row
-      // TODO (Pass 3): filter to public columns only using COL_SCHED
-      if (rows[i][0] && rows[i][0].toString() === electionId) {
-        return { success: true, schedule: rows[i] };
-      }
-    }
-    return { success: true, schedule: null };
-  } catch (e) {
-    return { success: false, schedule: null };
-  }
-}
+// getLandingPageContent and getPublicSchedule — implemented above (Step 4).
+// Stubs removed to avoid duplicate function definitions.
 
 // ============================================================
 // END OF PASS 2A
@@ -3041,11 +3446,27 @@ function initSystemBSheets() {
       'Role','AppointedAt','AppointedBy','Notes'
     ],   // 9 cols ✓
     'ElectionSchedule': [
-      'SchedID','ElectionID','PhaseName','PhaseCode','Status',
-      'PlannedDate','ActualDate','VDayOffset','Notes',
-      'SetBy','SetAt','AutoCalculated','DependsOnPhase',
-      'MinDurationDays','MaxDurationDays','CanCompress','CanExtend',
-      'FloorDays','CeilingDays','PublishedOnLandingPage','DisplayOrder'
+      'SchedID',              // 0  — UUID
+      'ElectionID',           // 1  — FK → Elections
+      'ScheduleMode',         // 2  — live | trial_internal | trial_member
+      'VDay',                 // 3  — AGM date (anchor)
+      'VoterRollCutoff',      // 4  — V-47
+      'NomOpenDate',          // 5  — V-38
+      'VoterRollPubDate',     // 6  — V-33
+      'Phase1CloseDate',      // 7  — V-31
+      'VoterRollObjDeadline', // 8  — V-26
+      'NomCloseDate',         // 9  — V-24
+      'VoterRollCertDate',    // 10 — V-24
+      'CandidatesPubDate',    // 11 — V-19
+      'WithdrawalDeadline',   // 12 — V-18 (D+1 from CandidatesPubDate)
+      'VotingOpenDate',       // 13 — V-16
+      'VotingCloseDate',      // 14 — V-9
+      'DeclarationDate',      // 15 — V-7
+      'PublishedToLandingPage', // 16 — Boolean
+      'PublishedAt',          // 17 — ISO timestamp
+      'LastUpdatedAt',        // 18 — ISO timestamp
+      'LastUpdatedBy',        // 19 — AdminID
+      'ExtendedBeyondVDay'    // 20 — Boolean, system-set
     ],   // 21 cols ✓
     'TEMAuth': [
       'AuthID','ElectionID','IssuedBy','IssuedAt',
@@ -3058,8 +3479,13 @@ function initSystemBSheets() {
       'ECDecision','DecisionNotes','DecidedAt','EntryMethod','ObjectionAt'
     ],   // 15 cols ✓
     'LandingPageContent': [
-      'ContentKey','ContentValue','ContentType','EditableBy',
-      'ActiveFrom','LastUpdatedBy','LastUpdatedAt'
+      'ContentKey',      // 0 — unique key e.g. 'sgm_date', 'agm_date', 'vva_url', 'announcement'
+      'ContentValue',    // 1 — the value
+      'ContentType',     // 2 — date | text | url | boolean
+      'Label',           // 3 — display label e.g. 'Special General Meeting'
+      'PublicVisible',   // 4 — Boolean — show on Landing Page
+      'LastUpdatedBy',   // 5 — AdminID or EC Officer ID
+      'LastUpdatedAt'    // 6 — ISO timestamp
     ]    // 7 cols ✓
   };
 
@@ -3477,10 +3903,29 @@ function withdrawNomination(token, nomId) {
       return { success: false, message: 'Only the candidate or Returning Officer may withdraw this nomination.' };
     }
 
-    // Blocked at candidates_published and beyond
-    var blocked = ['candidates_published', 'active', 'paused', 'closed', 'declared'];
+    // Blocked at active and beyond unconditionally
+    var blocked = ['active', 'paused', 'closed', 'declared'];
     if (blocked.indexOf(status) !== -1) {
-      return { success: false, message: 'Withdrawal is no longer permitted at this stage.' };
+      return { success: false, message: 'Withdrawal is no longer permitted once voting has opened.' };
+    }
+
+    // At candidates_published: permitted only within D+1 deadline (23:59:59 IST on day after publication)
+    if (status === 'candidates_published') {
+      var elecRows = sheetData(SHEETS.ELECTIONS);
+      var elecRow = null;
+      var nomElecId = rows[i][COL.NOM_ELEC_ID].toString();
+      for (var e = 0; e < elecRows.length; e++) {
+        if (elecRows[e][COL.ELEC_ID].toString() === nomElecId) { elecRow = elecRows[e]; break; }
+      }
+      var pubAt = elecRow ? elecRow[COL.ELEC_CAND_PUB_AT].toString() : '';
+      if (!pubAt) {
+        return { success: false, message: 'Withdrawal deadline could not be determined. Please contact the Returning Officer.' };
+      }
+      var deadline = getISTDeadline(pubAt);
+      if (!deadline || now() > deadline) {
+        var dlStr = formatISTDeadline(pubAt);
+        return { success: false, message: 'The candidature withdrawal deadline has passed (' + dlStr + ' IST). Withdrawal is no longer permitted.' };
+      }
     }
     if (status === 'withdrawn') {
       return { success: false, message: 'Nomination is already withdrawn.' };
@@ -3769,16 +4214,20 @@ function acceptNomination(token, nomId) {
     return { success: false, message: 'Nomination is not ready for scrutiny.' };
   }
 
-  // One-post check: block if candidate already has an accepted nomination for a different post
+  // One-post check: block if candidate already has any accepted nomination in this election
   var candRoll = nom[COL.NOM_CAND_ROLL].toString();
   var thisPost = nom[COL.NOM_POST].toString();
+  var thisElecId = nom[COL.NOM_ELEC_ID].toString();
   for (var k = 1; k < nomData.length; k++) {
     if (k === nomRow) continue;
-    if (nomData[k][COL.NOM_CAND_ROLL].toString() === candRoll &&
-        nomData[k][COL.NOM_STATUS].toString()     === 'accepted' &&
-        nomData[k][COL.NOM_POST].toString()        !== thisPost) {
+    if (nomData[k][COL.NOM_CAND_ROLL].toString()  === candRoll &&
+        nomData[k][COL.NOM_ELEC_ID].toString()     === thisElecId &&
+        nomData[k][COL.NOM_STATUS].toString()      === 'accepted') {
+      var blockedPost = nomData[k][COL.NOM_POST].toString();
       return { success: false,
-        message: 'Candidate already has an accepted nomination for another post.' };
+        message: 'Candidate ' + nom[COL.NOM_CAND_NAME].toString() +
+          ' already has an accepted nomination for "' + blockedPost +
+          '" in this election. One candidate may hold only one post.' };
     }
   }
 
@@ -5269,6 +5718,14 @@ function getMyNominations(token, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
 
+  // Pre-load elections for deadline computation
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elecMap = {};
+  for (var e = 0; e < elecRows.length; e++) {
+    elecMap[elecRows[e][COL.ELEC_ID].toString()] = elecRows[e];
+  }
+
+  var nowMs = now().getTime();
   var rows = sheetData(SHEETS.NOMINATIONS);
   var nominations = [];
   for (var i = 0; i < rows.length; i++) {
@@ -5277,6 +5734,22 @@ function getMyNominations(token, electionId) {
     var isCand = r[COL.NOM_CAND_ROLL].toString() === sess.identity.toString();
     var isProp = r[COL.NOM_PROP_ROLL].toString() === sess.identity.toString();
     if (!isCand && !isProp) continue;
+
+    // Compute withdrawal deadline for candidates_published elections
+    var nomElecId = r[COL.NOM_ELEC_ID].toString();
+    var elecRec = elecMap[nomElecId];
+    var withdrawDeadline = '';
+    var withdrawOpen = false;
+    if (elecRec) {
+      var elecStatus = elecRec[COL.ELEC_STATUS].toString();
+      var pubAt = elecRec[COL.ELEC_CAND_PUB_AT] ? elecRec[COL.ELEC_CAND_PUB_AT].toString() : '';
+      if (elecStatus === 'candidates_published' && pubAt) {
+        var dl = getISTDeadline(pubAt);
+        withdrawDeadline = formatISTDeadline(pubAt);
+        withdrawOpen = dl ? nowMs <= dl.getTime() : false;
+      }
+    }
+
     nominations.push({
       id:               r[COL.NOM_ID].toString(),
       post:             r[COL.NOM_POST].toString(),
@@ -5291,7 +5764,9 @@ function getMyNominations(token, electionId) {
       entryMethod:      r[COL.NOM_ENTRY_METHOD].toString(),
       phase2:           r[COL.NOM_PHASE2_FLAG].toString() === 'true',
       consentStatus:    r[COL.NOM_CONSENT_STATUS].toString(),
-      role:             isCand ? 'candidate' : 'proposer'
+      role:             isCand ? 'candidate' : 'proposer',
+      withdrawDeadline: withdrawDeadline,
+      withdrawOpen:     withdrawOpen
     });
   }
 
@@ -5541,6 +6016,143 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
     '', electionId);
 
   return { success: true, nominationId: nomId };
+}
+
+// ============================================================
+// submitNominationManual — RO manual nomination entry
+// RO enters candidate, proposer, seconder on behalf of members.
+// Skips email confirmation — goes straight to confirmed status.
+// One-post-per-person enforced on candRoll (not sess.identity).
+// Access: RO_ADMIN only
+// ============================================================
+function submitNominationManual(token, electionId, candRoll, postName, propRoll, secRoll, bio) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+
+  // 1. Verify election is in nominations_open status
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elec = elecRows[i]; break;
+    }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  var elecStatus = elec[COL.ELEC_STATUS].toString();
+  if (elecStatus !== 'nominations_open' && elecStatus !== 'nominations_open_phase2') {
+    return { success: false, message: 'Nominations are not currently open.' };
+  }
+
+  // 2. Validate post
+  var validPost = false;
+  for (var p = 0; p < EC_POSTS.length; p++) {
+    if (EC_POSTS[p].name === postName) { validPost = true; break; }
+  }
+  if (!validPost) return { success: false, message: 'Invalid post selected.' };
+
+  // 3. Validate candRoll provided
+  candRoll = (candRoll || '').toString().trim().toUpperCase();
+  if (!candRoll) return { success: false, message: 'Candidate roll number is required.' };
+
+  // 4. One-post-per-person check on candRoll
+  var nomRows = sheetData(SHEETS.NOMINATIONS);
+  for (var j = 0; j < nomRows.length; j++) {
+    var nr = nomRows[j];
+    if (nr[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (nr[COL.NOM_CAND_ROLL].toString().toUpperCase() !== candRoll) continue;
+    var nStatus = nr[COL.NOM_STATUS].toString();
+    if (nStatus === 'withdrawn' || nStatus === 'rejected' ||
+        nStatus === 'consent_declined' || nStatus === 'deadline_lapsed') continue;
+    return { success: false,
+      message: 'Candidate already has an active nomination for ' +
+               nr[COL.NOM_POST].toString() + '. Withdraw it before entering a new nomination.' };
+  }
+
+  // 5. Look up candidate from voter roll
+  var voterRows = sheetData(SHEETS.VOTERS);
+  var candRow = null;
+  for (var v = 0; v < voterRows.length; v++) {
+    if (voterRows[v][COL.VOTER_ROLL].toString().toUpperCase() === candRoll) {
+      candRow = voterRows[v]; break;
+    }
+  }
+  if (!candRow) return { success: false, message: 'Candidate roll number not found on voter roll.' };
+
+  // 6. Validate proposer
+  if (!propRoll || propRoll.toString().trim() === '') {
+    return { success: false, message: 'Proposer roll number is required.' };
+  }
+  propRoll = propRoll.toString().trim().toUpperCase();
+  if (propRoll === candRoll) {
+    return { success: false, message: 'Candidate and proposer cannot be the same person.' };
+  }
+  var propRow = null;
+  for (var pr = 0; pr < voterRows.length; pr++) {
+    if (voterRows[pr][COL.VOTER_ROLL].toString().toUpperCase() === propRoll) {
+      propRow = voterRows[pr]; break;
+    }
+  }
+  if (!propRow) return { success: false, message: 'Proposer roll number not found on voter roll.' };
+
+  // 7. Validate seconder (optional)
+  var secRow = null;
+  if (secRoll && secRoll.toString().trim() !== '') {
+    secRoll = secRoll.toString().trim().toUpperCase();
+    if (secRoll === candRoll) {
+      return { success: false, message: 'Candidate and seconder cannot be the same person.' };
+    }
+    if (secRoll === propRoll) {
+      return { success: false, message: 'Proposer and seconder cannot be the same person.' };
+    }
+    for (var sr = 0; sr < voterRows.length; sr++) {
+      if (voterRows[sr][COL.VOTER_ROLL].toString().toUpperCase() === secRoll) {
+        secRow = voterRows[sr]; break;
+      }
+    }
+    if (!secRow) return { success: false, message: 'Seconder roll number not found on voter roll.' };
+  } else {
+    secRoll = '';
+  }
+
+  // 8. Write nomination row — straight to confirmed (no email confirmation needed)
+  var nomId  = generateId();
+  var ts     = now().toISOString();
+  var candName = (candRow[COL.VOTER_NAME].toString() + ' ' +
+                  candRow[COL.VOTER_SURNAME].toString()).trim();
+  var propName = (propRow[COL.VOTER_NAME].toString() + ' ' +
+                  propRow[COL.VOTER_SURNAME].toString()).trim();
+
+  var nomSh  = getSheet(SHEETS.NOMINATIONS);
+  var newNom = new Array(35).fill('');
+  newNom[COL.NOM_ID]             = nomId;
+  newNom[COL.NOM_ELEC_ID]        = electionId;
+  newNom[COL.NOM_POST]           = postName;
+  newNom[COL.NOM_CAND_ROLL]      = candRoll;
+  newNom[COL.NOM_CAND_NAME]      = candName;
+  newNom[COL.NOM_CAND_BATCH]     = candRow[COL.VOTER_BATCH].toString();
+  newNom[COL.NOM_CAND_EMAIL]     = candRow[COL.VOTER_EMAIL].toString();
+  newNom[COL.NOM_PROP_ROLL]      = propRoll;
+  newNom[COL.NOM_PROP_NAME]      = propName;
+  newNom[COL.NOM_PROP_CONFIRMED] = true;
+  newNom[COL.NOM_SEC_ROLL]       = secRoll;
+  newNom[COL.NOM_SEC_NAME]       = secRow ? (secRow[COL.VOTER_NAME].toString() + ' ' +
+                                              secRow[COL.VOTER_SURNAME].toString()).trim() : '';
+  newNom[COL.NOM_SEC_CONFIRMED]  = secRow ? true : false;
+  newNom[COL.NOM_BIO]            = (bio || '').toString().trim().substring(0, 300);
+  newNom[COL.NOM_STATUS]         = 'confirmed';
+  newNom[COL.NOM_SUBMITTED_AT]   = ts;
+  newNom[COL.NOM_ENTRY_METHOD]   = 'manual_ro';
+  newNom[COL.NOM_CONSENT_STATUS] = 'accepted';
+  newNom[COL.NOM_CONSENT_AT]     = ts;
+  nomSh.appendRow(newNom);
+
+  appendAdminLog(sess.identity, 'nomination_submitted',
+    'Manual RO entry: ' + candName + ' (' + candRoll + ') for ' + postName +
+    ' | Proposer: ' + propRoll + ' | NomID: ' + nomId,
+    '', electionId);
+
+  return { success: true, nominationId: nomId, candName: candName, post: postName };
 }
 
 // ============================================================
@@ -6375,12 +6987,21 @@ function purgeTrialData(token, electionId, confirmPhrase) {
   }
   counts['OTPs'] = otpCount;
 
-  // Reset election status back to draft
+  // Reset election status and configuration back to draft/blank
   var elecSh = getSheet(SHEETS.ELECTIONS);
   var elecData = elecSh.getDataRange().getValues();
   for (var e = 1; e < elecData.length; e++) {
     if (elecData[e][COL.ELEC_ID].toString() === electionId.toString()) {
-      elecSh.getRange(e + 1, COL.ELEC_STATUS + 1).setValue('draft');
+      var eRow = e + 1;
+      elecSh.getRange(eRow, COL.ELEC_STATUS             + 1).setValue('draft');
+      elecSh.getRange(eRow, COL.ELEC_ORGSECY_BATCH      + 1).setValue('');
+      elecSh.getRange(eRow, COL.ELEC_ORGSECY_RESTRICTED + 1).setValue(false);
+      elecSh.getRange(eRow, COL.ELEC_BATCHREP_RESTRICTED+ 1).setValue(false);
+      elecSh.getRange(eRow, COL.ELEC_CAND_PUB_AT        + 1).setValue('');
+      elecSh.getRange(eRow, COL.ELEC_NOM_PHASE          + 1).setValue('');
+      elecSh.getRange(eRow, COL.ELEC_NOM_EXT_COUNT      + 1).setValue(0);
+      elecSh.getRange(eRow, COL.ELEC_NOM_EXT_DEADLINE   + 1).setValue('');
+      elecSh.getRange(eRow, COL.ELEC_CERTIFIED_AT       + 1).setValue('');
       break;
     }
   }

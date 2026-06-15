@@ -43,7 +43,7 @@ var ECOfficerPanel = (function() {
     if (tabId === 'overview')    { _loadOverview();    return _spinner(); }
     if (tabId === 'voterroll')   return _renderVoterRoll();
     if (tabId === 'messages')    { _loadMessages();    return _spinner(); }
-    if (tabId === 'landingpage') return _renderLandingPage();
+    if (tabId === 'landingpage') { _loadLandingPage(); return _spinner(); }
     return _comingSoon(tabId);
   }
 
@@ -331,17 +331,193 @@ var ECOfficerPanel = (function() {
 
   // ── LANDING PAGE ─────────────────────────────────────────────
 
-  function _renderLandingPage() {
-  return '<div class="panel-card">' +
-    '<div class="panel-card-header">Landing Page Content</div>' +
-    '<div class="panel-card-body" style="padding:48px 16px;text-align:center;color:#6b7280;">' +
-      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
-      '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
-        'Landing Page Editor</div>' +
-      '<div style="font-size:.85rem;">Coming in next build pass.</div>' +
-    '</div>' +
-  '</div>';
-}
+  function _loadLandingPage() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('ec-content');
+        if (!c) return;
+        // Build content map from items array
+        var cm = {};
+        if (res && res.success && res.items) {
+          res.items.forEach(function(item) { cm[item.key] = item; });
+        }
+        c.innerHTML = _renderLandingPage(cm);
+        // Load schedule section
+        _loadLandingPageSchedule();
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('ec-content');
+        if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;">Error loading Landing Page content.</div>';
+      })
+      .getLandingPageContent();
+  }
+
+  function _loadLandingPageSchedule() {
+    // Find the active election and load its schedule
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success || !res.election) return;
+        var elecId = res.election.id;
+        // Store for save actions
+        window._lpElecId = elecId;
+        // Load schedule
+        google.script.run
+          .withSuccessHandler(function(sres) {
+            if (!sres || !sres.success) return;
+            var f = function(id, val) {
+              var el = document.getElementById(id);
+              if (el && val) el.value = val.substring(0, 10);
+            };
+            f('lp-sched-vday',         sres.vDay);
+            f('lp-sched-nom-open',     sres.nomOpenDate);
+            f('lp-sched-p1-close',     sres.phase1CloseDate);
+            f('lp-sched-nom-close',    sres.nomCloseDate);
+            f('lp-sched-cand-pub',     sres.candidatesPubDate);
+            f('lp-sched-voting-open',  sres.votingOpenDate);
+            f('lp-sched-voting-close', sres.votingCloseDate);
+            f('lp-sched-declaration',  sres.declarationDate);
+            if (sres.published) {
+              var el = document.getElementById('lp-sched-status');
+              if (el) {
+                el.innerHTML = '🌐 Published to Landing Page on ' + sres.publishedAt.substring(0, 10);
+                el.style.display = 'block';
+              }
+            }
+          })
+          .withFailureHandler(function() {})
+          .getElectionSchedule(App.token, elecId);
+      })
+      .withFailureHandler(function() {})
+      .getECOfficerPanel(App.token);
+  }
+
+  function _lpVal(key, cm, fallback) {
+    return (cm[key] && cm[key].value) ? cm[key].value : (fallback || '');
+  }
+
+  function _lpField(id, label, key, cm, type, placeholder) {
+    type = type || 'text';
+    var val = _lpVal(key, cm, '');
+    return '<div style="margin-bottom:14px;">' +
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">' +
+        escHtml(label) +
+      '</label>' +
+      (type === 'textarea' ?
+        '<textarea id="' + id + '" rows="3" ' +
+        'style="width:100%;box-sizing:border-box;padding:10px;font-size:.88rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;resize:vertical;" ' +
+        'placeholder="' + escHtml(placeholder || '') + '">' + escHtml(val) + '</textarea>'
+        :
+        '<input type="' + type + '" id="' + id + '" value="' + escHtml(val) + '" ' +
+        'placeholder="' + escHtml(placeholder || '') + '" ' +
+        'style="width:100%;box-sizing:border-box;padding:10px;font-size:.88rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;" />'
+      ) +
+    '</div>';
+  }
+
+  function _schedDateRowLP(id, label, vRef) {
+    return '<div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">' +
+      '<div style="flex:1;">' +
+        '<label style="font-size:.78rem;color:#6b7280;">' + escHtml(label) + ' <span style="color:#9ca3af;">(' + escHtml(vRef) + ')</span></label>' +
+        '<input type="date" id="' + id + '" ' +
+        'style="width:100%;box-sizing:border-box;padding:8px;font-size:.85rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;" />' +
+      '</div>' +
+    '</div>';
+  }
+
+  function _renderLandingPage(cm) {
+    cm = cm || {};
+    return (
+      // ── Section A — Association Announcements ──────────────────
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">📢 Association Announcements</div>' +
+        '<div class="panel-card-body">' +
+          '<p style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">' +
+            'These items appear on the public Landing Page immediately when saved and set to visible.' +
+          '</p>' +
+
+          _lpField('lp-sgm-date',    'SGM Date',    'sgm_date',    cm, 'date', '') +
+          _lpField('lp-sgm-venue',   'SGM Venue',   'sgm_venue',   cm, 'text', 'e.g. Sainik School Kazhakootam') +
+          _lpField('lp-sgm-notice',  'SGM Notice',  'sgm_notice',  cm, 'textarea', 'Public notice or agenda summary for SGM…') +
+          _lpField('lp-agm-date',    'AGM Date',    'agm_date',    cm, 'date', '') +
+          _lpField('lp-agm-notice',  'AGM Notice',  'agm_notice',  cm, 'text', 'e.g. Date to be announced') +
+          _lpField('lp-announcement','General Announcement', 'announcement', cm, 'textarea', 'Any other public notice to display on the Landing Page…') +
+
+          '<div id="lp-ann-error" style="color:#c0392b;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lp-ann-ok"    style="color:#16a34a;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="ECOfficerPanel._saveAnnouncements()" ' +
+          'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save Announcements</button>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Section B — Election Schedule ──────────────────────────
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">📅 Election Schedule (Draft)</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;' +
+          'padding:10px 14px;font-size:.82rem;color:#1e40af;margin-bottom:14px;">' +
+            'ℹ️ The EC publishes a <strong>draft framework schedule</strong> before handover to the RO. ' +
+            'It will be labelled "Draft — subject to finalisation by the Returning Officer" on the Landing Page. ' +
+            'After handover, the RO publishes the finalised schedule from the Admin Panel.' +
+          '</div>' +
+
+          '<label style="font-size:.82rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">AGM Day (V-Day)</label>' +
+          '<div style="display:flex;gap:8px;margin-bottom:14px;">' +
+            '<input type="date" id="lp-sched-vday" ' +
+            'style="flex:1;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+            '<button onclick="ECOfficerPanel._lpSchedAutoCalc()" ' +
+            'style="padding:10px 12px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:4px;cursor:pointer;font-size:.82rem;min-height:44px;white-space:nowrap;">' +
+            '⚡ Auto-fill</button>' +
+          '</div>' +
+
+          _schedDateRowLP('lp-sched-nom-open',     'Nominations Open',    'V-38') +
+          _schedDateRowLP('lp-sched-p1-close',     'Phase 1 Close',       'V-31') +
+          _schedDateRowLP('lp-sched-nom-close',    'Nominations Close',   'V-24') +
+          _schedDateRowLP('lp-sched-cand-pub',     'Candidates Published','V-19') +
+          _schedDateRowLP('lp-sched-voting-open',  'Voting Opens',        'V-16') +
+          _schedDateRowLP('lp-sched-voting-close', 'Voting Closes',       'V-9') +
+          _schedDateRowLP('lp-sched-declaration',  'Results Declared',    'V-7') +
+
+          '<div id="lp-sched-status" style="font-size:.82rem;color:#059669;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lp-sched-error" style="color:#c0392b;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lp-sched-ok"    style="color:#16a34a;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<div style="display:flex;gap:10px;">' +
+            '<button onclick="ECOfficerPanel._saveSchedDraft()" ' +
+            'style="flex:1;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save Draft</button>' +
+            '<button onclick="ECOfficerPanel._publishSchedDraft()" ' +
+            'style="flex:1;padding:12px;background:#059669;color:#fff;border:none;' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">🌐 Publish Draft</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Section C — VVA Integration ────────────────────────────
+      '<div class="panel-card" style="margin-bottom:24px;">' +
+        '<div class="panel-card-header">🔗 Voter Verification App (VVA)</div>' +
+        '<div class="panel-card-body">' +
+          '<p style="font-size:.82rem;color:#6b7280;margin-bottom:14px;">' +
+            'Set the VVA links so they appear on the public Landing Page. ' +
+            'The public URL shows the verification portal. ' +
+            'The JSON endpoint powers the live verification count widget.' +
+          '</p>' +
+
+          _lpField('lp-vva-url',  'VVA Public Portal URL',   'vva_url',  cm, 'url', 'https://script.google.com/macros/s/…/exec') +
+          _lpField('lp-vva-json', 'VVA JSON Endpoint URL',   'vva_json', cm, 'url', 'https://script.google.com/macros/s/…/exec?action=public') +
+
+          '<div id="lp-vva-error" style="color:#c0392b;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lp-vva-ok"    style="color:#16a34a;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="ECOfficerPanel._saveVVA()" ' +
+          'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save VVA Links</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
 
   // ── ACTION HANDLERS ──────────────────────────────────────────
 
@@ -495,6 +671,167 @@ var ECOfficerPanel = (function() {
 
     _reloadMessages: function() {
       _loadMessages();
+    },
+
+    _saveAnnouncements: function() {
+      var errEl = document.getElementById('lp-ann-error');
+      var okEl  = document.getElementById('lp-ann-ok');
+      if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+      if (okEl)  { okEl.style.display  = 'none'; okEl.innerHTML  = ''; }
+
+      var fields = [
+        { key: 'sgm_date',     id: 'lp-sgm-date',    type: 'date',  label: 'SGM Date' },
+        { key: 'sgm_venue',    id: 'lp-sgm-venue',   type: 'text',  label: 'SGM Venue' },
+        { key: 'sgm_notice',   id: 'lp-sgm-notice',  type: 'text',  label: 'SGM Notice' },
+        { key: 'agm_date',     id: 'lp-agm-date',    type: 'date',  label: 'AGM Date' },
+        { key: 'agm_notice',   id: 'lp-agm-notice',  type: 'text',  label: 'AGM Notice' },
+        { key: 'announcement', id: 'lp-announcement', type: 'text', label: 'Announcement' }
+      ];
+
+      var pending = fields.length;
+      var failed  = 0;
+
+      fields.forEach(function(f) {
+        var el  = document.getElementById(f.id);
+        var val = el ? el.value : '';
+        google.script.run
+          .withSuccessHandler(function() {
+            pending--;
+            if (pending === 0) {
+              if (failed === 0) {
+                if (okEl) { okEl.innerHTML = '✓ Announcements saved.'; okEl.style.display = 'block'; }
+              } else {
+                if (errEl) { errEl.innerHTML = failed + ' item(s) failed to save.'; errEl.style.display = 'block'; }
+              }
+            }
+          })
+          .withFailureHandler(function() { pending--; failed++; })
+          .setLandingPageContent(App.token, f.key, val, f.type, f.label, true);
+      });
+    },
+
+    _lpSchedAutoCalc: function() {
+      var vDay = document.getElementById('lp-sched-vday').value;
+      if (!vDay) { alert('Please enter V-Day (AGM date) first.'); return; }
+      var anchor = new Date(vDay);
+      function vMinus(days) {
+        var d = new Date(anchor.getTime());
+        d.setDate(d.getDate() - days);
+        return d.toISOString().substring(0, 10);
+      }
+      document.getElementById('lp-sched-nom-open').value     = vMinus(38);
+      document.getElementById('lp-sched-p1-close').value     = vMinus(31);
+      document.getElementById('lp-sched-nom-close').value    = vMinus(24);
+      document.getElementById('lp-sched-cand-pub').value     = vMinus(19);
+      document.getElementById('lp-sched-voting-open').value  = vMinus(16);
+      document.getElementById('lp-sched-voting-close').value = vMinus(9);
+      document.getElementById('lp-sched-declaration').value  = vMinus(7);
+    },
+
+    _saveSchedDraft: function() {
+      var errEl = document.getElementById('lp-sched-error');
+      var okEl  = document.getElementById('lp-sched-ok');
+      if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+      if (okEl)  { okEl.style.display  = 'none'; okEl.innerHTML  = ''; }
+
+      var elecId = window._lpElecId;
+      if (!elecId) {
+        if (errEl) { errEl.innerHTML = 'No active election found. Create an election first.'; errEl.style.display = 'block'; }
+        return;
+      }
+      function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+      var schedData = {
+        scheduleMode:      'live_draft',
+        vDay:              val('lp-sched-vday'),
+        nomOpenDate:       val('lp-sched-nom-open'),
+        phase1CloseDate:   val('lp-sched-p1-close'),
+        nomCloseDate:      val('lp-sched-nom-close'),
+        candidatesPubDate: val('lp-sched-cand-pub'),
+        votingOpenDate:    val('lp-sched-voting-open'),
+        votingCloseDate:   val('lp-sched-voting-close'),
+        declarationDate:   val('lp-sched-declaration')
+      };
+
+      if (!schedData.vDay) {
+        if (errEl) { errEl.innerHTML = 'V-Day is required.'; errEl.style.display = 'block'; }
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            if (errEl) { errEl.innerHTML = escHtml((res && res.message) || 'Save failed.'); errEl.style.display = 'block'; }
+            return;
+          }
+          if (okEl) { okEl.innerHTML = '✓ Draft schedule saved.'; okEl.style.display = 'block'; }
+        })
+        .withFailureHandler(function() {
+          if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
+        })
+        .setElectionSchedule(App.token, elecId, schedData);
+    },
+
+    _publishSchedDraft: function() {
+      var errEl = document.getElementById('lp-sched-error');
+      var okEl  = document.getElementById('lp-sched-ok');
+      if (!confirm('Publish this draft schedule to the Landing Page? Members will see it labelled "Draft".')) return;
+
+      var elecId = window._lpElecId;
+      if (!elecId) {
+        if (errEl) { errEl.innerHTML = 'No active election found.'; errEl.style.display = 'block'; }
+        return;
+      }
+
+      // Save first, then publish
+      ECOfficerPanel._saveSchedDraft();
+      setTimeout(function() {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (!res || !res.success) {
+              if (errEl) { errEl.innerHTML = escHtml((res && res.message) || 'Publish failed.'); errEl.style.display = 'block'; }
+              return;
+            }
+            if (okEl) { okEl.innerHTML = '🌐 Draft schedule published to Landing Page.'; okEl.style.display = 'block'; }
+          })
+          .withFailureHandler(function() {
+            if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
+          })
+          .publishSchedule(App.token, elecId);
+      }, 1500);
+    },
+
+    _saveVVA: function() {
+      var errEl = document.getElementById('lp-vva-error');
+      var okEl  = document.getElementById('lp-vva-ok');
+      if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+      if (okEl)  { okEl.style.display  = 'none'; okEl.innerHTML  = ''; }
+
+      var vvaUrl  = (document.getElementById('lp-vva-url')  || {}).value || '';
+      var vvaJson = (document.getElementById('lp-vva-json') || {}).value || '';
+      var pending = 2; var failed = 0;
+
+      function done(success) {
+        pending--;
+        if (!success) failed++;
+        if (pending === 0) {
+          if (failed === 0) {
+            if (okEl) { okEl.innerHTML = '✓ VVA links saved.'; okEl.style.display = 'block'; }
+          } else {
+            if (errEl) { errEl.innerHTML = 'Save failed for ' + failed + ' item(s).'; errEl.style.display = 'block'; }
+          }
+        }
+      }
+
+      google.script.run
+        .withSuccessHandler(function() { done(true); })
+        .withFailureHandler(function() { done(false); })
+        .setLandingPageContent(App.token, 'vva_url', vvaUrl, 'url', 'Voter Verification Portal', true);
+
+      google.script.run
+        .withSuccessHandler(function() { done(true); })
+        .withFailureHandler(function() { done(false); })
+        .setLandingPageContent(App.token, 'vva_json', vvaJson, 'url', 'VVA JSON Endpoint', false);
     }
   };
 
