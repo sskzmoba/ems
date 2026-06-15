@@ -544,24 +544,30 @@ function getElectionSchedule(token, electionId) {
   for (var s = 0; s < schedRows.length; s++) {
     if (schedRows[s][COL_SCHED.ELEC_ID].toString() === electionId.toString()) {
       var r = schedRows[s];
+      var fmtD = function(v) {
+        if (!v || v.toString().trim() === '') return '';
+        var d = new Date(v);
+        if (isNaN(d.getTime())) return v.toString();
+        return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+      };
       return {
         success:              true,
         schedId:              r[COL_SCHED.SCHED_ID].toString(),
         electionId:           r[COL_SCHED.ELEC_ID].toString(),
         scheduleMode:         r[COL_SCHED.SCHED_MODE].toString(),
-        vDay:                 r[COL_SCHED.VDAY].toString(),
-        voterRollCutoff:      r[COL_SCHED.VOTER_ROLL_CUTOFF].toString(),
-        nomOpenDate:          r[COL_SCHED.NOM_OPEN].toString(),
-        voterRollPubDate:     r[COL_SCHED.VOTER_ROLL_PUB].toString(),
-        phase1CloseDate:      r[COL_SCHED.PHASE1_CLOSE].toString(),
-        voterRollObjDeadline: r[COL_SCHED.VOTER_ROLL_OBJ_CLOSE].toString(),
-        nomCloseDate:         r[COL_SCHED.NOM_CLOSE].toString(),
-        voterRollCertDate:    r[COL_SCHED.VOTER_ROLL_CERT].toString(),
-        candidatesPubDate:    r[COL_SCHED.CAND_PUB].toString(),
-        withdrawalDeadline:   r[COL_SCHED.WITHDRAWAL_DEADLINE].toString(),
-        votingOpenDate:       r[COL_SCHED.VOTING_OPEN].toString(),
-        votingCloseDate:      r[COL_SCHED.VOTING_CLOSE].toString(),
-        declarationDate:      r[COL_SCHED.DECLARATION].toString(),
+        vDay:                 fmtD(r[COL_SCHED.VDAY]),
+        voterRollCutoff:      fmtD(r[COL_SCHED.VOTER_ROLL_CUTOFF]),
+        nomOpenDate:          fmtD(r[COL_SCHED.NOM_OPEN]),
+        voterRollPubDate:     fmtD(r[COL_SCHED.VOTER_ROLL_PUB]),
+        phase1CloseDate:      fmtD(r[COL_SCHED.PHASE1_CLOSE]),
+        voterRollObjDeadline: fmtD(r[COL_SCHED.VOTER_ROLL_OBJ_CLOSE]),
+        nomCloseDate:         fmtD(r[COL_SCHED.NOM_CLOSE]),
+        voterRollCertDate:    fmtD(r[COL_SCHED.VOTER_ROLL_CERT]),
+        candidatesPubDate:    fmtD(r[COL_SCHED.CAND_PUB]),
+        withdrawalDeadline:   fmtD(r[COL_SCHED.WITHDRAWAL_DEADLINE]),
+        votingOpenDate:       fmtD(r[COL_SCHED.VOTING_OPEN]),
+        votingCloseDate:      fmtD(r[COL_SCHED.VOTING_CLOSE]),
+        declarationDate:      fmtD(r[COL_SCHED.DECLARATION]),
         published:            r[COL_SCHED.PUBLISHED].toString() === 'true',
         publishedAt:          r[COL_SCHED.PUBLISHED_AT].toString(),
         updatedAt:            r[COL_SCHED.UPDATED_AT].toString(),
@@ -578,47 +584,57 @@ function getElectionSchedule(token, electionId) {
 // Used by Landing Page public widget.
 // ============================================================
 function getPublicSchedule() {
+  try {
   var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  var liveSchedule  = null;
+  var trialSchedule = null;
+
   for (var s = 0; s < schedRows.length; s++) {
-    var r = schedRows[s];
-    if (r[COL_SCHED.PUBLISHED].toString() === 'true' &&
-        r[COL_SCHED.SCHED_MODE].toString() === 'live') {
-      return {
-        success:              true,
-        vDay:                 r[COL_SCHED.VDAY].toString(),
-        nomOpenDate:          r[COL_SCHED.NOM_OPEN].toString(),
-        phase1CloseDate:      r[COL_SCHED.PHASE1_CLOSE].toString(),
-        nomCloseDate:         r[COL_SCHED.NOM_CLOSE].toString(),
-        candidatesPubDate:    r[COL_SCHED.CAND_PUB].toString(),
-        votingOpenDate:       r[COL_SCHED.VOTING_OPEN].toString(),
-        votingCloseDate:      r[COL_SCHED.VOTING_CLOSE].toString(),
-        declarationDate:      r[COL_SCHED.DECLARATION].toString(),
-        publishedAt:          r[COL_SCHED.PUBLISHED_AT].toString(),
-        isDraft:              r[COL_SCHED.SCHED_MODE].toString() === 'live_draft'
-      };
+    var r    = schedRows[s];
+    var pub  = r[COL_SCHED.PUBLISHED].toString() === 'true';
+    var mode = r[COL_SCHED.SCHED_MODE].toString();
+    if (!pub) continue;
+
+    var fmtD = function(v) {
+      if (!v || v.toString().trim() === '') return '';
+      var d = new Date(v);
+      if (isNaN(d.getTime())) return v.toString();
+      return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    };
+    var entry = {
+      vDay:              fmtD(r[COL_SCHED.VDAY]),
+      nomOpenDate:       fmtD(r[COL_SCHED.NOM_OPEN]),
+      phase1CloseDate:   fmtD(r[COL_SCHED.PHASE1_CLOSE]),
+      nomCloseDate:      fmtD(r[COL_SCHED.NOM_CLOSE]),
+      candidatesPubDate: fmtD(r[COL_SCHED.CAND_PUB]),
+      votingOpenDate:    fmtD(r[COL_SCHED.VOTING_OPEN]),
+      votingCloseDate:   fmtD(r[COL_SCHED.VOTING_CLOSE]),
+      declarationDate:   fmtD(r[COL_SCHED.DECLARATION]),
+      publishedAt:       r[COL_SCHED.PUBLISHED_AT].toString(),
+      elecId:            r[COL_SCHED.ELEC_ID].toString(),
+      mode:              mode
+    };
+
+    if (mode === 'live' && !liveSchedule) {
+      liveSchedule = entry;
+      liveSchedule.isDraft = false;
+    } else if (mode === 'live_draft' && !liveSchedule) {
+      liveSchedule = entry;
+      liveSchedule.isDraft = true;
+    } else if (mode === 'trial_member' && !trialSchedule) {
+      trialSchedule = entry;
+      trialSchedule.isDraft = false;
     }
   }
-  // Also return live_draft if published
-  for (var sd = 0; sd < schedRows.length; sd++) {
-    var rd = schedRows[sd];
-    if (rd[COL_SCHED.PUBLISHED].toString() === 'true' &&
-        rd[COL_SCHED.SCHED_MODE].toString() === 'live_draft') {
-      return {
-        success:           true,
-        vDay:              rd[COL_SCHED.VDAY].toString(),
-        nomOpenDate:       rd[COL_SCHED.NOM_OPEN].toString(),
-        phase1CloseDate:   rd[COL_SCHED.PHASE1_CLOSE].toString(),
-        nomCloseDate:      rd[COL_SCHED.NOM_CLOSE].toString(),
-        candidatesPubDate: rd[COL_SCHED.CAND_PUB].toString(),
-        votingOpenDate:    rd[COL_SCHED.VOTING_OPEN].toString(),
-        votingCloseDate:   rd[COL_SCHED.VOTING_CLOSE].toString(),
-        declarationDate:   rd[COL_SCHED.DECLARATION].toString(),
-        publishedAt:       rd[COL_SCHED.PUBLISHED_AT].toString(),
-        isDraft:           true
-      };
-    }
+
+  return {
+    success:       !!(liveSchedule || trialSchedule),
+    liveSchedule:  liveSchedule  || null,
+    trialSchedule: trialSchedule || null
+  };
+  } catch(e) {
+    return { success: false, error: e.toString(), message: 'getPublicSchedule error: ' + e.toString() };
   }
-  return { success: false, message: 'No published schedule available.' };
 }
 
 // ============================================================
@@ -640,9 +656,11 @@ function publishSchedule(token, electionId) {
   for (var s = 0; s < schedRows.length; s++) {
     if (schedRows[s][COL_SCHED.ELEC_ID].toString() !== electionId.toString()) continue;
     var mode = schedRows[s][COL_SCHED.SCHED_MODE].toString();
-    if (mode === 'trial_internal' || mode === 'trial_member') {
-      return { success: false, message: 'Trial election schedules cannot be published to the Landing Page.' };
+    // trial_internal is never published — it is for internal RO use only
+    if (mode === 'trial_internal') {
+      return { success: false, message: 'Internal trial schedules cannot be published. Set schedule mode to trial_member first.' };
     }
+    // EC_OFFICER cannot publish the live schedule — RO_ADMIN only
     if (sess.role === 'EC_OFFICER' && mode === 'live') {
       return { success: false, message: 'The live election schedule is managed by the Returning Officer.' };
     }

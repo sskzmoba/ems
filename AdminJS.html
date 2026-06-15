@@ -740,12 +740,10 @@ _renderManageScreen: function(el) {
           '<button onclick="AdminPanel._saveSchedule(\'' + escHtml(el.id) + '\')" ' +
           'style="flex:1;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
           'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save Schedule</button>' +
-          (!el.isTrial ?
-            '<button onclick="AdminPanel._publishSchedule(\'' + escHtml(el.id) + '\')" ' +
-            'id="btn-publish-sched" ' +
-            'style="flex:1;padding:12px;background:#059669;color:#fff;border:none;' +
-            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">🌐 Publish</button>'
-            : '') +
+          '<button onclick="AdminPanel._publishSchedule(\'' + escHtml(el.id) + '\')" ' +
+          'id="btn-publish-sched" ' +
+          'style="flex:1;padding:12px;background:#059669;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">🌐 Publish</button>' +
         '</div>' +
       '</div>' +
     '</div>' +

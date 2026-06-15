@@ -6,115 +6,108 @@
 <title>SSKZM OBA — Election Management System</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:20px;line-height:1.6;}
+body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;line-height:1.6;}
 
-.trial-banner{background:#8b0000;padding:10px 18px;display:flex;align-items:center;justify-content:center;gap:10px;}
-.trial-banner-txt{font-size:15px;color:#fff;font-weight:700;line-height:1.6;text-align:center;}
+.trial-banner{background:#8b0000;padding:10px 18px;display:flex;align-items:center;justify-content:center;}
+.trial-banner-txt{font-size:13px;color:#fff;font-weight:700;text-align:center;}
 .trial-banner-txt strong{color:#ffcccc;}
 
 .header{background:#1a3a5c;padding:16px 18px;border-bottom:3px solid #1a3a5c;}
-.header-assoc{font-size:12px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;}
+.header-assoc{font-size:11px;color:rgba(255,255,255,0.6);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px;}
 .header-title{font-size:22px;font-weight:600;color:#fff;line-height:1.3;}
-.header-sub{font-size:14px;color:rgba(255,255,255,0.85);margin-top:3px;}
+.header-sub{font-size:13px;color:rgba(255,255,255,0.85);margin-top:3px;}
 
 .body{padding:16px 18px;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto;}
 
-/* Announcement card */
-.ann-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
-.ann-head{background:#1a3a5c;padding:10px 16px;}
-.ann-head-t{font-size:13px;font-weight:600;color:#fff;letter-spacing:.3px;}
+/* ── Cards ── */
+.card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
+.card-head{background:#1a3a5c;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.card-head-t{font-size:13px;font-weight:600;color:#fff;}
+.pill{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;white-space:nowrap;}
+.pill-trial{background:rgba(250,199,117,0.2);border:1px solid #FAC775;color:#FAC775;}
+.pill-status{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;}
+
+/* ── Announcements ── */
 .ann-body{padding:14px 16px;}
-.ann-item{padding:8px 0;border-bottom:1px solid #f0f2f5;display:flex;gap:12px;align-items:flex-start;}
-.ann-item:last-child{border-bottom:none;padding-bottom:0;}
-.ann-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;min-width:80px;padding-top:2px;}
-.ann-val{font-size:14px;color:#1a3a5c;font-weight:600;line-height:1.5;}
-.ann-notice{font-size:13px;color:#444;line-height:1.6;margin-top:4px;}
+.ann-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid #f0f2f5;align-items:flex-start;}
+.ann-row:last-child{border-bottom:none;padding-bottom:0;}
+.ann-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;min-width:56px;padding-top:2px;}
+.ann-val{font-size:13px;color:#1a3a5c;font-weight:600;line-height:1.5;}
+.ann-notice{font-size:12px;color:#444;line-height:1.6;font-weight:400;}
 
-/* Status card */
-.status-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
-.status-head{background:#1a3a5c;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.status-head-t{font-size:15px;font-weight:600;color:#fff;}
-.trial-pill{background:rgba(250,199,117,0.2);border:1px solid #FAC775;color:#FAC775;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;white-space:nowrap;}
-.status-pill{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.4);color:#fff;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;white-space:nowrap;}
-
-.phase-strip{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid #dde3ea;overflow-x:auto;-webkit-overflow-scrolling:touch;background:#f8fafc;}
-.phase-step{display:flex;align-items:center;gap:5px;font-size:12px;color:#aaa;white-space:nowrap;}
-.phase-step.done{color:#1a7a4a;}
-.phase-step.active{color:#1a3a5c;font-weight:600;}
-.phase-dot{width:7px;height:7px;border-radius:50%;background:#ddd;flex-shrink:0;}
-.phase-step.done .phase-dot{background:#1a7a4a;}
-.phase-step.active .phase-dot{background:#1a3a5c;}
-.phase-arrow{font-size:10px;color:#ccc;padding:0 6px;flex-shrink:0;}
-
-.dates-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 16px;}
-.date-cell{background:#f0f2f5;border:1px solid #dde3ea;border-radius:6px;padding:10px 12px;}
-.date-lbl{font-size:11px;color:#888;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px;}
-.date-val{font-size:14px;color:#1a3a5c;font-weight:600;}
-.date-val.blank{color:#bbb;font-style:italic;font-weight:400;}
-
-.status-msg{margin:0 16px 14px;border-radius:5px;padding:10px 13px;font-size:14px;line-height:1.7;}
+/* ── Slim status card ── */
+.status-msg{padding:12px 16px;font-size:13px;line-height:1.7;border-radius:0;}
 .msg-nominations{background:#faeeda;border-left:3px solid #b8922a;color:#633806;}
-.msg-candidates{background:#e6f1fb;border-left:3px solid #1a3a5c;color:#0c2340;}
-.msg-voting{background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
-.msg-results{background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
-.msg-default{background:#f0f2f5;border-left:3px solid #dde3ea;color:#555;}
+.msg-candidates {background:#e6f1fb;border-left:3px solid #1a3a5c;color:#0c2340;}
+.msg-voting     {background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
+.msg-results    {background:#e1f5ee;border-left:3px solid #1a7a4a;color:#0a4a2a;}
+.msg-default    {background:#f0f2f5;border-left:3px solid #dde3ea;color:#555;}
 
-/* Schedule widget */
-.sched-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
-.sched-head{background:#1a3a5c;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;}
+/* ── Schedule widget ── */
+.sched-wrap{background:#fff;border:1px solid #dde3ea;border-radius:8px;overflow:hidden;}
+.sched-head{background:#1a3a5c;padding:10px 16px;}
 .sched-head-t{font-size:13px;font-weight:600;color:#fff;}
-.draft-pill{background:rgba(250,199,117,0.2);border:1px solid #FAC775;color:#FAC775;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:600;}
-.sched-body{padding:12px 16px;}
-.sched-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid #f0f2f5;}
-.sched-row:last-child{border-bottom:none;padding-bottom:0;}
-.sched-dot-col{display:flex;flex-direction:column;align-items:center;padding-top:4px;}
-.sched-dot{width:8px;height:8px;border-radius:50%;background:#dde3ea;flex-shrink:0;}
-.sched-dot.past{background:#1a7a4a;}
-.sched-dot.today{background:#1a3a5c;box-shadow:0 0 0 2px rgba(26,58,92,.2);}
-.sched-dot.future{background:#dde3ea;}
-.sched-line{width:1px;background:#e5e7eb;flex:1;min-height:6px;}
-.sched-info{flex:1;}
-.sched-evt{font-size:13px;color:#374151;font-weight:500;line-height:1.4;}
-.sched-evt.past{color:#6b7280;}
-.sched-evt.today{color:#1a3a5c;font-weight:700;}
-.sched-date{font-size:11px;color:#9ca3af;margin-top:1px;}
-.sched-date.today{color:#1a3a5c;font-weight:600;}
+.tab-strip{display:flex;border-bottom:1px solid #dde3ea;}
+.tab{flex:1;padding:9px 8px;font-size:12px;font-weight:600;text-align:center;cursor:pointer;color:#888;border-bottom:2px solid transparent;background:#fff;transition:color .15s;}
+.tab.on{color:#1a3a5c;border-bottom:2px solid #1a3a5c;background:#f8fafc;}
+.tab-panel{display:none;padding:12px 16px;}
+.tab-panel.on{display:block;}
 
-.no-election-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:32px 20px;text-align:center;}
-.no-election-t{font-size:18px;font-weight:600;color:#1a3a5c;margin-bottom:8px;}
-.no-election-d{font-size:14px;color:#777;line-height:1.7;}
+.sched-current-phase{font-size:12px;color:#1a3a5c;font-weight:600;padding:7px 10px;background:#e6f1fb;border-radius:5px;margin-bottom:10px;}
 
-.login-primary{display:block;width:100%;padding:16px;background:#1a3a5c;color:#fff;border:none;border-radius:8px;font-size:18px;font-weight:600;cursor:pointer;text-align:center;min-height:52px;font-family:Arial,sans-serif;}
-.login-primary:hover{background:#0f2540;}
-.tutorial-link{display:block;width:100%;padding:14px;background:#fff;color:#1a3a5c;border:2px solid #1a3a5c;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-align:center;min-height:48px;font-family:Arial,sans-serif;box-sizing:border-box;text-decoration:none;margin-top:10px;}
-.tutorial-link:hover{background:#f0f4f8;}
+.srow{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-bottom:1px solid #f0f2f5;}
+.srow:last-child{border-bottom:none;}
+.srow.now{background:#e6f1fb;margin:0 -16px;padding:7px 16px;}
+.dot-col{display:flex;flex-direction:column;align-items:center;padding-top:4px;}
+.sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sdot.past  {background:#1a7a4a;}
+.sdot.now   {background:#1a3a5c;box-shadow:0 0 0 3px rgba(26,58,92,.15);}
+.sdot.future{background:#dde3ea;}
+.sline{width:1px;background:#e5e7eb;flex:1;min-height:6px;margin-top:2px;}
+.sinfo{flex:1;}
+.sevt{font-size:13px;font-weight:400;line-height:1.3;}
+.sevt.past  {color:#9ca3af;}
+.sevt.now   {color:#1a3a5c;font-weight:700;}
+.sevt.future{color:#374151;}
+.sdate{font-size:11px;color:#9ca3af;margin-top:2px;}
+.sdate.now{color:#1a3a5c;font-weight:600;}
+.now-badge{display:inline-block;font-size:10px;background:#1a3a5c;color:#fff;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle;font-weight:700;}
+.sched-note{font-size:11px;color:#888;margin-top:10px;padding-top:10px;border-top:1px solid #f0f2f5;line-height:1.6;}
+.draft-notice{background:#fffbeb;border-bottom:1px solid #fde68a;padding:8px 16px;font-size:11px;color:#92400e;}
 
-.vva-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:14px 16px;}
-.vva-top{display:flex;align-items:flex-start;gap:13px;margin-bottom:8px;}
+/* ── Buttons ── */
+.btn-login{display:block;width:100%;padding:16px;background:#1a3a5c;color:#fff;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer;text-align:center;min-height:52px;font-family:Arial,sans-serif;}
+.btn-login:hover{background:#0f2540;}
+.btn-results{display:block;width:100%;padding:16px;background:#059669;color:#fff;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer;text-align:center;min-height:52px;font-family:Arial,sans-serif;margin-top:10px;}
+.btn-tutorial{display:block;width:100%;padding:14px;background:#fff;color:#1a3a5c;border:2px solid #1a3a5c;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-align:center;min-height:48px;font-family:Arial,sans-serif;margin-top:10px;text-decoration:none;}
+.btn-tutorial:hover{background:#f0f4f8;}
+
+/* ── VVA ── */
+.vva-body{padding:14px 16px;display:flex;gap:13px;align-items:flex-start;}
 .vva-icon{width:38px;height:38px;border-radius:7px;background:#e6f1fb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;color:#1a3a5c;}
-.vva-body{flex:1;}
-.vva-title{font-size:15px;font-weight:600;color:#1a3a5c;margin-bottom:3px;}
-.vva-sub{font-size:13px;color:#666;line-height:1.55;margin-bottom:6px;}
-.vva-link{font-size:14px;color:#1a3a5c;text-decoration:none;font-weight:600;}
-.vva-link:hover{text-decoration:underline;}
-.vva-count-bar{background:#f0f4f8;border-radius:6px;padding:8px 12px;font-size:12px;color:#555;display:flex;align-items:center;gap:8px;}
+.vva-title{font-size:14px;font-weight:600;color:#1a3a5c;margin-bottom:3px;}
+.vva-sub{font-size:12px;color:#666;line-height:1.55;margin-bottom:6px;}
+.vva-link{font-size:13px;color:#1a3a5c;text-decoration:none;font-weight:600;}
+.vva-count{background:#f0f4f8;border-radius:6px;padding:8px 12px;font-size:12px;color:#555;margin-top:8px;display:flex;align-items:center;gap:8px;}
 .vva-count-num{font-size:16px;font-weight:700;color:#1a3a5c;}
 
-.trust-card{background:#fff;border:1px solid #dde3ea;border-radius:8px;padding:14px 16px;}
+/* ── Trust ── */
+.trust-body{padding:14px 16px;}
 .trust-lbl{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;}
-.trust-item{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f0f2f5;}
-.trust-item:last-child{border-bottom:none;padding-bottom:0;}
-.trust-dot{width:6px;height:6px;border-radius:50%;background:#1a3a5c;flex-shrink:0;margin-top:8px;}
-.trust-txt{font-size:14px;color:#555;line-height:1.65;}
-.trust-txt strong{color:#222;font-weight:600;}
+.trow{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f0f2f5;}
+.trow:last-child{border-bottom:none;padding-bottom:0;}
+.tdot{width:6px;height:6px;border-radius:50%;background:#1a3a5c;flex-shrink:0;margin-top:8px;}
+.ttxt{font-size:13px;color:#555;line-height:1.65;}
+.ttxt strong{color:#222;font-weight:600;}
 
+/* ── Footer ── */
 .footer{padding:14px 18px;border-top:1px solid #dde3ea;background:#fff;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
-.footer-l{font-size:12px;color:#999;line-height:1.6;}
+.footer-l{font-size:11px;color:#999;line-height:1.6;}
 .footer-links{display:flex;gap:14px;}
-.footer-lk{font-size:12px;color:#999;text-decoration:none;}
+.footer-lk{font-size:11px;color:#999;text-decoration:none;}
 .footer-lk:hover{color:#1a3a5c;}
 
-.spinner{display:inline-block;width:20px;height:20px;border:2px solid #dde3ea;border-top-color:#1a3a5c;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid #dde3ea;border-top-color:#1a3a5c;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 </style>
 </head>
@@ -136,65 +129,55 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:20px;l
 
 <div class="body">
 
-  <!-- Association Announcements -->
+  <!-- Announcements -->
   <div id="announcements-area" style="display:none;"></div>
 
-  <!-- Election Status -->
+  <!-- Slim status card -->
   <div id="status-area">
     <div style="padding:28px;text-align:center;color:#999;font-size:13px;">
       <span class="spinner"></span>Loading election status…
     </div>
   </div>
 
-  <!-- Login button -->
-  <button class="login-primary" onclick="goVoterLogin()">Login to Vote / Nominate</button>
-  <div id="results-btn-area" style="display:none;margin-top:10px;">
-    <button class="login-primary" onclick="goResults()"
-      style="background:#059669;">🏆 View Declared Results</button>
-  </div>
-  <a class="tutorial-link" onclick="window.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works</a>
-
-  <!-- Election Schedule -->
+  <!-- Schedule widget -->
   <div id="schedule-area" style="display:none;"></div>
+
+  <!-- Login button -->
+  <button class="btn-login" onclick="goVoterLogin()">Login to Vote / Nominate</button>
+  <div id="results-btn-area" style="display:none;">
+    <button class="btn-results" onclick="goResults()">🏆 View Declared Results</button>
+  </div>
+  <a class="btn-tutorial" onclick="window.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works</a>
 
   <!-- VVA card -->
   <div id="vva-area" style="display:none;">
-    <div class="vva-card">
-      <div class="vva-top">
+    <div class="card">
+      <div class="card-head"><div class="card-head-t">✓ Voter Verification</div></div>
+      <div class="vva-body">
         <div class="vva-icon">✓</div>
-        <div class="vva-body">
+        <div style="flex:1;">
           <div class="vva-title">Verify your voter roll status</div>
           <div class="vva-sub">Check if your details are on the voter roll before the cutoff date.</div>
           <a id="vva-link" href="#" class="vva-link" target="_blank" rel="noopener">Open verification portal &#8599;</a>
-        </div>
-      </div>
-      <div id="vva-count-area" style="display:none;">
-        <div class="vva-count-bar">
-          <span class="vva-count-num" id="vva-count-num">—</span>
-          <span id="vva-count-label">members have verified their email address</span>
+          <div id="vva-count-area" style="display:none;">
+            <div class="vva-count">
+              <span class="vva-count-num" id="vva-count-num">—</span>
+              <span>members have verified their email address</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <!-- Trust strip -->
-  <div class="trust-card">
-    <div class="trust-lbl">How your vote is protected</div>
-    <div class="trust-item">
-      <div class="trust-dot"></div>
-      <div class="trust-txt"><strong>Structural anonymity</strong> — no one can link your vote to your identity, not even the Returning Officer.</div>
-    </div>
-    <div class="trust-item">
-      <div class="trust-dot"></div>
-      <div class="trust-txt"><strong>RO independence</strong> — once the RO is appointed, the EC has zero access to the election system.</div>
-    </div>
-    <div class="trust-item">
-      <div class="trust-dot"></div>
-      <div class="trust-txt"><strong>Receipt token</strong> — every vote generates an anonymous token you can verify after results are declared.</div>
-    </div>
-    <div class="trust-item">
-      <div class="trust-dot"></div>
-      <div class="trust-txt"><strong>Data stays with OBA</strong> — all election data lives in the Association's own Google account. No vendor holds your data.</div>
+  <div class="card">
+    <div class="trust-body">
+      <div class="trust-lbl">How your vote is protected</div>
+      <div class="trow"><div class="tdot"></div><div class="ttxt"><strong>Structural anonymity</strong> — no one can link your vote to your identity, not even the Returning Officer.</div></div>
+      <div class="trow"><div class="tdot"></div><div class="ttxt"><strong>RO independence</strong> — once the RO is appointed, the EC has zero access to the election system.</div></div>
+      <div class="trow"><div class="tdot"></div><div class="ttxt"><strong>Receipt token</strong> — every vote generates an anonymous token you can verify after results are declared.</div></div>
+      <div class="trow"><div class="tdot"></div><div class="ttxt"><strong>Data stays with OBA</strong> — all election data lives in the Association's own Google account. No vendor holds your data.</div></div>
     </div>
   </div>
 
@@ -207,7 +190,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:20px;l
   </div>
   <div class="footer-links">
     <a href="https://github.com/sskzmoba/ems" class="footer-lk" target="_blank" rel="noopener">GitHub</a>
-    <a href="mailto:sskzmobakazak@gmail.com" class="footer-lk">Contact GS</a>
+    <a href="mailto:elections@sskzmoba.org" class="footer-lk">Contact RO</a>
   </div>
 </div>
 
@@ -217,22 +200,43 @@ var DEPLOY_URL = '<?= ScriptApp.getService().getUrl() ?>';
 function goVoterLogin() { window.location.href = DEPLOY_URL + '?action=login'; }
 function goResults()    { window.location.href = DEPLOY_URL + '?action=results'; }
 
+// ── Date helpers ──────────────────────────────────────────────
+
 function fmtDate(d) {
   if (!d || d.toString().trim() === '') return null;
   var dt = new Date(d);
-  if (isNaN(dt.getTime())) return d.toString();
+  if (isNaN(dt.getTime())) return null;
   return dt.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
 }
 
-function phaseFor(status) {
-  if (status === 'nominations_open' || status === 'nominations_open_phase2') return 'nominations';
-  if (status === 'scrutiny' || status === 'candidates_published') return 'candidates';
-  if (status === 'active' || status === 'paused' || status === 'closed') return 'voting';
-  if (status === 'declared') return 'results';
-  return 'none';
+function isDateSet(d) {
+  return d && d.toString().trim() !== '';
 }
 
-function phaseLabel(status) {
+function dateClass(d) {
+  if (!isDateSet(d)) return 'future';
+  var today = new Date(); today.setHours(0,0,0,0);
+  var dt = new Date(d); dt.setHours(0,0,0,0);
+  if (isNaN(dt.getTime())) return 'future';
+  if (dt < today)  return 'past';
+  if (dt.getTime() === today.getTime()) return 'now';
+  return 'future';
+}
+
+// ── Status helpers ────────────────────────────────────────────
+
+function statusToPhase(status) {
+  if (status === 'nominations_open' || status === 'nominations_open_phase2') return 'Nominations open';
+  if (status === 'scrutiny')         return 'Scrutiny in progress';
+  if (status === 'candidates_published') return 'Candidates published';
+  if (status === 'active')           return 'Voting is open';
+  if (status === 'paused')           return 'Voting temporarily paused';
+  if (status === 'closed')           return 'Voting closed';
+  if (status === 'declared')         return 'Results declared';
+  return 'Election in progress';
+}
+
+function statusMsg(status) {
   var map = {
     nominations_open:        'Nominations are open. Life members may log in to submit or support a nomination.',
     nominations_open_phase2: 'Phase 2 nominations are open. Log in to nominate a fellow member.',
@@ -254,165 +258,226 @@ function msgClass(status) {
   return 'msg-default';
 }
 
-function buildPhaseStrip(activePhase) {
-  var phases = [
-    { id:'nominations', label:'Nominations' },
-    { id:'candidates',  label:'Candidates'  },
-    { id:'voting',      label:'Voting'      },
-    { id:'results',     label:'Results'     }
-  ];
-  var passed = true;
-  var html = '<div class="phase-strip">';
-  for (var i = 0; i < phases.length; i++) {
-    var p = phases[i];
-    var cls = 'phase-step';
-    if (p.id === activePhase) { cls += ' active'; passed = false; }
-    else if (passed)           { cls += ' done'; }
-    html += '<div class="' + cls + '"><div class="phase-dot"></div>' + p.label + '</div>';
-    if (i < phases.length - 1) html += '<div class="phase-arrow">›</div>';
-  }
-  html += '</div>';
-  return html;
+// ── Status milestone for trial tab highlight ──────────────────
+// Maps election status to which schedule milestone is "now"
+
+function statusToMilestone(status) {
+  var map = {
+    nominations_open:         'nomOpenDate',
+    nominations_open_phase2:  'phase1CloseDate',
+    scrutiny:                 'nomCloseDate',
+    candidates_published:     'candidatesPubDate',
+    active:                   'votingOpenDate',
+    paused:                   'votingOpenDate',
+    closed:                   'votingCloseDate',
+    declared:                 'declarationDate'
+  };
+  return map[status] || null;
 }
 
+// ── Render slim status card ───────────────────────────────────
+
 function renderStatusCard(e) {
-  var phase    = phaseFor(e.status);
-  var titleTxt = e.title + (e.trial ? ' — Trial' : '');
-  var pillHtml = e.trial
-    ? '<div class="trial-pill">Trial run</div>'
-    : '<div class="status-pill">' + e.status.replace(/_/g,' ') + '</div>';
+  var pillsHtml = '<div style="display:flex;gap:5px;flex-shrink:0;">';
+  if (e.trial) pillsHtml += '<span class="pill pill-trial">Trial</span>';
+  pillsHtml += '<span class="pill pill-status">' + e.status.replace(/_/g,' ') + '</span>';
+  pillsHtml += '</div>';
 
-  var nomDate = fmtDate(e.nomDeadline);
-  var vDay    = fmtDate(e.vDay);
-  var declDay = fmtDate(e.declareDay);
-  var mode    = e.mode ? e.mode.charAt(0).toUpperCase() + e.mode.slice(1) : '';
-
-  var html = '<div class="status-card">';
-  html += '<div class="status-head"><div class="status-head-t">' + titleTxt + '</div>' + pillHtml + '</div>';
-  html += buildPhaseStrip(phase);
-  html += '<div class="dates-grid">';
-  html += '<div class="date-cell"><div class="date-lbl">Nominations close</div><div class="date-val' + (!nomDate ? ' blank' : '') + '">' + (nomDate || 'TBA') + '</div></div>';
-  html += '<div class="date-cell"><div class="date-lbl">AGM Day</div><div class="date-val' + (!vDay ? ' blank' : '') + '">' + (vDay || 'TBA') + '</div></div>';
-  html += '<div class="date-cell"><div class="date-lbl">Results declared</div><div class="date-val' + (!declDay ? ' blank' : '') + '">' + (declDay || 'TBA') + '</div></div>';
-  html += '<div class="date-cell"><div class="date-lbl">Mode</div><div class="date-val' + (!mode ? ' blank' : '') + '">' + (mode || 'Electronic') + '</div></div>';
-  html += '</div>';
-  html += '<div class="status-msg ' + msgClass(e.status) + '">' + phaseLabel(e.status) + '</div>';
-  html += '</div>';
-  return html;
+  return '<div class="card">' +
+    '<div class="card-head">' +
+      '<div class="card-head-t">' + e.title + '</div>' +
+      pillsHtml +
+    '</div>' +
+    '<div class="status-msg ' + msgClass(e.status) + '">' + statusMsg(e.status) + '</div>' +
+  '</div>';
 }
 
 function renderNoElection() {
-  return '<div class="no-election-card">' +
-    '<div class="no-election-t">No election is currently scheduled</div>' +
-    '<div class="no-election-d">When the Executive Committee announces an election,<br>details will appear here.</div>' +
-    '</div>';
+  return '<div class="card"><div style="padding:32px 20px;text-align:center;">' +
+    '<div style="font-size:17px;font-weight:600;color:#1a3a5c;margin-bottom:8px;">No election is currently scheduled</div>' +
+    '<div style="font-size:13px;color:#777;line-height:1.7;">When the Executive Committee announces an election, details will appear here.</div>' +
+  '</div></div>';
 }
 
-// ── Schedule widget ───────────────────────────────────────────
+// ── Build one schedule row ────────────────────────────────────
 
-function renderSchedule(s) {
-  var today = new Date();
-  today.setHours(0,0,0,0);
+function schedRow(label, dateVal, cls, isLast, isNow) {
+  var fmted = fmtDate(dateVal) || dateVal || '—';
+  return '<div class="srow' + (isNow ? ' now' : '') + '">' +
+    '<div class="dot-col">' +
+      '<div class="sdot ' + cls + '"></div>' +
+      (!isLast ? '<div class="sline"></div>' : '') +
+    '</div>' +
+    '<div class="sinfo">' +
+      '<div class="sevt ' + cls + '">' + label +
+        (isNow ? '<span class="now-badge">NOW</span>' : '') +
+      '</div>' +
+      '<div class="sdate ' + cls + '">' + fmted + '</div>' +
+    '</div>' +
+  '</div>';
+}
 
-  var events = [
-    { label: 'Nominations Open',      date: s.nomOpenDate },
-    { label: 'Phase 1 Closes',        date: s.phase1CloseDate },
-    { label: 'Nominations Close',     date: s.nomCloseDate },
-    { label: 'Candidates Published',  date: s.candidatesPubDate },
-    { label: 'Voting Opens',          date: s.votingOpenDate },
-    { label: 'Voting Closes',         date: s.votingCloseDate },
-    { label: 'Results Declared',      date: s.declarationDate },
-    { label: 'AGM Day (V-Day)',        date: s.vDay }
-  ].filter(function(e) { return e.date && e.date.trim() !== ''; });
+// ── Render official tab (V-Day basis) ─────────────────────────
 
-  if (events.length === 0) return '';
+function renderOfficialTab(ls, elecStatus) {
+  var vDaySet = isDateSet(ls.vDay) && ls.mode === 'live';
 
-  var html = '<div class="sched-card">' +
-    '<div class="sched-head">' +
-      '<div class="sched-head-t">📅 Election Schedule</div>' +
-      (s.isDraft ? '<div class="draft-pill">Draft</div>' : '') +
-    '</div>';
+  // V-day relative labels — SOP floor values
+  var milestones = [
+    { label: 'Nominations open',     key: 'nomOpenDate',       vref: 'V − 38 days' },
+    { label: 'Phase 1 closes',        key: 'phase1CloseDate',   vref: 'V − 31 days' },
+    { label: 'Nominations close',     key: 'nomCloseDate',      vref: 'V − 24 days' },
+    { label: 'Candidates published',  key: 'candidatesPubDate', vref: 'V − 19 days' },
+    { label: 'Voting opens',          key: 'votingOpenDate',    vref: 'V − 16 days' },
+    { label: 'Voting closes',         key: 'votingCloseDate',   vref: 'V − 9 days'  },
+    { label: 'Results declared',      key: 'declarationDate',   vref: 'V − 7 days'  },
+    { label: 'AGM Day (V-Day)',        key: 'vDay',              vref: 'V-Day'        }
+  ];
 
-  if (s.isDraft) {
-    html += '<div style="background:#fffbeb;border-bottom:1px solid #fde68a;padding:8px 16px;font-size:12px;color:#92400e;">' +
-      'Draft schedule — subject to finalisation by the Returning Officer' +
-    '</div>';
-  }
+  var html = '<div class="tab-panel on" id="tab-official">';
 
-  html += '<div class="sched-body">';
-  for (var i = 0; i < events.length; i++) {
-    var ev  = events[i];
-    var dt  = new Date(ev.date);
-    var cls = 'future';
-    if (!isNaN(dt.getTime())) {
-      if (dt < today) cls = 'past';
-      else if (dt.getTime() === today.getTime()) cls = 'today';
+  // Current phase label — always shown
+  html += '<div class="sched-current-phase">Currently: ' + statusToPhase(elecStatus) + '</div>';
+
+  if (!vDaySet) {
+    // V-Day not set — show relative labels, all grey, no highlight
+    for (var i = 0; i < milestones.length; i++) {
+      var m = milestones[i];
+      html += schedRow(m.label, m.vref, 'future', i === milestones.length - 1, false);
     }
-    var fmted = fmtDate(ev.date) || ev.date;
-    html += '<div class="sched-row">' +
-      '<div class="sched-dot-col">' +
-        '<div class="sched-dot ' + cls + '"></div>' +
-        (i < events.length - 1 ? '<div class="sched-line"></div>' : '') +
-      '</div>' +
-      '<div class="sched-info">' +
-        '<div class="sched-evt ' + cls + '">' + ev.label + '</div>' +
-        '<div class="sched-date ' + cls + '">' + fmted + '</div>' +
-      '</div>' +
-    '</div>';
+    html += '<div class="sched-note">AGM date (V-Day) is not yet confirmed. All milestones will show actual dates once the AGM is scheduled. Intervals shown are per the Elections SOP.</div>';
+  } else {
+    // V-Day set — highlight by election status, fall back to date class
+    var nowKey = statusToMilestone(elecStatus);
+    for (var j = 0; j < milestones.length; j++) {
+      var mv    = milestones[j];
+      var dval  = ls[mv.key] || '';
+      var isNow = (mv.key === nowKey);
+      var cls   = isNow ? 'now' : dateClass(dval);
+      html += schedRow(mv.label, dval, cls, j === milestones.length - 1, isNow);
+    }
   }
-  html += '</div></div>';
+
+  html += '</div>';
   return html;
 }
 
-// ── Announcements widget ───────────────────────────────────────
+// ── Render trial tab (actual dates, status-based highlight) ───
+
+function renderTrialTab(ts, elecStatus, tabLabel) {
+  var nowKey = statusToMilestone(elecStatus);
+
+  var milestones = [
+    { label: 'Nominations open',     key: 'nomOpenDate'       },
+    { label: 'Phase 1 closes',        key: 'phase1CloseDate'   },
+    { label: 'Nominations close',     key: 'nomCloseDate'      },
+    { label: 'Candidates published',  key: 'candidatesPubDate' },
+    { label: 'Voting opens',          key: 'votingOpenDate'    },
+    { label: 'Voting closes',         key: 'votingCloseDate'   },
+    { label: 'Results declared',      key: 'declarationDate'   }
+  ];
+
+  var html = '<div class="tab-panel" id="tab-trial">';
+  html += '<div class="sched-current-phase">Currently: ' + statusToPhase(elecStatus) + '</div>';
+
+  for (var i = 0; i < milestones.length; i++) {
+    var m    = milestones[i];
+    var dval = ts[m.key] || '';
+    var isNow = (m.key === nowKey);
+    var cls  = isNow ? 'now' : dateClass(dval);
+    html += schedRow(m.label, dval, cls, i === milestones.length - 1, isNow);
+  }
+
+  html += '<div class="sched-note">Trial election schedule. Dates are actual calendar dates. This trial run does not affect the live election.</div>';
+  html += '</div>';
+  return html;
+}
+
+// ── Render full schedule widget ───────────────────────────────
+
+function renderSchedule(res, elecStatus) {
+  var ls = res.liveSchedule;
+  var ts = res.trialSchedule;
+
+  if (!ls && !ts) return '';
+
+  // Build tab label for trial
+  var trialLabel = 'Trial run';
+  if (ts) {
+    var tStart = fmtDate(ts.nomOpenDate);
+    var tEnd   = fmtDate(ts.declarationDate);
+    if (tStart && tEnd) trialLabel = 'Trial · ' + tStart + ' – ' + tEnd;
+  }
+
+  var showTabs = ls && ts; // only show tab strip if both exist
+
+  var html = '<div class="sched-wrap">';
+  html += '<div class="sched-head"><div class="sched-head-t">📅 Election Schedule</div></div>';
+
+  if (ls && ls.isDraft) {
+    html += '<div class="draft-notice">Draft schedule — subject to finalisation by the Returning Officer.</div>';
+  }
+
+  if (showTabs) {
+    html += '<div class="tab-strip">' +
+      '<div class="tab on"  id="tab-btn-official" onclick="switchTab(\'official\')">Official (V-Day basis)</div>' +
+      '<div class="tab"     id="tab-btn-trial"    onclick="switchTab(\'trial\')">' + trialLabel + '</div>' +
+    '</div>';
+  }
+
+  // Official panel
+  if (ls) {
+    html += renderOfficialTab(ls, elecStatus);
+  }
+
+  // Trial panel — only when there is a trial schedule
+  if (ts) {
+    html += renderTrialTab(ts, elecStatus, trialLabel);
+    // If only trial exists (no live), make it visible by default
+    if (!ls) {
+      html = html.replace('class="tab-panel" id="tab-trial"', 'class="tab-panel on" id="tab-trial"');
+    }
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// ── Tab switcher ──────────────────────────────────────────────
+
+function switchTab(id) {
+  ['official','trial'].forEach(function(t) {
+    var panel = document.getElementById('tab-' + t);
+    var btn   = document.getElementById('tab-btn-' + t);
+    if (panel) panel.className = 'tab-panel' + (t === id ? ' on' : '');
+    if (btn)   btn.className   = 'tab'       + (t === id ? ' on' : '');
+  });
+}
+
+// ── Announcements ─────────────────────────────────────────────
 
 function renderAnnouncements(cm) {
   var items = [];
+  if (cm.sgm_date  && cm.sgm_date.value)  items.push({ label:'SGM',   val: fmtDate(cm.sgm_date.value)  || cm.sgm_date.value });
+  if (cm.sgm_venue && cm.sgm_venue.value) items.push({ label:'Venue',  val: cm.sgm_venue.value });
+  if (cm.agm_date  && cm.agm_date.value)  items.push({ label:'AGM',   val: fmtDate(cm.agm_date.value)  || cm.agm_date.value });
 
-  if (cm.sgm_date && cm.sgm_date.value) {
-    items.push({ label: 'SGM', val: fmtDate(cm.sgm_date.value) || cm.sgm_date.value });
-  }
-  if (cm.sgm_venue && cm.sgm_venue.value) {
-    items.push({ label: 'Venue', val: cm.sgm_venue.value });
-  }
-  if (cm.agm_date && cm.agm_date.value) {
-    items.push({ label: 'AGM', val: fmtDate(cm.agm_date.value) || cm.agm_date.value });
-  }
-  if (cm.agm_notice && cm.agm_notice.value) {
-    items.push({ label: 'AGM', val: cm.agm_notice.value });
-  }
+  var sgmNotice = (cm.sgm_notice    && cm.sgm_notice.value)    ? cm.sgm_notice.value    : '';
+  var notice    = (cm.announcement  && cm.announcement.value)  ? cm.announcement.value  : '';
 
-  var notice = (cm.announcement && cm.announcement.value) ? cm.announcement.value : '';
-  var sgmNotice = (cm.sgm_notice && cm.sgm_notice.value) ? cm.sgm_notice.value : '';
+  if (!items.length && !sgmNotice && !notice) return '';
 
-  if (items.length === 0 && !notice && !sgmNotice) return '';
-
-  var html = '<div class="ann-card"><div class="ann-head"><div class="ann-head-t">📢 Association Notices</div></div><div class="ann-body">';
-
+  var html = '<div class="card"><div class="card-head"><div class="card-head-t">📢 Association Notices</div></div><div class="ann-body">';
   items.forEach(function(item) {
-    html += '<div class="ann-item">' +
-      '<div class="ann-lbl">' + item.label + '</div>' +
-      '<div class="ann-val">' + item.val + '</div>' +
-    '</div>';
+    html += '<div class="ann-row"><div class="ann-lbl">' + item.label + '</div><div class="ann-val">' + item.val + '</div></div>';
   });
-
-  if (sgmNotice) {
-    html += '<div style="padding:8px 0;border-top:1px solid #f0f2f5;margin-top:4px;">' +
-      '<div class="ann-notice">' + sgmNotice + '</div>' +
-    '</div>';
-  }
-
-  if (notice) {
-    html += '<div style="padding:8px 0;border-top:1px solid #f0f2f5;margin-top:4px;">' +
-      '<div class="ann-notice">' + notice + '</div>' +
-    '</div>';
-  }
-
+  if (sgmNotice) html += '<div class="ann-row"><div class="ann-lbl">Notice</div><div class="ann-val ann-notice">' + sgmNotice + '</div></div>';
+  if (notice)    html += '<div class="ann-row"><div class="ann-lbl">Update</div><div class="ann-val ann-notice">' + notice    + '</div></div>';
   html += '</div></div>';
   return html;
 }
 
-// ── VVA count fetch ────────────────────────────────────────────
+// ── VVA count fetch ───────────────────────────────────────────
 
 function fetchVVACount(jsonUrl) {
   if (!jsonUrl || jsonUrl.trim() === '') return;
@@ -422,7 +487,7 @@ function fetchVVACount(jsonUrl) {
     xhr.onload = function() {
       if (xhr.status === 200) {
         try {
-          var data = JSON.parse(xhr.responseText);
+          var data  = JSON.parse(xhr.responseText);
           var count = data.verified_count || data.verifiedCount || data.count || null;
           if (count !== null) {
             document.getElementById('vva-count-num').textContent = count.toLocaleString('en-IN');
@@ -436,7 +501,11 @@ function fetchVVACount(jsonUrl) {
   } catch(e) {}
 }
 
-// ── Load 1: Election status ────────────────────────────────────
+// ── Global state for schedule render ─────────────────────────
+var _elecStatus = 'draft';
+var _schedRes   = null;
+
+// ── Load 1: Election status ───────────────────────────────────
 
 google.script.run
   .withSuccessHandler(function(res) {
@@ -445,6 +514,7 @@ google.script.run
       area.innerHTML = renderNoElection();
       return;
     }
+    _elecStatus = res.status;
     if (res.trial) document.getElementById('trial-banner').style.display = 'block';
     if (res.title) document.getElementById('header-sub').textContent = res.title;
     area.innerHTML = renderStatusCard(res);
@@ -455,17 +525,19 @@ google.script.run
       document.getElementById('vva-link').href = res.vvaUrl;
       document.getElementById('vva-area').style.display = 'block';
     }
+    // Re-render schedule if it already loaded
+    if (_schedRes) renderScheduleArea();
   })
   .withFailureHandler(function() {
     document.getElementById('status-area').innerHTML =
-      '<div class="no-election-card">' +
-      '<div class="no-election-t">Unable to load election status</div>' +
-      '<div class="no-election-d">Please refresh the page. If this persists, contact the General Secretary.</div>' +
-      '</div>';
+      '<div class="card"><div style="padding:28px;text-align:center;">' +
+      '<div style="font-size:16px;font-weight:600;color:#1a3a5c;margin-bottom:6px;">Unable to load election status</div>' +
+      '<div style="font-size:13px;color:#777;">Please refresh. If this persists, contact the General Secretary.</div>' +
+      '</div></div>';
   })
   .getPublicElectionStatus();
 
-// ── Load 2: Landing page content (announcements + VVA JSON) ───
+// ── Load 2: Announcements + VVA ──────────────────────────────
 
 google.script.run
   .withSuccessHandler(function(res) {
@@ -473,21 +545,14 @@ google.script.run
     var cm = {};
     (res.items || []).forEach(function(item) { cm[item.key] = item; });
 
-    // Announcements
     var annHtml = renderAnnouncements(cm);
     if (annHtml) {
       var annArea = document.getElementById('announcements-area');
       annArea.innerHTML = annHtml;
       annArea.style.display = 'block';
     }
-
-    // VVA JSON count widget
-    if (cm.vva_json && cm.vva_json.value) {
-      fetchVVACount(cm.vva_json.value);
-    }
-
-    // VVA URL (supplement getPublicElectionStatus which also reads it)
-    if (cm.vva_url && cm.vva_url.value && cm.vva_url.value.trim() !== '') {
+    if (cm.vva_json && cm.vva_json.value) fetchVVACount(cm.vva_json.value);
+    if (cm.vva_url  && cm.vva_url.value  && cm.vva_url.value.trim() !== '') {
       var vvaLink = document.getElementById('vva-link');
       if (vvaLink) vvaLink.href = cm.vva_url.value;
       document.getElementById('vva-area').style.display = 'block';
@@ -496,19 +561,27 @@ google.script.run
   .withFailureHandler(function() {})
   .getLandingPageContent();
 
-// ── Load 3: Published election schedule ───────────────────────
+// ── Load 3: Schedule ─────────────────────────────────────────
+
+function renderScheduleArea() {
+  var html = renderSchedule(_schedRes, _elecStatus);
+  if (html) {
+    var area = document.getElementById('schedule-area');
+    area.innerHTML = html;
+    area.style.display = 'block';
+  }
+}
 
 google.script.run
   .withSuccessHandler(function(res) {
+    console.log('getPublicSchedule returned:', JSON.stringify(res));
     if (!res || !res.success) return;
-    var schedHtml = renderSchedule(res);
-    if (schedHtml) {
-      var area = document.getElementById('schedule-area');
-      area.innerHTML = schedHtml;
-      area.style.display = 'block';
-    }
+    _schedRes = res;
+    renderScheduleArea();
   })
-  .withFailureHandler(function() {})
+  .withFailureHandler(function(e) {
+    console.log('getPublicSchedule failed:', e);
+  })
   .getPublicSchedule();
 
 </script>
