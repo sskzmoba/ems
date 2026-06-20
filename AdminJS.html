@@ -186,6 +186,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading handover checklist…</div>' +
         '</div></div>';
     }
+    if (tabId === 'votedlog') {
+      setTimeout(function() { AdminPanel._loadVotedLog(); }, 0);
+      return '<div id="votedlog-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading voted log…</div>' +
+        '</div></div>';
+    }
     if (tabId === 'tally') {
       setTimeout(function() { AdminPanel._loadTally(); }, 0);
       return '<div id="tally-content">' +
@@ -1083,10 +1091,13 @@ _renderAdminsList: function(admins) {
   }
 
   admins.forEach(function(a) {
-    var isActive = (a.status !== 'DISABLED');
+    var isActive = (a.status === 'ACTIVE');
+    var isPending = (a.status === 'PENDING_ACCEPTANCE');
     var statusBadge = isActive
       ? '<span class="status-badge badge-active" style="font-size:.75rem;">ACTIVE</span>'
-      : '<span class="status-badge badge-closed" style="font-size:.75rem;">DISABLED</span>';
+      : isPending
+        ? '<span class="status-badge badge-draft" style="font-size:.75rem;">PENDING ACCEPTANCE</span>'
+        : '<span class="status-badge badge-closed" style="font-size:.75rem;">DISABLED</span>';
     var deputyBadge = (a.role === 'DEPUTY_RO' && a.deputyROActive)
       ? '<span class="status-badge badge-noms-open" style="font-size:.75rem;margin-left:6px;">Activated</span>'
       : '';
@@ -1116,16 +1127,21 @@ _renderAdminsList: function(admins) {
         // Action buttons
         '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
 
-          // Enable / Disable
-          (isActive
-            ? '<button onclick="AdminPanel._confirmDisable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+          // Enable / Disable / Resend
+          (isPending
+            ? '<button onclick="AdminPanel._resendScrutineerLink(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
                 'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
-                'background:#fff;color:#b91c1c;border:1.5px solid #b91c1c;border-radius:4px;cursor:pointer;">' +
-                'Disable Account</button>'
-            : '<button onclick="AdminPanel._confirmEnable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
-                'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
-                'background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:4px;cursor:pointer;">' +
-                'Re-enable Account</button>') +
+                'background:#fff;color:#92400e;border:1.5px solid #92400e;border-radius:4px;cursor:pointer;">' +
+                'Resend Acceptance Link</button>'
+            : isActive
+              ? '<button onclick="AdminPanel._confirmDisable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                  'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                  'background:#fff;color:#b91c1c;border:1.5px solid #b91c1c;border-radius:4px;cursor:pointer;">' +
+                  'Disable Account</button>'
+              : '<button onclick="AdminPanel._confirmEnable(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
+                  'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
+                  'background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:4px;cursor:pointer;">' +
+                  'Re-enable Account</button>') +
 
           // Deputy RO activation — only for DEPUTY_RO accounts
           (a.role === 'DEPUTY_RO'
@@ -1257,6 +1273,40 @@ _submitAddAdmin: function() {
     })
     .addAdmin(App.token, { id: id, name: name, role: role,
                             email: email, type: type, rollNo: rollNo });
+},
+
+_resendScrutineerLink: function(adminId, adminName) {
+  var box = document.getElementById('confirm-' + adminId);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML =
+    '<p style="font-size:.85rem;color:#92400e;margin-bottom:12px;">' +
+      '<strong>Resend acceptance link to ' + escHtml(adminName) + '?</strong><br>' +
+      'A new acceptance link will be emailed. The previous link will be invalidated.' +
+    '</p>' +
+    '<div style="display:flex;gap:8px;">' +
+      '<button onclick="AdminPanel._doResendScrutineerLink(\'' + adminId + '\')" ' +
+        'style="flex:1;padding:10px;font-size:.85rem;background:#92400e;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;">Yes, Resend</button>' +
+      '<button onclick="document.getElementById(\'confirm-' + adminId + '\').style.display=\'none\'" ' +
+        'style="flex:1;padding:10px;font-size:.85rem;background:#fff;color:#374151;' +
+        'border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Cancel</button>' +
+    '</div>';
+},
+
+_doResendScrutineerLink: function(adminId) {
+  var box = document.getElementById('confirm-' + adminId);
+  if (box) box.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">Sending…</p>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (box) box.innerHTML = res.success
+        ? '<p style="font-size:.85rem;color:#16a34a;">✓ Acceptance link resent successfully.</p>'
+        : '<p style="font-size:.85rem;color:#b91c1c;">Error: ' + escHtml(res.message || 'Failed.') + '</p>';
+    })
+    .withFailureHandler(function() {
+      if (box) box.innerHTML = '<p style="font-size:.85rem;color:#b91c1c;">Error: Could not resend link.</p>';
+    })
+    .sendScrutineerAcceptanceLink(App.token, adminId);
 },
 
 _confirmDisable: function(adminId, adminName) {
@@ -2653,6 +2703,113 @@ _doWithdraw: function(nomId) {
 
   _tallySelectedElec: '',
 
+  _loadVotedLog: function() {
+  var c = document.getElementById('votedlog-content');
+  if (!c) return;
+
+  google.script.run
+    .withSuccessHandler(function(electRes) {
+      if (!electRes || !electRes.success || !electRes.elections || electRes.elections.length === 0) {
+        var c2 = document.getElementById('votedlog-content');
+        if (c2) c2.innerHTML =
+          '<div class="panel-card"><div class="panel-card-body" ' +
+          'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+          '</div></div>';
+        return;
+      }
+      var elecId = electRes.elections[0].id;
+      var selHtml = '<select id="vlog-elec-sel" ' +
+        'onchange="AdminPanel._loadVotedLogData(this.value)" ' +
+        'style="width:100%;padding:12px 10px;font-size:.9rem;border:1px solid #d1d5db;' +
+        'border-radius:4px;box-sizing:border-box;margin-bottom:16px;">';
+      electRes.elections.forEach(function(e) {
+        selHtml += '<option value="' + escHtml(e.id) + '">' +
+          escHtml(e.title) + ' [' + escHtml(e.status.replace(/_/g,' ')) + ']' +
+          '</option>';
+      });
+      selHtml += '</select>';
+      var c2 = document.getElementById('votedlog-content');
+      if (c2) c2.innerHTML = selHtml + '<div id="vlog-data-area"></div>';
+      AdminPanel._loadVotedLogData(elecId);
+    })
+    .withFailureHandler(function() {
+      var c2 = document.getElementById('votedlog-content');
+      if (c2) c2.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_loadVotedLogData: function(elecId) {
+  var area = document.getElementById('vlog-data-area');
+  if (!area) return;
+  area.innerHTML =
+    '<div style="text-align:center;padding:24px;color:#6b7280;">' +
+    '<div class="spinner"></div></div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area2 = document.getElementById('vlog-data-area');
+      if (!area2) return;
+      if (!res || !res.success) {
+        area2.innerHTML =
+          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load voted log.') + '</div>';
+        return;
+      }
+
+      var html =
+        '<div class="panel-card" style="margin-bottom:14px;">' +
+          '<div class="panel-card-header">Participation Summary</div>' +
+          '<div class="panel-card-body">' +
+            '<div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;padding:8px 0;">' +
+              '<div style="text-align:center;">' +
+                '<div style="font-size:1.6rem;font-weight:700;color:#1a3a5c;">' + res.totalVoted + '</div>' +
+                '<div style="font-size:.8rem;color:#6b7280;">unique voters</div>' +
+              '</div>' +
+              '<div style="text-align:center;">' +
+                '<div style="font-size:1.6rem;font-weight:700;color:#1a3a5c;">' + res.totalEligible + '</div>' +
+                '<div style="font-size:.8rem;color:#6b7280;">eligible voters</div>' +
+              '</div>' +
+              '<div style="text-align:center;">' +
+                '<div style="font-size:1.6rem;font-weight:700;color:#1a3a5c;">' + res.turnoutPct + '%</div>' +
+                '<div style="font-size:.8rem;color:#6b7280;">turnout</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      if (res.postSummary && res.postSummary.length > 0) {
+        html += '<div class="panel-card">' +
+          '<div class="panel-card-header">Per-Post Participation</div>' +
+          '<div class="panel-card-body" style="padding:0;">';
+        res.postSummary.forEach(function(p, idx) {
+          html +=
+            '<div style="padding:12px 16px;' + (idx > 0 ? 'border-top:1px solid #f3f4f6;' : '') +
+            'display:flex;justify-content:space-between;align-items:center;">' +
+              '<span style="font-size:.88rem;color:#374151;">' + escHtml(p.post) + '</span>' +
+              '<span style="font-size:.88rem;font-weight:700;color:#1a3a5c;">' + p.count + ' voted</span>' +
+            '</div>';
+        });
+        html += '</div></div>';
+      } else {
+        html += '<div class="panel-card"><div class="panel-card-body" ' +
+          'style="text-align:center;padding:24px;color:#6b7280;font-size:.88rem;">' +
+          'No votes recorded yet.</div></div>';
+      }
+
+      area2.innerHTML = html;
+    })
+    .withFailureHandler(function() {
+      var area2 = document.getElementById('vlog-data-area');
+      if (area2) area2.innerHTML =
+        '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading voted log.</div>';
+    })
+    .getVotedLogSummary(App.token, elecId);
+},
+
   _renderTallyShell: function(elections) {
     var c = document.getElementById('tally-content');
     if (!c) return;
@@ -3255,7 +3412,7 @@ _scrutinyNomCard: function(n, isCompleted) {
         (n.candRoll ? ' &nbsp;·&nbsp; Roll: ' + escHtml(n.candRoll) : '') +
         (n.candBatch ? ' &nbsp;·&nbsp; Batch: ' + escHtml(n.candBatch) : '') +
       '</div>' +
-      (!isCompleted ?
+      (!isCompleted && App.role !== 'SCRUTINEER' ?
         '<button onclick="AdminPanel._openScrutinyDetail(\'' + escHtml(n.id) + '\')" ' +
           'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
           'border:none;border-radius:4px;cursor:pointer;">Scrutinise</button>'
@@ -3316,8 +3473,9 @@ _renderScrutinyDetail: function(nom, checklist) {
   };
   var badge = statusBadge[(nom.status||'').toLowerCase()] || 'badge-draft';
   var statusLabel = (nom.status || '').replace(/_/g,' ');
-  var isEditable = (nom.status||'').toLowerCase() === 'confirmed' ||
-                   (nom.status||'').toLowerCase() === 'pending_scrutiny';
+  var isEditable = ((nom.status||'').toLowerCase() === 'confirmed' ||
+                   (nom.status||'').toLowerCase() === 'pending_scrutiny') &&
+                   App.role !== 'SCRUTINEER';
 
   var CHECKLIST_ITEMS = [
     { key: 'post_eligibility',  label: 'Post eligibility satisfied (EC service, batch, or other post-specific criteria)' },

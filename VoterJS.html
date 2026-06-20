@@ -771,7 +771,7 @@ var VoterPanel = (function() {
 
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
-          '<textarea id="p2-bio" maxlength="300" placeholder="Brief introduction for the nominations board…" ' +
+          '<textarea id="p2-bio" maxlength="1000" placeholder="Brief introduction for the nominations board…" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
         '</div>' +
@@ -947,7 +947,7 @@ var VoterPanel = (function() {
 
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
-          '<textarea id="nom-bio" maxlength="300" placeholder="Brief introduction for the nominations board…" ' +
+          '<textarea id="nom-bio" maxlength="1000" placeholder="Brief introduction for the nominations board…" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
         '</div>' +
@@ -1222,7 +1222,8 @@ var VoterPanel = (function() {
               'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">➕ Add Seconder</button>' +
             '</div>' : '') +
           (( nom.status === 'submitted' || nom.status === 'confirmed' ||
-             nom.status === 'consent_pending' || nom.status === 'pending_confirmation') &&
+             nom.status === 'consent_pending' || nom.status === 'pending_confirmation' ||
+            (nom.status === 'pending_scrutiny' && nom.role === 'candidate')) &&
             !(nom.phase2 && nom.role === 'proposer' &&
               (nom.status === 'pending_confirmation' || nom.status === 'confirmed')) ?
             '<button onclick="VoterPanel._confirmWithdraw(\'' + escHtml(nom.id) + '\',\'' +
@@ -1230,15 +1231,15 @@ var VoterPanel = (function() {
             'style="width:100%;padding:12px;background:#fff;color:#dc2626;border:1.5px solid #dc2626;' +
             'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Withdraw Nomination</button>'
             : '') +
-          (nom.status === 'accepted' && nom.role === 'candidate' && nom.withdrawDeadline ?
-            (nom.withdrawOpen ?
+          (nom.status === 'accepted' && nom.role === 'candidate' ?
+            (!nom.withdrawDeadline || nom.withdrawOpen ?
               '<div style="margin-top:4px;">' +
               '<button onclick="VoterPanel._confirmWithdraw(\'' + escHtml(nom.id) + '\',\'' +
               escHtml(nom.post) + '\')" ' +
               'style="width:100%;padding:12px;background:#fff;color:#dc2626;border:1.5px solid #dc2626;' +
               'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Withdraw Candidature</button>' +
-              '<div style="font-size:.78rem;color:#6b7280;text-align:center;margin-top:4px;">' +
-              '⏰ Withdrawal closes: ' + escHtml(nom.withdrawDeadline) + ' IST</div>' +
+              (nom.withdrawDeadline ? '<div style="font-size:.78rem;color:#6b7280;text-align:center;margin-top:4px;">' +
+              '⏰ Withdrawal closes: ' + escHtml(nom.withdrawDeadline) + ' IST</div>' : '') +
               '</div>'
             :
               '<div style="margin-top:4px;padding:10px 12px;background:#f3f4f6;border:1px solid #d1d5db;' +

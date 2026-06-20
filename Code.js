@@ -7,7 +7,7 @@
 
 // ── SYSTEM B IDENTIFIERS ─────────────────────────────────────
 
-var SYSTEM_B_SHEET_ID = '1yU9DOlL7Mt6tDeA8EpUDvQj3EMj6DWPuiRXIKcExh_E';
+var SYSTEM_B_SHEET_ID = PropertiesService.getScriptProperties().getProperty('SYSTEM_B_SHEET_ID');
 var DEPLOY_URL        = 'https://script.google.com/macros/s/AKfycbxLGxL0GiKfExlqHN_yNMuwj5JZGd0Y5vdx6my3KAUfdH67CaEutUN2rLfzXBzw4FvJ3w/exec';
 var RO_CONTACT_EMAIL  = 'ro@sskzmoba.org';    // update when RO is appointed
 var ELECTIONS_EMAIL   = 'elections.sskzmoba@gmail.com';
@@ -1505,6 +1505,22 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
+    // R17a — Scrutineer acceptance display page
+    if (action === 'scrutineerAccept') {
+      return HtmlService.createHtmlOutput(
+          buildScrutineerAcceptPage(e.parameter.id || '', e.parameter.t || ''))
+        .setTitle('Scrutineer Appointment — SSKZM OBA')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
+    // R17b — Scrutineer acceptance processing route
+    if (action === 'submitScrutineerAccept') {
+      return HtmlService.createHtmlOutput(
+          buildScrutineerAcceptResultPage(e.parameter.id || '', e.parameter.t || ''))
+        .setTitle('Scrutineer Appointment — SSKZM OBA')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
     // R15 — Tutorial page (checked before doGetNomAction delegation)
     if (action === 'tutorial') {
       return HtmlService.createHtmlOutput(buildTutorialPage())
@@ -1963,8 +1979,19 @@ function buildQueryResponseForm(queryId, token) {
 
   var deadline = parseDate(qry[COL.QRY_DEADLINE]);
   if (deadline && now() > deadline) {
-    return buildErrorPage('EXPIRED_TOKEN',
-      'The response deadline for this query has passed. Please contact the Returning Officer directly.');
+    var qryElecId2 = qry[COL.QRY_ELEC_ID].toString();
+    var elecRows2  = sheetData(SHEETS.ELECTIONS);
+    var elecStatus2 = '';
+    for (var ei2 = 0; ei2 < elecRows2.length; ei2++) {
+      if (elecRows2[ei2][COL.ELEC_ID].toString() === qryElecId2) {
+        elecStatus2 = elecRows2[ei2][COL.ELEC_STATUS].toString();
+        break;
+      }
+    }
+    if (elecStatus2 !== 'nominations_open' && elecStatus2 !== 'nominations_open_phase2') {
+      return buildErrorPage('EXPIRED_TOKEN',
+        'The response deadline for this query has passed. Please contact the Returning Officer directly.');
+    }
   }
 
   var postName  = escHtml(qry[COL.QRY_POST].toString());
@@ -2196,6 +2223,149 @@ function buildConsentResultPage(res, action) {
 }
 
 // ============================================================
+// R17a — buildScrutineerAcceptPage
+// Display-only confirmation page — defeats email pre-fetchers.
+// Served at ?action=scrutineerAccept&id=xxx&t=xxx
+// ============================================================
+function buildScrutineerAcceptPage(adminId, acceptToken) {
+  if (!adminId || !acceptToken) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid. Please contact the Returning Officer.');
+  }
+  var rows = sheetData(SHEETS.ADMINS);
+  var adminRow = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      adminRow = rows[i];
+      break;
+    }
+  }
+  if (!adminRow) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid. Please contact the Returning Officer.');
+  }
+  var storedToken = adminRow[COL.ADMIN_ACTIVATED_BY].toString();
+  var status = adminRow[COL.ADMIN_STATUS].toString().toUpperCase();
+
+  if (status === 'ACTIVE') {
+    return standaloneShell('Scrutineer Appointment — SSKZM OBA',
+      '<div style="max-width:480px;margin:40px auto;padding:24px;font-family:sans-serif;text-align:center;">' +
+      '<div style="font-size:2rem;margin-bottom:12px;">✅</div>' +
+      '<h2 style="color:#1a3353;margin-bottom:8px;">Already Accepted</h2>' +
+      '<p style="color:#555;">You have already accepted your appointment as Scrutineer for the SSKZM OBA election.</p>' +
+      '<p style="color:#555;">No further action is needed. You may log in using your Scrutineer credentials.</p>' +
+      '</div>');
+  }
+
+  if (storedToken !== acceptToken) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid or has expired. Please contact the Returning Officer.');
+  }
+
+  var name = adminRow[COL.ADMIN_NAME].toString();
+  var submitUrl = DEPLOY_URL + '?action=submitScrutineerAccept&id=' +
+    encodeURIComponent(adminId) + '&t=' + encodeURIComponent(acceptToken);
+
+  var body =
+    '<div style="max-width:480px;margin:40px auto;padding:24px;font-family:sans-serif;">' +
+    '<h2 style="color:#1a3353;margin-bottom:4px;">Scrutineer Appointment</h2>' +
+    '<p style="color:#555;margin-bottom:20px;">SSKZM Old Boys Association — Election</p>' +
+    '<p style="color:#333;">Dear <strong>' + escHtml(name) + '</strong>,</p>' +
+    '<p style="color:#333;">The Executive Committee has appointed you as a <strong>Scrutineer</strong> ' +
+    'for this election. Scrutineers independently verify the election process and co-sign the final tally.</p>' +
+    '<div style="background:#fefce8;border:1px solid #fde047;border-radius:8px;padding:16px;margin:20px 0;">' +
+    '<p style="margin:0;font-size:.9rem;color:#854d0e;font-weight:600;">Declaration of Impartiality</p>' +
+    '<p style="margin:8px 0 0;font-size:.9rem;color:#78350f;">By accepting this appointment, you declare that you ' +
+    'will perform your duties impartially, that you have no conflict of interest with any candidate, ' +
+    'and that you will maintain the confidentiality of the process as required under the SSKZM OBA Elections SOP.</p>' +
+    '</div>' +
+    '<a href="' + submitUrl + '" style="display:block;background:#1a3353;color:#fff;text-align:center;' +
+    'padding:14px;border-radius:8px;text-decoration:none;font-size:1rem;font-weight:600;margin-top:8px;">' +
+    'I Accept this Appointment ✓</a>' +
+    '<p style="font-size:.8rem;color:#999;margin-top:16px;text-align:center;">' +
+    'If you did not expect this message, please contact the Returning Officer immediately. Do not click Accept.</p>' +
+    '</div>';
+
+  return standaloneShell('Scrutineer Appointment — SSKZM OBA', body);
+}
+
+// ============================================================
+// R17b — buildScrutineerAcceptResultPage
+// Processing route — activates account, logs, emails RO.
+// Served at ?action=submitScrutineerAccept&id=xxx&t=xxx
+// ============================================================
+function buildScrutineerAcceptResultPage(adminId, acceptToken) {
+  if (!adminId || !acceptToken) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid. Please contact the Returning Officer.');
+  }
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return buildErrorPage('SYSTEM_ERROR', 'System error. Please contact the Returning Officer.');
+
+  var rows = sheetData(SHEETS.ADMINS);
+  var rowIndex = -1;
+  var adminRow = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      rowIndex = i;
+      adminRow = rows[i];
+      break;
+    }
+  }
+  if (rowIndex === -1) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid. Please contact the Returning Officer.');
+  }
+
+  var status = adminRow[COL.ADMIN_STATUS].toString().toUpperCase();
+  if (status === 'ACTIVE') {
+    return standaloneShell('Scrutineer Appointment — SSKZM OBA',
+      '<div style="max-width:480px;margin:40px auto;padding:24px;font-family:sans-serif;text-align:center;">' +
+      '<div style="font-size:2rem;margin-bottom:12px;">✅</div>' +
+      '<h2 style="color:#1a3353;">Already Accepted</h2>' +
+      '<p style="color:#555;">Your appointment has already been recorded. No further action needed.</p>' +
+      '</div>');
+  }
+
+  var storedToken = adminRow[COL.ADMIN_ACTIVATED_BY].toString();
+  if (storedToken !== acceptToken) {
+    return buildErrorPage('INVALID_LINK', 'This acceptance link is invalid or has expired. Please contact the Returning Officer.');
+  }
+
+  // Activate account
+  var sheetRow = rowIndex + 2;
+  sh.getRange(sheetRow, COL.ADMIN_STATUS + 1).setValue('ACTIVE');
+  sh.getRange(sheetRow, COL.ADMIN_ACTIVATED_AT + 1).setValue(now().toISOString());
+  sh.getRange(sheetRow, COL.ADMIN_ACTIVATED_BY + 1).setValue('SELF_ACCEPTED');
+
+  var name = adminRow[COL.ADMIN_NAME].toString();
+  appendAdminLog('SYSTEM', 'scrutineer_accepted',
+    'Scrutineer accepted appointment: ' + adminId + ' (' + name + ')', '', adminId);
+
+  // Notify RO
+  var roRows = sheetData(SHEETS.ADMINS);
+  for (var j = 0; j < roRows.length; j++) {
+    if (roRows[j][COL.ADMIN_ROLE].toString() === 'RO_ADMIN' &&
+        roRows[j][COL.ADMIN_STATUS].toString().toUpperCase() === 'ACTIVE') {
+      var roEmail = roRows[j][COL.ADMIN_EMAIL].toString();
+      var roName  = roRows[j][COL.ADMIN_NAME].toString();
+      sendEmailViaSendGrid(roEmail,
+        'Scrutineer Acceptance Confirmed — ' + name,
+        'Dear ' + roName + ',\n\n' +
+        name + ' has accepted their appointment as Scrutineer and signed the Declaration of Impartiality.\n\n' +
+        'Their Scrutineer account is now active.\n\n' +
+        'SSKZM OBA Election Management System');
+      break;
+    }
+  }
+
+  return standaloneShell('Scrutineer Appointment — SSKZM OBA',
+    '<div style="max-width:480px;margin:40px auto;padding:24px;font-family:sans-serif;text-align:center;">' +
+    '<div style="font-size:2.5rem;margin-bottom:12px;">✅</div>' +
+    '<h2 style="color:#1a3353;margin-bottom:8px;">Appointment Accepted</h2>' +
+    '<p style="color:#333;">Thank you, <strong>' + escHtml(name) + '</strong>.</p>' +
+    '<p style="color:#555;">Your acceptance has been recorded as your Declaration of Impartiality. ' +
+    'The Returning Officer has been notified.</p>' +
+    '<p style="color:#555;">You will receive your login credentials from the Returning Officer shortly.</p>' +
+    '</div>');
+}
+
+// ============================================================
 // R15 — buildTutorialPage
 // Full interactive tutorial — content in TutorialPage.html
 // ============================================================
@@ -2409,15 +2579,26 @@ function confirmNomination(nomId, role, token, rollNo) {
         message: 'You have already confirmed this nomination.' };
     }
 
-    // Deadline check
+    // Deadline check — bypassed if election is still nominations_open (RO extension)
     var deadline = parseDate(data[i][COL.NOM_DEADLINE]);
     if (deadline && now() > deadline) {
-      var st = data[i][COL.NOM_STATUS].toString();
-      if (st === 'pending_confirmation') {
-        sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('deadline_lapsed');
+      var nomElecId = data[i][COL.NOM_ELEC_ID].toString();
+      var elecRows  = sheetData(SHEETS.ELECTIONS);
+      var elecStatus = '';
+      for (var ei = 0; ei < elecRows.length; ei++) {
+        if (elecRows[ei][COL.ELEC_ID].toString() === nomElecId) {
+          elecStatus = elecRows[ei][COL.ELEC_STATUS].toString();
+          break;
+        }
       }
-      return { success: false,
-        message: 'The nomination deadline has passed. This confirmation link is no longer valid.' };
+      if (elecStatus !== 'nominations_open' && elecStatus !== 'nominations_open_phase2') {
+        var st = data[i][COL.NOM_STATUS].toString();
+        if (st === 'pending_confirmation') {
+          sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('deadline_lapsed');
+        }
+        return { success: false,
+          message: 'The nomination deadline has passed. This confirmation link is no longer valid.' };
+      }
     }
 
     var ts = now().toISOString();
@@ -2477,7 +2658,18 @@ function submitQueryResponse(queryId, token, respText) {
     }
     var deadline = parseDate(data[i][COL.QRY_DEADLINE]);
     if (deadline && now() > deadline) {
-      return { success: false, message: 'The response deadline has passed.' };
+      var qryElecId3 = data[i][COL.QRY_ELEC_ID].toString();
+      var elecRows3  = sheetData(SHEETS.ELECTIONS);
+      var elecStatus3 = '';
+      for (var ei3 = 0; ei3 < elecRows3.length; ei3++) {
+        if (elecRows3[ei3][COL.ELEC_ID].toString() === qryElecId3) {
+          elecStatus3 = elecRows3[ei3][COL.ELEC_STATUS].toString();
+          break;
+        }
+      }
+      if (elecStatus3 !== 'nominations_open' && elecStatus3 !== 'nominations_open_phase2') {
+        return { success: false, message: 'The response deadline has passed.' };
+      }
     }
     var ts = now().toISOString();
     sh.getRange(i + 1, COL.QRY_RESPONSE + 1).setValue(respText.trim());
@@ -2698,6 +2890,23 @@ function declineCandidateConsent(nomId, token) {
 // ============================================================
 
 function createSession(identity, role) {
+  // Prune expired sessions to keep PropertiesService within limits
+  try {
+    var props = PropertiesService.getScriptProperties().getProperties();
+    var nowMs = now().getTime();
+    for (var k in props) {
+      if (k.indexOf(SESSION_KEY_PREFIX) === 0) {
+        try {
+          var s = JSON.parse(props[k]);
+          if (new Date(s.expiresAt).getTime() < nowMs) {
+            PropertiesService.getScriptProperties().deleteProperty(k);
+          }
+        } catch(e) {
+          PropertiesService.getScriptProperties().deleteProperty(k);
+        }
+      }
+    }
+  } catch(e) { /* silent — never block session creation */ }
   var token = generateId();
   var session = {
     identity:  identity,   // rollNo for voters; adminId for admins
@@ -2958,6 +3167,12 @@ function sendAdminOTP(adminId, email) {
   if (admin.status === 'DISABLED') {
     return { success: false, code: 'ACCOUNT_DISABLED',
       message: 'This account has been disabled. Please contact the Returning Officer.' };
+  }
+
+  // PENDING_ACCEPTANCE check — Scrutineer must accept appointment before logging in
+  if (admin.status === 'PENDING_ACCEPTANCE') {
+    return { success: false, code: 'PENDING_ACCEPTANCE',
+      message: 'This account is pending acceptance. Please click the acceptance link sent to your email before logging in.' };
   }
 
   if (!admin.email) {
@@ -3606,13 +3821,88 @@ function addAdmin(token, data) {
   newRow[COL.ADMIN_TYPE]     = data.type || 'alumni';
   newRow[COL.ADMIN_ROLL]     = data.rollNo ? data.rollNo.toString().trim() : '';
   newRow[COL.ADMIN_ADDED_AT] = now().toISOString();
-  newRow[COL.ADMIN_STATUS]   = 'ACTIVE';
+  newRow[COL.ADMIN_STATUS]   = (data.role === 'SCRUTINEER') ? 'PENDING_ACCEPTANCE' : 'ACTIVE';
   // cols 8–12 left blank (disabled/activation fields — set by specific functions)
 
   sh.appendRow(newRow);
   appendAdminLog(sess.identity, 'admin_added',
     'Added admin: ' + data.id + ' (' + data.name + ') Role: ' + data.role,
     '', data.id);
+
+  // Auto-send acceptance link for Scrutineers
+  if (data.role === 'SCRUTINEER') {
+    sendScrutineerAcceptanceLink(null, data.id);
+  }
+
+  return { success: true };
+}
+
+// ============================================================
+// sendScrutineerAcceptanceLink — generate and email acceptance link
+// Called automatically by addAdmin for SCRUTINEER role.
+// Also callable by RO_ADMIN to re-send if needed.
+// Access: internal (called from addAdmin) + RO_ADMIN direct call
+// ============================================================
+function sendScrutineerAcceptanceLink(token, adminId) {
+  var sess = null;
+  if (token) {
+    sess = getSession(token);
+    if (!sess) return { success: false, message: 'Session expired.' };
+    if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+  }
+
+  var sh = getSheet(SHEETS.ADMINS);
+  if (!sh) return { success: false, message: 'Admins sheet not found.' };
+  var rows = sheetData(SHEETS.ADMINS);
+  var rowIndex = -1;
+  var adminRow = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      rowIndex = i;
+      adminRow = rows[i];
+      break;
+    }
+  }
+  if (rowIndex === -1) return { success: false, message: 'Scrutineer account not found.' };
+  if (adminRow[COL.ADMIN_ROLE].toString() !== 'SCRUTINEER') {
+    return { success: false, message: 'Acceptance link only applicable to Scrutineers.' };
+  }
+
+  // Generate acceptance token — store in ADMIN_ACTIVATED_BY (col 12)
+  var acceptToken = Utilities.getUuid();
+  sh.getRange(rowIndex + 2, COL.ADMIN_ACTIVATED_BY + 1).setValue(acceptToken);
+
+  var acceptUrl = DEPLOY_URL + '?action=scrutineerAccept&id=' +
+    encodeURIComponent(adminId) + '&t=' + encodeURIComponent(acceptToken);
+
+  var name = adminRow[COL.ADMIN_NAME].toString();
+  var email = adminRow[COL.ADMIN_EMAIL].toString();
+
+  var subject = 'SSKZM OBA Elections — Scrutineer Appointment Acceptance';
+  var body = '<div style="font-family:sans-serif;max-width:520px;color:#333;">' +
+    '<p>Dear <strong>' + name + '</strong>,</p>' +
+    '<p>You have been appointed as a <strong>Scrutineer</strong> for the SSKZM OBA election ' +
+    'by the Executive Committee.</p>' +
+    '<p>By clicking the button below, you accept this appointment and confirm your ' +
+    'Declaration of Impartiality as required under the Elections SOP.</p>' +
+    '<p style="text-align:center;margin:28px 0;">' +
+      '<a href="' + acceptUrl + '" ' +
+        'style="background:#1a3353;color:#ffffff;padding:14px 28px;border-radius:6px;' +
+        'text-decoration:none;font-weight:600;font-size:1rem;display:inline-block;">' +
+        'Accept Appointment ✓</a></p>' +
+    '<p style="font-size:.85rem;color:#6b7280;">This link is personal to you. Please do not share it.<br>' +
+    'If you did not expect this message or are unable to accept, please contact the Returning Officer immediately.</p>' +
+    '<p style="font-size:.85rem;color:#9ca3af;">SSKZM OBA Election Management System</p>' +
+    '</div>';
+
+  var emailResult = sendEmailViaSendGrid(email, subject, body);
+  if (!emailResult.success) {
+    return { success: false, message: 'Account created but acceptance email failed: ' + emailResult.message };
+  }
+
+  var caller = sess ? sess.identity : 'SYSTEM';
+  appendAdminLog(caller, 'scrutineer_acceptance_link_sent',
+    'Acceptance link sent to Scrutineer: ' + adminId + ' (' + name + ')', '', adminId);
 
   return { success: true };
 }
@@ -3865,7 +4155,7 @@ function getAdminLogPaginated(token, page, filterAction) {
 function getNominations(token, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM'];
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER'];
   if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
 
   var rows = sheetData(SHEETS.NOMINATIONS);
@@ -3951,6 +4241,20 @@ function withdrawNomination(token, nomId) {
 
     sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('withdrawn');
     sh.getRange(i + 1, COL.NOM_WITHDRAWN_AT + 1).setValue(now().toISOString());
+
+    // Remove from Candidates sheet if a row exists for this nomination
+    var candSh = getSheet(SHEETS.CANDIDATES);
+    if (candSh) {
+      var candRows = candSh.getDataRange().getValues();
+      for (var ci = candRows.length - 1; ci >= 1; ci--) {
+        if (candRows[ci][COL.CAND_NOM_ID] &&
+            candRows[ci][COL.CAND_NOM_ID].toString() === nomId.toString()) {
+          candSh.deleteRow(ci + 1);
+          break;
+        }
+      }
+    }
+
     appendAdminLog(sess.identity, 'nomination_withdrawn',
       'Nomination withdrawn: ' + nomId + ' (' +
       rows[i][COL.NOM_CAND_NAME].toString() + ' — ' +
@@ -4081,7 +4385,7 @@ function getScrutinyData(token, nomId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
   var role = sess.role;
-  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM' && role !== 'SCRUTINEER') {
     return { success: false, message: 'Access denied.' };
   }
   if (!nomId) return { success: false, message: 'Nomination ID required.' };
@@ -4156,7 +4460,7 @@ function saveScrutinyItem(token, nomId, checkItem, checkResult, notes) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
   var role = sess.role;
-  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM' && role !== 'SCRUTINEER') {
     return { success: false, message: 'Access denied.' };
   }
   if (!nomId || !checkItem || !checkResult) {
@@ -4216,7 +4520,7 @@ function acceptNomination(token, nomId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
   var role = sess.role;
-  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM' && role !== 'SCRUTINEER') {
     return { success: false, message: 'Access denied.' };
   }
 
