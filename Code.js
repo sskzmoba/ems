@@ -47,7 +47,8 @@ var SHEETS = {
   ELECTION_SCHED:   'ElectionSchedule',
   TEM_AUTH:         'TEMAuth',
   RO_PANEL_LOG:     'ROPanelLog',
-  LANDING_CONTENT:  'LandingPageContent'
+  LANDING_CONTENT:  'LandingPageContent',
+  PRESEC_CHECKLIST: 'PreSecChecklist'
 };
 
 // ── COL CONSTANTS — modified and frozen sheets ────────────────
@@ -160,6 +161,13 @@ var COL_APL = {
   DOC_LINKS:8, STATUS:9, RO_NOTES:10, DECISION:11,
   DECIDED_AT:12, DECIDED_BY:13, NOM_STATUS_UPDATED:14,
   VOTING_RESET_REQUIRED:15
+};
+var COL_PRESEC = {
+  ID:0,            ELEC_ID:1,          ITEM_CODE:2,
+  COMPLETED_BY:3,  COMPLETED_ROLE:4,   COMPLETED_AT:5,
+  SC1_BY:6,        SC1_AT:7,
+  SC2_BY:8,        SC2_AT:9,
+  NOTES:10
 };
 var COL_OBS   = {};  // Observations — 11 cols
 var COL_ECDB  = {};  // ECOfficerBoardDatabase — 9 cols
@@ -979,6 +987,214 @@ if (isTrial && status === 'active') {
 }
 
 // ============================================================
+// PRE-ELECTION SECURITY VERIFICATION CHECKLIST (Appendix H)
+// ============================================================
+
+// All 20 checklist items — code, label, part, scrutineer-witnessed flag
+var PRESEC_ITEMS = [
+  { code:'A1', part:'A', label:'OTPs tab protected and hidden',                         star:true  },
+  { code:'A2', part:'A', label:'Votes tab protected read-only',                         star:true  },
+  { code:'A3', part:'A', label:'VotedLog tab protected read-only',                      star:true  },
+  { code:'A4', part:'A', label:'Voters tab protected read-only',                        star:true  },
+  { code:'A5', part:'A', label:'Admins tab protected against direct editing',           star:true  },
+  { code:'A6', part:'A', label:'AdminLog tab protected append-only',                    star:true  },
+  { code:'B1', part:'B', label:'Deployed version number recorded',                      star:true  },
+  { code:'B2', part:'B', label:'Deployed version confirmed against GitHub commit',      star:true  },
+  { code:'B3', part:'B', label:'No redeployment since B1 confirmed by RO',             star:false },
+  { code:'C1', part:'C', label:'2-Step Verification confirmed active',                  star:false },
+  { code:'C2', part:'C', label:'Recovery email confirmed functional',                   star:false },
+  { code:'C3', part:'C', label:'Account access log reviewed — no unrecognised access', star:false },
+  { code:'C4', part:'C', label:'Password changed at EC handover — not shared',         star:false },
+  { code:'D1', part:'D', label:'Voter roll certified and row count verified',           star:false },
+  { code:'D2', part:'D', label:'Candidate list complete — all posts covered',           star:false },
+  { code:'D3', part:'D', label:'Mandatory posts confirmed or GB resolution on file',    star:false },
+  { code:'D4', part:'D', label:'OrgSecyRestricted setting confirmed correct',           star:false },
+  { code:'E1', part:'E', label:'Pre-election test vote cast and cleared',               star:false },
+  { code:'E2', part:'E', label:'OTP delivery confirmed functional',                     star:false },
+  { code:'E3', part:'E', label:'Session expiry confirmed functional',                   star:false },
+  { code:'E4', part:'E', label:'Ballot eligibility filtering confirmed',                star:false },
+  { code:'E5', part:'E', label:'Voter receipt token confirmed',                         star:false },
+  { code:'E6', part:'E', label:'Nomination submission blocked at candidates_published', star:false },
+  { code:'F1', part:'F', label:'Voters tab export saved to GDrive',                    star:false },
+  { code:'F2', part:'F', label:'Elections tab export saved to GDrive',                 star:false },
+  { code:'F3', part:'F', label:'Candidates tab export saved to GDrive',                star:false },
+  { code:'F4', part:'F', label:'ScrutinyLog export saved to GDrive',                   star:false },
+  { code:'F5', part:'F', label:'AdminLog export saved to GDrive',                      star:false },
+  { code:'G1', part:'G', label:'Final candidate list published to all members',        star:false },
+  { code:'G2', part:'G', label:'Voting window notification sent to all voters',        star:false },
+  { code:'G3', part:'G', label:'Observer accreditation confirmed',                     star:false },
+  { code:'G4', part:'G', label:'Scrutineer read-only sheet access confirmed',          star:false }
+];
+
+function getChecklistStatus(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  var sh   = getSheet(SHEETS.PRESEC_CHECKLIST);
+  var rows = sh.getDataRange().getValues();
+
+  // Build a map of itemCode → row data
+  var done = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_PRESEC.ELEC_ID].toString() !== electionId.toString()) continue;
+    var code = rows[i][COL_PRESEC.ITEM_CODE].toString();
+    done[code] = {
+      completedBy:   rows[i][COL_PRESEC.COMPLETED_BY].toString(),
+      completedRole: rows[i][COL_PRESEC.COMPLETED_ROLE].toString(),
+      completedAt:   rows[i][COL_PRESEC.COMPLETED_AT]  ? new Date(rows[i][COL_PRESEC.COMPLETED_AT]).toISOString() : '',
+      sc1By:         rows[i][COL_PRESEC.SC1_BY].toString(),
+      sc1At:         rows[i][COL_PRESEC.SC1_AT] ? new Date(rows[i][COL_PRESEC.SC1_AT]).toISOString() : '',
+      sc2By:         rows[i][COL_PRESEC.SC2_BY].toString(),
+      sc2At:         rows[i][COL_PRESEC.SC2_AT] ? new Date(rows[i][COL_PRESEC.SC2_AT]).toISOString() : '',
+      notes:         rows[i][COL_PRESEC.NOTES].toString()
+    };
+  }
+
+  // Merge with master item list
+  var items = PRESEC_ITEMS.map(function(item) {
+    var d = done[item.code] || {};
+    return {
+      code:          item.code,
+      part:          item.part,
+      label:         item.label,
+      star:          item.star,
+      completedBy:   d.completedBy   || '',
+      completedRole: d.completedRole || '',
+      completedAt:   d.completedAt   || '',
+      sc1By:         d.sc1By || '',
+      sc1At:         d.sc1At || '',
+      sc2By:         d.sc2By || '',
+      sc2At:         d.sc2At || '',
+      notes:         d.notes || ''
+    };
+  });
+
+  // Compute overall readiness
+  var allComplete = items.every(function(item) {
+    if (!item.completedAt) return false;
+    if (item.star && (!item.sc1At || !item.sc2At)) return false;
+    return true;
+  });
+
+  return { success: true, items: items, allComplete: allComplete };
+}
+
+function recordChecklistItem(token, electionId, itemCode, notes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+
+  // Validate item code
+  var validItem = null;
+  for (var v = 0; v < PRESEC_ITEMS.length; v++) {
+    if (PRESEC_ITEMS[v].code === itemCode) { validItem = PRESEC_ITEMS[v]; break; }
+  }
+  if (!validItem) return { success: false, message: 'Unknown checklist item: ' + itemCode };
+
+  var sh   = getSheet(SHEETS.PRESEC_CHECKLIST);
+  var rows = sh.getDataRange().getValues();
+  var now  = new Date();
+
+  // Check if row already exists for this election + item
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_PRESEC.ELEC_ID].toString()   !== electionId.toString()) continue;
+    if (rows[i][COL_PRESEC.ITEM_CODE].toString()  !== itemCode) continue;
+    // Update existing row
+    sh.getRange(i + 1, COL_PRESEC.COMPLETED_BY   + 1).setValue(sess.identity);
+    sh.getRange(i + 1, COL_PRESEC.COMPLETED_ROLE + 1).setValue(sess.role);
+    sh.getRange(i + 1, COL_PRESEC.COMPLETED_AT   + 1).setValue(now);
+    sh.getRange(i + 1, COL_PRESEC.NOTES          + 1).setValue(notes || '');
+    appendAdminLog(sess.identity, 'presec_item_recorded',
+      'Checklist item ' + itemCode + ' (' + validItem.label + ') marked complete.',
+      '', electionId);
+    return { success: true, updated: true };
+  }
+
+  // No existing row — append new
+  var newRow = new Array(11).fill('');
+  newRow[COL_PRESEC.ID]             = 'PSC-' + now.getTime();
+  newRow[COL_PRESEC.ELEC_ID]        = electionId;
+  newRow[COL_PRESEC.ITEM_CODE]      = itemCode;
+  newRow[COL_PRESEC.COMPLETED_BY]   = sess.identity;
+  newRow[COL_PRESEC.COMPLETED_ROLE] = sess.role;
+  newRow[COL_PRESEC.COMPLETED_AT]   = now;
+  newRow[COL_PRESEC.NOTES]          = notes || '';
+  sh.appendRow(newRow);
+
+  appendAdminLog(sess.identity, 'presec_item_recorded',
+    'Checklist item ' + itemCode + ' (' + validItem.label + ') marked complete.',
+    '', electionId);
+  return { success: true, updated: false };
+}
+
+function confirmChecklistItemScrutineer(token, electionId, itemCode) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired.' };
+  if (sess.role !== 'SCRUTINEER') {
+    return { success: false, message: 'Only a Scrutineer may confirm witnessed items.' };
+  }
+
+  // Validate item code and check it is a starred item
+  var validItem = null;
+  for (var v = 0; v < PRESEC_ITEMS.length; v++) {
+    if (PRESEC_ITEMS[v].code === itemCode) { validItem = PRESEC_ITEMS[v]; break; }
+  }
+  if (!validItem) return { success: false, message: 'Unknown checklist item: ' + itemCode };
+  if (!validItem.star) {
+    return { success: false, message: 'Item ' + itemCode + ' does not require Scrutineer confirmation.' };
+  }
+
+  var sh   = getSheet(SHEETS.PRESEC_CHECKLIST);
+  var rows = sh.getDataRange().getValues();
+  var now  = new Date();
+
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_PRESEC.ELEC_ID].toString()  !== electionId.toString()) continue;
+    if (rows[i][COL_PRESEC.ITEM_CODE].toString() !== itemCode) continue;
+
+    // Must be completed by RO/TEM first
+    if (!rows[i][COL_PRESEC.COMPLETED_AT]) {
+      return { success: false, message: 'Item ' + itemCode + ' has not been marked complete by RO/TEM yet.' };
+    }
+
+    // Slot 1 empty — fill it
+    if (!rows[i][COL_PRESEC.SC1_AT]) {
+      sh.getRange(i + 1, COL_PRESEC.SC1_BY + 1).setValue(sess.identity);
+      sh.getRange(i + 1, COL_PRESEC.SC1_AT + 1).setValue(now);
+      appendAdminLog(sess.identity, 'presec_scrutineer_confirmed',
+        'Scrutineer 1 confirmed checklist item ' + itemCode + ' (' + validItem.label + ').',
+        '', electionId);
+      return { success: true, slot: 1 };
+    }
+
+    // Slot 1 filled by same scrutineer — block double-sign
+    if (rows[i][COL_PRESEC.SC1_BY].toString() === sess.identity) {
+      return { success: false, message: 'You have already confirmed item ' + itemCode + '.' };
+    }
+
+    // Slot 2 empty — fill it
+    if (!rows[i][COL_PRESEC.SC2_AT]) {
+      sh.getRange(i + 1, COL_PRESEC.SC2_BY + 1).setValue(sess.identity);
+      sh.getRange(i + 1, COL_PRESEC.SC2_AT + 1).setValue(now);
+      appendAdminLog(sess.identity, 'presec_scrutineer_confirmed',
+        'Scrutineer 2 confirmed checklist item ' + itemCode + ' (' + validItem.label + ').',
+        '', electionId);
+      return { success: true, slot: 2 };
+    }
+
+    // Both slots filled
+    return { success: false, message: 'Item ' + itemCode + ' already confirmed by two Scrutineers.' };
+  }
+
+  return { success: false, message: 'Item ' + itemCode + ' has not been recorded yet. RO/TEM must mark it complete first.' };
+}
+
+// ============================================================
 // updateElectionStatus — advances election to a new status
 // Access: RO_ADMIN only
 // ============================================================
@@ -1067,6 +1283,23 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote) {
             '. GB resolution document on file.',
             '', electionId);
         }
+
+        // ── GATE: Pre-Election Security Verification Checklist ──
+        // Skip for trial elections
+        var isTrial = rows[i][COL.ELEC_TRIAL].toString() === 'true';
+        if (!isTrial) {
+          var clStatus = getChecklistStatus(token, electionId);
+          if (!clStatus.success || !clStatus.allComplete) {
+            return {
+              success: false,
+              requiresChecklist: true,
+              message: 'Cannot activate voting — the Pre-Election Security Verification ' +
+                       'Checklist (Appendix H) has not been fully completed. ' +
+                       'All items must be marked done and all ★ items confirmed by two Scrutineers.'
+            };
+          }
+        }
+        // ───────────────────────────────────────────────────────
       }
       // ────────────────────────────────────────────────────────
 
@@ -5705,10 +5938,10 @@ function fileComplaint(token, electionId, complaintText, againstName, againstRol
     electionId || '',
     sess.identity,
     now,
-    againstRoll || '',
-    againstName || '',
-    complaintText.trim(),
-    channel || '',
+    (againstRoll  || '').toString().trim().substring(0, 20),
+    (againstName  || '').toString().trim().substring(0, 100),
+    complaintText.trim().substring(0, 1000),
+    (channel      || '').toString().trim().substring(0, 100),
     '',                          // DocLinks
     'filed',                     // Status
     '',                          // RONotes

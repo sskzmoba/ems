@@ -958,6 +958,36 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
               '</button>' +
             '</div>' +
           '</div>';
+      } else if (res && res.requiresChecklist) {
+        if (btn) { btn.textContent = '▶ Activate Voting'; btn.disabled = false; }
+        var clPanel = document.getElementById('presec-checklist-panel');
+        if (!clPanel) {
+          clPanel = document.createElement('div');
+          clPanel.id = 'presec-checklist-panel';
+          var errParent3 = errEl ? errEl.parentNode : null;
+          if (errParent3) errParent3.insertBefore(clPanel, errEl);
+        }
+        clPanel.innerHTML =
+          '<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;' +
+          'padding:14px;margin-top:10px;">' +
+            '<div style="font-weight:700;color:#92400e;font-size:.9rem;margin-bottom:8px;">' +
+              '⚠️ Pre-Election Security Verification Checklist Incomplete' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+              'All items in Appendix H must be completed before voting can be activated. ' +
+              'Items marked ★ require confirmation by two Scrutineers.' +
+            '</div>' +
+            '<button onclick="AdminPanel._openPresecChecklist(\'' + escHtml(id) + '\')" ' +
+              'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '📋 Open Pre-Election Security Checklist' +
+            '</button>' +
+            '<button onclick="AdminPanel._advanceStatus(\'' + escHtml(id) + '\',\'active\')" ' +
+              'style="width:100%;padding:12px;background:#059669;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+              '✓ Checklist complete — Retry Activation' +
+            '</button>' +
+          '</div>';
       } else {
         if (errEl) {
           errEl.textContent = (res && res.message) || 'Failed to update status.';
@@ -976,6 +1006,113 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
     .updateElectionStatus(App.token, id, nextStatus, overrideNote || '');
 },
 
+_openPresecChecklist: function(electionId) {
+  var modal = document.getElementById('modal-overlay');
+  var body  = document.getElementById('modal-body');
+  if (!modal || !body) return;
+  body.innerHTML = '<div style="padding:16px;font-size:.9rem;color:#6b7280;">Loading checklist…</div>';
+  modal.style.display = 'flex';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        body.innerHTML = '<div style="padding:16px;color:#b91c1c;">Failed to load checklist.</div>';
+        return;
+      }
+      var items = res.items;
+      var parts = { A:'Sheet Protection', B:'Script and Deployment',
+                    C:'Google Account Security', D:'Voter Roll and Candidate List',
+                    E:'System Functionality Testing', F:'Backup', G:'Communications' };
+      var html =
+        '<div style="padding:4px 0 16px;">' +
+          '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">' +
+            '📋 Pre-Election Security Verification Checklist' +
+          '</div>' +
+          '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">' +
+            'Items marked ★ require confirmation by two Scrutineers after RO/TEM marks them done.' +
+          '</div>';
+
+      var currentPart = '';
+      items.forEach(function(item) {
+        if (item.part !== currentPart) {
+          currentPart = item.part;
+          html +=
+            '<div style="font-size:.78rem;font-weight:700;color:#fff;background:#1a3a5c;' +
+            'padding:5px 10px;border-radius:4px;margin:14px 0 8px;">Part ' +
+            escHtml(item.part) + ' — ' + escHtml(parts[item.part] || '') + '</div>';
+        }
+
+        var done      = !!item.completedAt;
+        var sc1done   = !!item.sc1At;
+        var sc2done   = !!item.sc2At;
+        var fullyDone = done && (!item.star || (sc1done && sc2done));
+
+        html +=
+          '<div style="border:1px solid ' + (fullyDone ? '#bbf7d0' : '#e5e7eb') + ';' +
+          'border-radius:6px;padding:10px 12px;margin-bottom:8px;' +
+          'background:' + (fullyDone ? '#f0fdf4' : '#fff') + ';">' +
+            '<div style="display:flex;align-items:flex-start;gap:10px;">' +
+              '<div style="font-size:.82rem;font-weight:700;color:#1a3a5c;min-width:28px;">' +
+                escHtml(item.code) + (item.star ? ' ★' : '') +
+              '</div>' +
+              '<div style="flex:1;">' +
+                '<div style="font-size:.85rem;color:#111;margin-bottom:6px;">' +
+                  escHtml(item.label) +
+                '</div>' +
+                (!done ?
+                  '<button onclick="AdminPanel._recordPresecItem(\'' + escHtml(electionId) +
+                  '\',\'' + escHtml(item.code) + '\')" ' +
+                  'style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;' +
+                  'border-radius:4px;font-size:.8rem;cursor:pointer;">Mark Done</button>'
+                :
+                  '<div style="font-size:.78rem;color:#059669;margin-bottom:4px;">' +
+                    '✓ Done — ' + escHtml(item.completedBy) + ' (' + escHtml(item.completedRole) + ')' +
+                  '</div>' +
+                  (item.star ?
+                    '<div style="font-size:.78rem;color:' + (sc1done ? '#059669' : '#6b7280') + ';">' +
+                      (sc1done ? '★ Scrutineer 1: ' + escHtml(item.sc1By) : '★ Awaiting Scrutineer 1 confirmation') +
+                    '</div>' +
+                    '<div style="font-size:.78rem;color:' + (sc2done ? '#059669' : '#6b7280') + ';">' +
+                      (sc2done ? '★ Scrutineer 2: ' + escHtml(item.sc2By) : '★ Awaiting Scrutineer 2 confirmation') +
+                    '</div>'
+                  : '')
+                ) +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      });
+
+      var allDone = res.allComplete;
+      html +=
+        '<div style="margin-top:16px;padding:12px;border-radius:6px;text-align:center;' +
+        'background:' + (allDone ? '#f0fdf4' : '#fef3c7') + ';' +
+        'border:1.5px solid ' + (allDone ? '#86efac' : '#f59e0b') + ';' +
+        'font-weight:700;font-size:.9rem;color:' + (allDone ? '#166534' : '#92400e') + ';">' +
+          (allDone ? '✅ Checklist complete — voting may be activated.' :
+                     '⚠️ Checklist incomplete — complete all items before activating voting.') +
+        '</div>' +
+        '</div>';
+
+      body.innerHTML = html;
+    })
+    .withFailureHandler(function() {
+      body.innerHTML = '<div style="padding:16px;color:#b91c1c;">Error loading checklist.</div>';
+    })
+    .getChecklistStatus(App.token, electionId);
+},
+
+_recordPresecItem: function(electionId, itemCode) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        AdminPanel._openPresecChecklist(electionId);
+      } else {
+        showToast((res && res.message) || 'Failed to record item.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error recording item.'); })
+    .recordChecklistItem(App.token, electionId, itemCode, '');
+},
 _confirmOrgSecyComms: function(id, nextStatus) {
   var textEl = document.getElementById('orgsecy-comms-text');
   var errEl  = document.getElementById('orgsecy-comms-err');

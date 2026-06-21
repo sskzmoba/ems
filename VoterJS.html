@@ -1397,27 +1397,27 @@ var VoterPanel = (function() {
         '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">📝 File a New Complaint</div>' +
         '<div style="margin-bottom:10px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Roll No. (optional)</label>' +
-          '<input type="text" id="cmp-against-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+          '<input type="text" id="cmp-against-roll" placeholder="e.g. SSK001" inputmode="text" maxlength="20" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Name (optional)</label>' +
-          '<input type="text" id="cmp-against" placeholder="Full name of member" ' +
+          '<input type="text" id="cmp-against" placeholder="Full name of member" maxlength="100" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Batch (optional)</label>' +
-          '<input type="text" id="cmp-against-batch" placeholder="e.g. 1995" inputmode="numeric" ' +
+          '<input type="text" id="cmp-against-batch" placeholder="e.g. 1995" inputmode="numeric" maxlength="4" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Channel / Platform where violation occurred</label>' +
-          '<input type="text" id="cmp-channel" placeholder="e.g. WhatsApp group, Facebook, email" ' +
+          '<input type="text" id="cmp-channel" placeholder="e.g. WhatsApp group, Facebook, email" maxlength="100" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Complaint details <span style="color:#b91c1c;">*</span></label>' +
-          '<textarea id="cmp-text" rows="4" placeholder="Describe the violation in detail. Include dates, times, and any other relevant information." ' +
+          '<textarea id="cmp-text" rows="4" placeholder="Describe the violation in detail. Include dates, times, and any other relevant information." maxlength="1000" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;resize:vertical;"></textarea>' +
         '</div>' +
         '<button onclick="VoterPanel._submitComplaint()" ' +
