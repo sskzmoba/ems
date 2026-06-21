@@ -2790,13 +2790,17 @@ function confirmCandidateConsent(nomId, token) {
 
     sh.getRange(i + 1, COL.NOM_CONSENT_STATUS + 1).setValue('accepted');
     sh.getRange(i + 1, COL.NOM_CONSENT_AT     + 1).setValue(ts);
-    sh.getRange(i + 1, COL.NOM_STATUS         + 1).setValue('pending_confirmation');
+
+    var propDone = data[i][COL.NOM_PROP_CONFIRMED].toString() === 'true';
+    var secDone  = data[i][COL.NOM_SEC_CONFIRMED].toString()  === 'true';
+    var newStatus = (propDone && secDone) ? 'pending_scrutiny' : 'pending_confirmation';
+    sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue(newStatus);
 
     appendAdminLog(
       data[i][COL.NOM_CAND_ROLL].toString(),
       'candidate_consent_accepted',
       'Candidate accepted nomination for post: ' + postName,
-      'consent_pending', 'pending_confirmation'
+      'consent_pending', newStatus
     );
 
     // TODO (Pass 2): trigger notification email to nominator to confirm their proposal
