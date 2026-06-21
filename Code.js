@@ -3367,7 +3367,7 @@ function verifyOTP(rollNo, otp) {
     sh.deleteRow(i + 1);
 
     var voter = findVoter(rollNo);
-    var role  = getAdminRole(rollNo) || 'voter';
+    var role  = 'voter';
     var token = createSession(rollNo, role);
 
     return {
