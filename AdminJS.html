@@ -1145,6 +1145,7 @@ _openPresecChecklist: function(electionId) {
           '</div>';
 
       var currentPart = '';
+      var backupButtonInserted = false;
       items.forEach(function(item) {
         if (item.part !== currentPart) {
           currentPart = item.part;
@@ -1152,6 +1153,22 @@ _openPresecChecklist: function(electionId) {
             '<div style="font-size:.78rem;font-weight:700;color:#fff;background:#1a3a5c;' +
             'padding:5px 10px;border-radius:4px;margin:14px 0 8px;">Part ' +
             escHtml(item.part) + ' — ' + escHtml(parts[item.part] || '') + '</div>';
+        }
+
+        if (item.part === 'F' && !backupButtonInserted) {
+          backupButtonInserted = true;
+          html +=
+            '<div style="background:#f0f4f8;border:1px solid #c8d4e0;border-radius:6px;' +
+            'padding:12px;margin-bottom:10px;">' +
+              '<div style="font-size:.82rem;color:#374151;margin-bottom:8px;">' +
+                'Exports Voters, Elections, Candidates, ScrutinyLog and AdminLog to CSV, ' +
+                'stores them in this election\'s Drive folder, and automatically marks F1–F5 complete below.' +
+              '</div>' +
+              '<button id="btn-run-backup" onclick="AdminPanel._runPreVoteBackup(\'' + escHtml(electionId) + '\')" ' +
+              'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+              'border:none;border-radius:4px;cursor:pointer;font-weight:600;">⬇ Run Pre-Vote Backup</button>' +
+              '<div id="backup-result" style="margin-top:8px;"></div>' +
+            '</div>';
         }
 
         var done      = !!item.completedAt;
@@ -1216,6 +1233,36 @@ _openPresecChecklist: function(electionId) {
       body.innerHTML = '<div style="padding:16px;color:#b91c1c;">Error loading checklist.</div>';
     })
     .getChecklistStatus(App.token, electionId);
+},
+
+_runPreVoteBackup: function(electionId) {
+  var btn    = document.getElementById('btn-run-backup');
+  var resDiv = document.getElementById('backup-result');
+  if (btn) { btn.textContent = 'Backing up…'; btn.disabled = true; }
+  if (resDiv) resDiv.innerHTML = '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.textContent = '⬇ Run Pre-Vote Backup'; btn.disabled = false; }
+      if (!resDiv) return;
+      if (!res || !res.success) {
+        resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">' +
+          escHtml((res && res.message) || 'Backup failed.') + '</div>';
+        return;
+      }
+      resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+        'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+        '✓ Backed up ' + res.files.length + ' sheets (' +
+        res.files.map(function(f) { return f.label + ': ' + f.rowCount; }).join(', ') + ' rows).<br>' +
+        '<a href="' + escHtml(res.folderUrl) + '" target="_blank" style="color:#065f46;font-weight:600;">Open backup folder →</a>' +
+        '</div>';
+      AdminPanel._openPresecChecklist(electionId);
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '⬇ Run Pre-Vote Backup'; btn.disabled = false; }
+      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error. Please try again.</div>';
+    })
+    .createPreVoteBackup(App.token, electionId, getTEMAuthId());
 },
 
 _recordPresecItem: function(electionId, itemCode) {
@@ -1923,6 +1970,7 @@ _loadNominations: function() {
         return;
       }
       var elections = res.elections;
+      AdminPanel._nominationsElections = elections;
       // Default to first election
       AdminPanel._nominationsSelectedElec = elections[0].id;
       AdminPanel._renderNominationsShell(elections);
@@ -1948,7 +1996,8 @@ _renderNominationsShell: function(elections) {
     'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;" ' +
     'onchange="AdminPanel._onNomElecChange(this.value)">';
   elections.forEach(function(el) {
-    selHtml += '<option value="' + escHtml(el.id) + '">' +
+    selHtml += '<option value="' + escHtml(el.id) + '"' +
+      (el.id === AdminPanel._nominationsSelectedElec ? ' selected' : '') + '>' +
       escHtml(el.title) + ' — ' + escHtml(el.status.replace(/_/g,' ')) +
       '</option>';
   });
@@ -2040,6 +2089,7 @@ _renderNominationsShell: function(elections) {
 
 _onNomElecChange: function(elecId) {
   AdminPanel._nominationsSelectedElec = elecId;
+  AdminPanel._renderNominationsShell(AdminPanel._nominationsElections);
   AdminPanel._loadNominationsList(elecId);
 },
 
@@ -2848,9 +2898,12 @@ _doWithdraw: function(nomId) {
             '</div></div>';
           return;
         }
-        AdminPanel._handoverSelectedElec = res.elections[0].id;
+        var keepSelection = AdminPanel._handoverSelectedElec &&
+          res.elections.some(function(e) { return e.id === AdminPanel._handoverSelectedElec; });
+        var defaultElecId = keepSelection ? AdminPanel._handoverSelectedElec : res.elections[0].id;
+        AdminPanel._handoverSelectedElec = defaultElecId;
         AdminPanel._renderHandoverShell(res.elections);
-        AdminPanel._loadHandoverChecklist(res.elections[0].id);
+        AdminPanel._loadHandoverChecklist(defaultElecId);
       })
       .withFailureHandler(function() {
         var c2 = document.getElementById('handover-content');
@@ -2861,10 +2914,16 @@ _doWithdraw: function(nomId) {
   },
 
   _handoverSelectedElec: '',
+  _handoverSelectedElecStatus: '',
+  _handoverElections: [],
 
   _renderHandoverShell: function(elections) {
     var c = document.getElementById('handover-content');
     if (!c) return;
+
+    AdminPanel._handoverElections = elections;
+    var selEl = elections.filter(function(e) { return e.id === AdminPanel._handoverSelectedElec; })[0];
+    AdminPanel._handoverSelectedElecStatus = selEl ? selEl.status : (elections[0] ? elections[0].status : '');
 
     var selHtml = '<select id="handover-elec-sel" ' +
       'onchange="AdminPanel._onHandoverElecChange()" ' +
@@ -2890,6 +2949,8 @@ _doWithdraw: function(nomId) {
     var sel = document.getElementById('handover-elec-sel');
     if (!sel) return;
     AdminPanel._handoverSelectedElec = sel.value;
+    var selEl = AdminPanel._handoverElections.filter(function(e) { return e.id === sel.value; })[0];
+    AdminPanel._handoverSelectedElecStatus = selEl ? selEl.status : '';
     AdminPanel._loadHandoverChecklist(sel.value);
   },
 
@@ -3058,7 +3119,232 @@ _doWithdraw: function(nomId) {
         '</div>';
     });
 
+    html += AdminPanel._renderElectionRecordSection(elecId, AdminPanel._handoverSelectedElecStatus);
+
     return html;
+  },
+
+// ── DRAW OF LOTS + ELECTION RECORD (SOP 8.4 / 8.6) ─────────────
+
+  _renderElectionRecordSection: function(elecId, status) {
+    var html = '<div class="panel-card" style="margin-top:18px;margin-bottom:10px;">' +
+      '<div class="panel-card-body" style="padding:14px 16px;">' +
+      '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">Draw of Lots</div>' +
+      '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+        'SOP Section 8.4 — record any tie-break draw conducted in the presence of the Scrutineers.' +
+      '</div>';
+
+    if (status !== 'closed' && status !== 'declared') {
+      html += '<div style="font-size:.82rem;color:#9ca3af;font-style:italic;">' +
+        'Available once voting has closed and the tally is being verified (current status: ' +
+        escHtml((status || '').replace(/_/g, ' ')) + ').</div></div></div>';
+      return html + AdminPanel._renderElectionRecordCompileBlock(elecId, status);
+    }
+
+    html +=
+      '<div style="margin-bottom:8px;">' +
+        '<input id="dol-post" placeholder="Post name" style="width:100%;padding:9px;font-size:.85rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<input id="dol-tied" placeholder="Tied candidates (names/roll nos.)" style="width:100%;padding:9px;' +
+        'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<input id="dol-method" placeholder="Method of draw" style="width:100%;padding:9px;font-size:.85rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<input id="dol-persons" placeholder="Persons present" style="width:100%;padding:9px;font-size:.85rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<textarea id="dol-outcome" rows="2" placeholder="Outcome of the draw" style="width:100%;padding:9px;' +
+        'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;' +
+        'resize:vertical;"></textarea>' +
+        '<div id="dol-err" style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
+        '<button id="btn-dol" onclick="AdminPanel._recordDrawOfLots(\'' + escHtml(elecId) + '\')" ' +
+        'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;font-weight:600;">Record Draw of Lots</button>' +
+      '</div>' +
+      '</div></div>';
+
+    return html + AdminPanel._renderElectionRecordCompileBlock(elecId, status);
+  },
+
+  _recordDrawOfLots: function(elecId) {
+    var post     = (document.getElementById('dol-post')    || {}).value || '';
+    var tied     = (document.getElementById('dol-tied')    || {}).value || '';
+    var method   = (document.getElementById('dol-method')  || {}).value || '';
+    var persons  = (document.getElementById('dol-persons') || {}).value || '';
+    var outcome  = (document.getElementById('dol-outcome') || {}).value || '';
+    var errEl    = document.getElementById('dol-err');
+    var btn      = document.getElementById('btn-dol');
+
+    if (!post.trim() || !method.trim() || !persons.trim() || !outcome.trim()) {
+      if (errEl) {
+        errEl.textContent = 'Post, method, persons present, and outcome are all required.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Draw of lots recorded.');
+          AdminPanel._loadHandoverChecklist(elecId);
+        } else {
+          if (btn) { btn.textContent = 'Record Draw of Lots'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Record Draw of Lots'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), getTEMAuthId());
+  },
+
+  _renderElectionRecordCompileBlock: function(elecId, status) {
+    var html = '<div class="panel-card" style="margin-bottom:10px;">' +
+      '<div class="panel-card-body" style="padding:14px 16px;">' +
+      '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">Election Record</div>' +
+      '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+        'SOP Section 8.6 — the complete election record to be filed with the incoming General Secretary.' +
+      '</div>';
+
+    if (status !== 'declared') {
+      html += '<div style="font-size:.82rem;color:#9ca3af;font-style:italic;">' +
+        'Available once results have been declared (current status: ' +
+        escHtml((status || '').replace(/_/g, ' ')) + ').</div></div></div>';
+      return html;
+    }
+
+    html +=
+      '<button id="btn-compile-record" onclick="AdminPanel._compileElectionRecord(\'' + escHtml(elecId) + '\')" ' +
+      'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+      'border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-bottom:10px;">' +
+      'Compile Election Record</button>' +
+      '<div id="election-record-result"></div>' +
+      '</div></div>';
+
+    return html;
+  },
+
+  _compileElectionRecord: function(elecId) {
+    var btn    = document.getElementById('btn-compile-record');
+    var resDiv = document.getElementById('election-record-result');
+    if (btn) { btn.textContent = 'Compiling…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = 'Compile Election Record'; btn.disabled = false; }
+        if (!resDiv) return;
+        if (!res || !res.success) {
+          resDiv.innerHTML = '<div style="padding:10px;color:#c0392b;font-size:.85rem;">' +
+            escHtml((res && res.message) || 'Failed to compile record.') + '</div>';
+          return;
+        }
+        resDiv.innerHTML = AdminPanel._renderElectionRecordPreview(res.record);
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Compile Election Record'; btn.disabled = false; }
+        if (resDiv) resDiv.innerHTML =
+          '<div style="padding:10px;color:#c0392b;font-size:.85rem;">Error — please try again.</div>';
+      })
+      .getElectionRecordData(App.token, elecId);
+  },
+
+  _renderElectionRecordPreview: function(r) {
+    var rows = [
+      ['Election',                 r.election.title],
+      ['Vote close',               fmtIST(r.election.voteClose)],
+      ['Declaration day',          fmtIST(r.election.declareDay)],
+      ['Certified voters',         r.voterRoll.totalCertified],
+      ['Candidates (final list)',  r.candidates.length],
+      ['Tally co-signs on record', r.tallyCoSigns.length],
+      ['Hash verification events', r.hashVerification.length],
+      ['Draw of lots records',     r.drawOfLots.length],
+      ['ScrutinyLog entries',      r.scrutinyLog.length],
+      ['Complaints filed',         r.complaints.length],
+      ['Appeals / objections',     r.appeals.length],
+      ['Scrutineers / Observers',  r.scrutineersAndObservers.length],
+      ['AdminLog entries (this election)', r.adminLog.length + ' of ' + r.adminLogTotalSystemWide + ' total']
+    ];
+
+    var html = '<div style="border-top:1px solid #e5e7eb;padding-top:10px;margin-top:4px;">' +
+      '<div style="font-weight:600;color:#1a3a5c;font-size:.88rem;margin-bottom:8px;">Winners Summary</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:.82rem;margin-bottom:14px;">';
+    r.winnersSummary.forEach(function(w) {
+      var winnerHtml, votesHtml;
+      if (w.winners.length === 0) {
+        winnerHtml = '<span style="color:#9ca3af;font-style:italic;">Vacant — no candidate contested</span>';
+        votesHtml  = '—';
+      } else {
+        winnerHtml = w.winners.map(function(win) { return escHtml(win.name); }).join('<br>') +
+          (w.tie ? ' <span style="color:#c0392b;">(TIE for final seat — see Draw of Lots)</span>' : '');
+        votesHtml  = w.winners.map(function(win) { return win.votes + ' votes'; }).join('<br>');
+      }
+      html += '<tr style="border-bottom:1px solid #f3f4f6;">' +
+        '<td style="padding:6px 4px;color:#374151;">' + escHtml(w.post) +
+          (w.seatCount > 1 ? ' <span style="color:#9ca3af;">(' + w.seatCount + ' seats)</span>' : '') + '</td>' +
+        '<td style="padding:6px 4px;font-weight:600;color:#1a3a5c;">' + winnerHtml + '</td>' +
+        '<td style="padding:6px 4px;color:#6b7280;text-align:right;">' + votesHtml + '</td>' +
+        '</tr>';
+    });
+    html += '</table>';
+
+    html += '<div style="font-weight:600;color:#1a3a5c;font-size:.88rem;margin-bottom:8px;">Record Contents</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:.82rem;margin-bottom:14px;">';
+    rows.forEach(function(row) {
+      html += '<tr style="border-bottom:1px solid #f3f4f6;">' +
+        '<td style="padding:5px 4px;color:#374151;">' + escHtml(row[0]) + '</td>' +
+        '<td style="padding:5px 4px;color:#6b7280;text-align:right;">' + escHtml(row[1].toString()) + '</td>' +
+        '</tr>';
+    });
+    html += '</table>';
+
+    if (r.notes) {
+      html += '<div style="padding:10px;background:#fef9c3;border-radius:4px;font-size:.78rem;color:#92400e;">' +
+        '<strong>Known gaps in this record:</strong><br>' +
+        '• Technical interruptions: ' + escHtml(r.notes.technicalInterruptions) + '<br>' +
+        '• VVA verification summary: ' + escHtml(r.notes.vvaVerificationSummary) + '<br>' +
+        '• AdminLog scope: ' + escHtml(r.notes.adminLogScope) +
+        '</div>';
+    }
+
+    html += '<div style="margin-top:14px;">' +
+      '<button id="btn-generate-record-pdf" onclick="AdminPanel._generateElectionRecordPDF(\'' + escHtml(r.electionId) + '\')" ' +
+      'style="width:100%;padding:12px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+      'border:none;border-radius:4px;cursor:pointer;font-weight:600;">[PDF] Generate Election Record PDF</button>' +
+      '<div id="election-record-pdf-result" style="margin-top:8px;"></div>' +
+      '</div>' +
+      '</div>';
+
+    return html;
+  },
+
+  _generateElectionRecordPDF: function(elecId) {
+    var btn    = document.getElementById('btn-generate-record-pdf');
+    var resDiv = document.getElementById('election-record-pdf-result');
+    if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+    if (resDiv) resDiv.innerHTML = '';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = '[PDF] Generate Election Record PDF'; btn.disabled = false; }
+        if (!resDiv) return;
+        if (!res || !res.success) {
+          resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">' +
+            escHtml((res && res.message) || 'PDF generation failed.') + '</div>';
+          return;
+        }
+        resDiv.innerHTML = '<div style="padding:10px;background:#ecfdf5;border:1px solid #86efac;' +
+          'border-radius:4px;font-size:.82rem;color:#065f46;">' +
+          '✓ Generated and saved to the election Drive folder: ' + escHtml(res.filename) + '<br>' +
+          '<a href="' + escHtml(res.driveUrl) + '" target="_blank" style="color:#065f46;font-weight:600;">Open PDF →</a>' +
+          '</div>';
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = '[PDF] Generate Election Record PDF'; btn.disabled = false; }
+        if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error. Please try again.</div>';
+      })
+      .generateElectionRecordPDF(App.token, elecId, getTEMAuthId());
   },
 
   _lockECOfficers: function() {
@@ -3400,6 +3686,16 @@ _loadVotedLogData: function(elecId) {
           '</div>';
       } else {
         // Full tally mode
+        if (post.candidates.length === 0) {
+          var isFinal = (res.elecStatus === 'closed' || res.elecStatus === 'declared');
+          html +=
+            '<div style="padding:14px 16px;font-size:.85rem;color:#9ca3af;font-style:italic;">' +
+            (isFinal
+              ? 'No candidate contested this post — declared vacant. To be filled by co-option ' +
+                'of the incoming Executive Committee.'
+              : 'No candidate currently nominated for this post.') +
+            '</div>';
+        }
         var postTotal = 0;
         post.candidates.forEach(function(c) { postTotal += (c.votes || 0); });
         postTotal += (post.nota || 0);
@@ -3407,7 +3703,7 @@ _loadVotedLogData: function(elecId) {
         post.candidates.forEach(function(cand, idx) {
           var votes   = cand.votes || 0;
           var pct     = postTotal > 0 ? Math.round((votes / postTotal) * 1000) / 10 : 0;
-          var isWinner = (idx === 0 && votes > 0);
+          var isWinner = (idx < (post.seatCount || 1) && votes > 0);
           var barWidth = postTotal > 0 ? Math.round((votes / postTotal) * 100) : 0;
 
           html +=
@@ -6155,9 +6451,11 @@ function _temActionCheckboxes() {
       'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','publishCandidates','triggerPhase2Extension'],
       'Candidates':          ['deleteCandidate'],
       'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft'],
-      'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','recordTallyCoSign','recordScrutineerConfirmation'],
+      'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','recordTallyCoSign','recordScrutineerConfirmation','recordDrawOfLots'],
       'Complaints & Appeals':['updateComplaintStatus','updateAppealDecision','storeAppealRuling'],
       'Documents':           ['storeDocument','deleteDocument'],
+      'Election Record':     ['generateElectionRecordPDF'],
+      'Backup':              ['createPreVoteBackup'],
       'Purge':               ['purgeTrialData']
     }
   };

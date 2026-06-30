@@ -483,6 +483,11 @@ var VoterPanel = (function() {
           '</div>';
 
       var cands = post.candidates || [];
+      if (cands.length === 0) {
+        html += '<div style="padding:9px 0;font-size:.82rem;color:#9ca3af;font-style:italic;">' +
+          'No candidate contested this post \u2014 declared vacant. The post shall be filled by ' +
+          'co-option of the incoming Executive Committee in accordance with the Bylaws.</div>';
+      }
       for (var j = 0; j < cands.length; j++) {
         var cand = cands[j];
         var isElected = cand.elected;
@@ -631,7 +636,7 @@ var VoterPanel = (function() {
           ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">\u2713 Confirmed Candidate</span>'
           : '';
         var objBtn = (objWindowOpen && nom.status === 'accepted' && nom.id)
-          ? '<button onclick="_showObjModal(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.name) + '\',\'' + escHtml(pg.post) + '\')" ' +
+          ? '<button onclick="VoterPanel._showObjModal(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.name) + '\',\'' + escHtml(pg.post) + '\')" ' +
             'style="margin-top:8px;width:100%;padding:9px;background:#fff;color:#b45309;' +
             'border:1.5px solid #b45309;border-radius:4px;font-size:.8rem;cursor:pointer;min-height:40px;">' +
             '⚠ File Objection Against This Nomination' +
@@ -683,10 +688,10 @@ var VoterPanel = (function() {
 
           '<div id="obj-error" style="display:none;color:#dc2626;font-size:.82rem;margin-bottom:10px;"></div>' +
 
-          '<button onclick="_submitObjection()" ' +
+          '<button onclick="VoterPanel._submitObjection()" ' +
           'style="width:100%;padding:12px;background:#b45309;color:#fff;border:none;border-radius:4px;' +
           'font-size:.9rem;cursor:pointer;min-height:44px;margin-bottom:10px;">Submit Objection</button>' +
-          '<button onclick="_closeObjModal()" ' +
+          '<button onclick="VoterPanel._closeObjModal()" ' +
           'style="width:100%;padding:11px;background:#fff;color:#374151;border:1.5px solid #d1d5db;' +
           'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Cancel</button>' +
         '</div>' +
@@ -748,8 +753,24 @@ var VoterPanel = (function() {
         showToast('Objection filed. Reference: ' + res.objectionId);
       })
       .withFailureHandler(function(e) {
-        if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
-        if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+        // The write may have succeeded server-side even though the response
+        // failed to reach the browser. Verify before alarming the voter.
+        var nomIdAtFailure = _objNomId;
+        google.script.run
+          .withSuccessHandler(function(checkRes) {
+            if (checkRes && checkRes.success && checkRes.filed) {
+              _closeObjModal();
+              showToast('Objection filed. Reference: ' + checkRes.objectionId);
+            } else {
+              if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+              if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+            }
+          })
+          .withFailureHandler(function() {
+            if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+          })
+          .checkObjectionFiled(App.token, nomIdAtFailure);
       })
       .fileObjection(App.token, _objNomId, grounds, text.trim());
   }
@@ -789,7 +810,7 @@ var VoterPanel = (function() {
         '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">No Receipts Yet</div>' +
         '<div style="font-size:.85rem;">Your vote receipts will appear here after you vote.</div></div>';
     }
-    var baseUrl = window.location.href.split('?')[0];
+    var baseUrl = App.deployUrl || window.location.href.split('?')[0];
     var html = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;' +
       'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#1d4ed8;">' +
       '🔒 Your votes are anonymous. These receipts confirm <em>that</em> you voted, not <em>how</em> you voted. ' +
@@ -1272,26 +1293,21 @@ var VoterPanel = (function() {
     if (!c) return;
     c.innerHTML = _spinner('Loading your nominations\u2026');
 
-    var elecId = _election ? _election.id : null;
-    if (!elecId) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.election) {
-            _election = res.election;
-            _loadMyNominations();
-          } else {
-            var c2 = document.getElementById('voter-content');
-            if (c2) c2.innerHTML = _errorCard('No active election found.');
-          }
-        })
-        .withFailureHandler(function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success && res.election) {
+          _election = res.election;
+          _loadMyNominations();
+        } else {
           var c2 = document.getElementById('voter-content');
-          if (c2) c2.innerHTML = _errorCard('Connection error.');
-        })
-        .getElectionsForVoter(App.token);
-      return;
-    }
-    _loadMyNominations();
+          if (c2) c2.innerHTML = _errorCard('No active election found.');
+        }
+      })
+      .withFailureHandler(function() {
+        var c2 = document.getElementById('voter-content');
+        if (c2) c2.innerHTML = _errorCard('Connection error.');
+      })
+      .getElectionsForVoter(App.token);
   }
 
   function _loadMyNominations() {
@@ -1773,7 +1789,10 @@ var VoterPanel = (function() {
     _showAppealForm: _showAppealForm,
     _hideAppealForm: _hideAppealForm,
     _submitAppeal: _submitAppeal,
-    _submitComplaint: _submitComplaint
+    _submitComplaint: _submitComplaint,
+    _showObjModal: _showObjModal,
+    _closeObjModal: _closeObjModal,
+    _submitObjection: _submitObjection
   };
 
 })();

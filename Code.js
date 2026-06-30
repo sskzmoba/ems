@@ -78,6 +78,7 @@ var COL = {
   ELEC_VDAY:21,       ELEC_VOTE_CLOSE:22,   ELEC_DECLARE_DAY:23,
   ELEC_SGM_DATE:24,   ELEC_CERTIFIED_AT:25, ELEC_SEAT_CONFIG:26,
   ELEC_CAND_PUB_AT:27,ELEC_VOTES_HASH:28,
+  ELEC_INTERNAL_TEST:29,  // distinct from ELEC_TRIAL — internal scratch test elections only, never shown publicly
 
   // ── Candidates (13 cols, 0–12) ───────────────────────────
   CAND_ID:0,          CAND_ELEC_ID:1,       CAND_POST:2,
@@ -343,6 +344,9 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'storeDocument',
     'deleteDocument',
     'purgeTrialData',
+    'recordDrawOfLots',
+    'generateElectionRecordPDF',
+    'createPreVoteBackup',
     'replyObservation',
     'sendNominationCall',
     'sendVoterRollPublicationNotice'
@@ -1393,6 +1397,7 @@ function createElection(token, data, authId) {
   row[COL.ELEC_SGM_DATE]              = '';
   row[COL.ELEC_CERTIFIED_AT]          = '';
   row[COL.ELEC_SEAT_CONFIG]           = '';
+  row[COL.ELEC_INTERNAL_TEST]         = data.isInternalTest === true ? true : false;
 
   sh.appendRow(row);
 
@@ -2119,7 +2124,7 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
           }
           appendAdminLog(sess.identity, 'votes_hash_mismatch',
             'INTEGRITY FAILURE — hash mismatch at declaration. Stored: ' + storedHash +
-            ' | Current: ' + currentHash, storedHash, currentHash);
+            ' | Current: ' + currentHash, storedHash, electionId);
           return { success: false, message: 'Declaration blocked — Votes sheet integrity check failed. Hash mismatch detected. All Scrutineers have been alerted.' };
         }
         appendAdminLog(sess.identity, 'votes_hash_verified',
@@ -3381,6 +3386,13 @@ function buildResultsPage(electionId) {
           '</div>';
 
       var cands = post.candidates || [];
+      if (cands.length === 0) {
+        html +=
+          '<div style="padding:9px 0;font-size:.85rem;color:#9ca3af;font-style:italic;">' +
+          'No candidate contested this post — declared vacant. The post shall be filled by ' +
+          'co-option of the incoming Executive Committee in accordance with the Bylaws.' +
+          '</div>';
+      }
       for (var j = 0; j < cands.length; j++) {
         var cand      = cands[j];
         var isElected = cand.elected;
@@ -4481,6 +4493,7 @@ function getPublicElectionStatus() {
     var bestPriority = priority.length;
 
     for (var i = 0; i < elections.length; i++) {
+      if (elections[i][COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') continue;
       var status = elections[i][COL.ELEC_STATUS].toString();
       var p = priority.indexOf(status);
       if (p !== -1 && p < bestPriority) {
@@ -6395,6 +6408,9 @@ function getLiveTally(token, electionId) {
   var candData = candSh.getDataRange().getValues();
   var candMap  = {}; // candId -> candidate object
   var postMap  = {}; // postName -> { order, candidates: [] }
+  EC_POSTS.forEach(function(p) {
+    postMap[p.name] = { order: p.order, seatCount: p.seats, candidates: [] };
+  });
   for (var c = 1; c < candData.length; c++) {
     if (candData[c][COL.CAND_ELEC_ID].toString() !== electionId) continue;
     var cid  = candData[c][COL.CAND_ID].toString();
@@ -6489,6 +6505,7 @@ function getLiveTally(token, electionId) {
     return {
       post:          postName,
       order:         group.order,
+      seatCount:     group.seatCount || 1,
       participated:  participated,
       nota:          blackout ? null : nota,
       candidates:    cands,
@@ -9548,6 +9565,9 @@ function getDeclaredResults(token, electionId) {
   // Load candidates for this election
   var candRows = sheetData(SHEETS.CANDIDATES);
   var postMap  = {}; // postName -> { order, seatCount, candidates: [] }
+  EC_POSTS.forEach(function(p) {
+    postMap[p.name] = { order: p.order, seatCount: p.seats, candidates: [] };
+  });
   for (var c = 0; c < candRows.length; c++) {
     var cr = candRows[c];
     if (cr[COL.CAND_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
@@ -9680,6 +9700,9 @@ function getPublicResults(electionId) {
   // Load candidates
   var candRows = sheetData(SHEETS.CANDIDATES);
   var postMap = {};
+  EC_POSTS.forEach(function(p) {
+    postMap[p.name] = { order: p.order, seatCount: p.seats, candidates: [] };
+  });
   for (var c = 0; c < candRows.length; c++) {
     var cr = candRows[c];
     if (cr[COL.CAND_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
@@ -10229,4 +10252,547 @@ function deleteDocument(token, docId, authId) {
     }
   }
   return { success: false, message: 'Document not found.' };
+}
+
+// ============================================================
+// recordDrawOfLots — SOP Section 8.4. Records a tie-break draw
+//   conducted by the RO in the presence of Scrutineers. This is
+//   a write action (not derived from Votes/VotedLog) because the
+//   draw itself is a physical/procedural act — the system only
+//   records what happened, with full attribution.
+// Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
+// ============================================================
+function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, personsPresent, outcome, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'recordDrawOfLots', electionId);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  if (!postName || postName.trim() === '') {
+    return { success: false, message: 'Post name is required.' };
+  }
+  if (!method || method.trim() === '') {
+    return { success: false, message: 'Method of draw is required.' };
+  }
+  if (!personsPresent || personsPresent.trim() === '') {
+    return { success: false, message: 'Persons present must be recorded.' };
+  }
+  if (!outcome || outcome.trim() === '') {
+    return { success: false, message: 'Outcome of the draw is required.' };
+  }
+
+  var summary =
+    'Post: ' + postName.trim() +
+    ' | Tied candidates: ' + (tiedCandidates || '').toString().trim() +
+    ' | Method: ' + method.trim() +
+    ' | Persons present: ' + personsPresent.trim() +
+    ' | Outcome: ' + outcome.trim();
+
+  appendAdminLog(sess.identity, 'draw_of_lots', summary, '', electionId.toString());
+
+  return { success: true };
+}
+
+// ============================================================
+// getElectionRecordData — SOP Section 8.6. Assembles the complete
+//   Election Record for a declared election from existing data
+//   sources. Returns a structured object; does not yet render a
+//   PDF (separate build step). Read-only — no TEM gate required.
+// Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER
+// ============================================================
+function getElectionRecordData(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'TEM', 'SCRUTINEER'];
+  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
+  if (!electionId) return { success: false, message: 'Election ID required.' };
+
+  // ── Election record ────────────────────────────────────────
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) { elec = elecRows[i]; break; }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
+    return {
+      success: false,
+      message: 'Election record can only be compiled after results are declared. Current status: ' +
+        elec[COL.ELEC_STATUS].toString()
+    };
+  }
+
+  var record = { electionId: electionId.toString() };
+
+  // ── 1. Election summary ────────────────────────────────────
+  record.election = {
+    title:       elec[COL.ELEC_TITLE].toString(),
+    description: elec[COL.ELEC_DESC].toString(),
+    mode:        elec[COL.ELEC_MODE].toString(),
+    trial:       elec[COL.ELEC_TRIAL].toString() === 'true',
+    voteStart:   elec[COL.ELEC_START].toString(),
+    voteClose:   elec[COL.ELEC_VOTE_CLOSE].toString(),
+    declareDay:  elec[COL.ELEC_DECLARE_DAY].toString(),
+    sgmDate:     elec[COL.ELEC_SGM_DATE].toString(),
+    certifiedAt: elec[COL.ELEC_CERTIFIED_AT].toString(),
+    candPubAt:   elec[COL.ELEC_CAND_PUB_AT].toString(),
+    votesHash:   elec[COL.ELEC_VOTES_HASH].toString()
+  };
+
+  // ── 2. Certified voter roll — summary count (full roll is the Voters sheet) ──
+  record.voterRoll = {
+    totalCertified: sheetData(SHEETS.VOTERS).length
+  };
+
+  // ── 3. Final tally + winners summary (item 4, 6, 7) ────────
+  var tallyResult = getLiveTally(token, electionId);
+  record.tally = tallyResult.success ? tallyResult : { error: tallyResult.message };
+
+  record.winnersSummary = [];
+  if (tallyResult.success && tallyResult.posts) {
+    tallyResult.posts.forEach(function(post) {
+      var cands = post.candidates || []; // already sorted desc by getLiveTally
+      var seats = post.seatCount || 1;
+      var winners = cands.slice(0, seats).filter(function(c) { return c.votes > 0; });
+      // Tie check at the actual seat-cutoff boundary, not 1st vs 2nd place
+      var tie = !!(cands[seats - 1] && cands[seats] && cands[seats - 1].votes === cands[seats].votes);
+      record.winnersSummary.push({
+        post:      post.post,
+        seatCount: seats,
+        winners:   winners.map(function(c) { return { name: c.name, roll: c.roll, votes: c.votes }; }),
+        nota:      post.nota,
+        tie:       tie
+      });
+    });
+  }
+
+  // ── 4. Tally co-sign + votes hash verification record ──────
+  var cosignLogs = [];
+  var hashLogs   = [];
+  var allLog     = sheetData(SHEETS.ADMIN_LOG);
+  var elecIdStr  = electionId.toString();
+  allLog.forEach(function(r) {
+    var action = r[COL.ALOG_ACTION_TYPE].toString();
+    var newVal = r[COL.ALOG_NEW_VALUE].toString();
+    if (action === 'tally_cosign' && newVal === elecIdStr) cosignLogs.push(_alogRow(r));
+    if ((action === 'votes_hash_verified' || action === 'votes_hash_mismatch') && newVal === elecIdStr) hashLogs.push(_alogRow(r));
+  });
+  record.tallyCoSigns = cosignLogs;
+  record.hashVerification = hashLogs;
+
+  // ── 5. Draw of lots (item 5) ────────────────────────────────
+  record.drawOfLots = allLog
+    .filter(function(r) {
+      return r[COL.ALOG_ACTION_TYPE].toString() === 'draw_of_lots' &&
+             r[COL.ALOG_NEW_VALUE].toString() === elecIdStr;
+    })
+    .map(_alogRow);
+
+  // ── 6. ScrutinyLog — full export for this election (item 2) ─
+  record.scrutinyLog = sheetData(SHEETS.SCRUTINY_LOG).filter(function(r) {
+    return r[2].toString() === electionId.toString();
+  }).map(function(r) {
+    return {
+      id: r[0], nomId: r[1], candRoll: r[3], post: r[4],
+      checkItem: r[5], checkResult: r[6], notes: r[7],
+      querySent: r[8], queryText: r[9], respAt: r[10], respText: r[11],
+      ecSent: r[12], ecText: r[13], ecRespAt: r[14], ecResp: r[15],
+      loggedAt: r[16], loggedBy: r[17]
+    };
+  });
+
+  // ── 7. Final candidate list as published (item 3) ───────────
+  record.candidates = sheetData(SHEETS.CANDIDATES)
+    .filter(function(r) { return r[COL.CAND_ELEC_ID].toString() === electionId.toString(); })
+    .map(function(r) {
+      return {
+        post: r[COL.CAND_POST], name: r[COL.CAND_NAME], roll: r[COL.CAND_ROLL],
+        batch: r[COL.CAND_BATCH], bio: r[COL.CAND_BIO]
+      };
+    });
+
+  // ── 8. AdminLog — full export (item 9) ──────────────────────
+  var electionScopedLog = allLog.filter(function(r) {
+    var newVal = r[COL.ALOG_NEW_VALUE].toString();
+    var oldVal = r[COL.ALOG_OLD_VALUE].toString();
+    var desc   = r[COL.ALOG_DESCRIPTION].toString();
+    return newVal === elecIdStr || oldVal === elecIdStr || desc.indexOf(elecIdStr) !== -1;
+  });
+  record.adminLog = electionScopedLog.map(_alogRow);
+  record.adminLogTotalSystemWide = allLog.length;
+
+  // ── 9. Pre-Election Security Checklist (item 10) ───────────
+  var checklistResult = getHandoverChecklist(token, electionId);
+  record.securityChecklist = checklistResult.success ? checklistResult.items : { error: checklistResult.message };
+
+  // ── 10. CoC complaints (item 12) ─────────────────────────────
+  var complaintsResult = getComplaints(token, electionId);
+  record.complaints = complaintsResult.success ? complaintsResult.complaints : [];
+
+  // ── 11. Appeals Panel proceedings — includes OBJ-1 objections (item 14) ──
+  var appealsResult = getAppeals(token, electionId);
+  record.appeals = appealsResult.success ? appealsResult.appeals : [];
+
+  // ── 12. Scrutineers and Observers with participation (item 8) ──
+  var adminRows = sheetData(SHEETS.ADMINS);
+  var actionCountByAdmin = {};
+  allLog.forEach(function(r) {
+    var id = r[COL.ALOG_ADMIN_ID].toString();
+    actionCountByAdmin[id] = (actionCountByAdmin[id] || 0) + 1;
+  });
+  record.scrutineersAndObservers = adminRows
+    .filter(function(r) {
+      var role = r[COL.ADMIN_ROLE].toString();
+      return role === 'SCRUTINEER' || role === 'OBSERVER';
+    })
+    .map(function(r) {
+      var id = r[COL.ADMIN_ID].toString();
+      return {
+        id: id, name: r[COL.ADMIN_NAME], role: r[COL.ADMIN_ROLE],
+        status: r[COL.ADMIN_STATUS], actionCount: actionCountByAdmin[id] || 0
+      };
+    });
+
+  // ── 13. Known gaps — flagged explicitly rather than silently omitted ──
+  record.notes = {
+    technicalInterruptions: 'Not separately logged — see AdminLog entries for paused/active transitions during the voting window.',
+    adminLogScope: 'AdminLog entries shown are filtered to this election on a best-effort basis (matched by election reference in the log entry). Some older or system-level action types do not carry an explicit election reference and may not appear here even if related. Total system-wide log size at time of compilation: ' + record.adminLogTotalSystemWide + ' entries.',
+    vvaVerificationSummary: 'Voter Verification App summary lives in the standalone VVA project — attach separately if required.'
+  };
+
+  return { success: true, record: record };
+}
+
+// ── _alogRow — internal helper, formats one AdminLog row ──────
+function _alogRow(r) {
+  return {
+    id: r[COL.ALOG_ID], adminId: r[COL.ALOG_ADMIN_ID], action: r[COL.ALOG_ACTION_TYPE],
+    description: r[COL.ALOG_DESCRIPTION], oldValue: r[COL.ALOG_OLD_VALUE],
+    newValue: r[COL.ALOG_NEW_VALUE], timestamp: r[COL.ALOG_TIMESTAMP]
+  };
+}
+// ============================================================
+// checkObjectionFiled — lets the voter-side client verify whether
+//   an objection actually went through after a google.script.run
+//   round-trip failure (the write can succeed server-side even
+//   when the response fails to reach the browser). Used only to
+//   convert a false "connection error" into the correct confirmation.
+// Access: any authenticated session
+// ============================================================
+function checkObjectionFiled(token, nominationId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (!nominationId) return { success: false, message: 'Nomination ID required.' };
+
+  var aplRows = sheetData(SHEETS.APPEALS);
+  for (var a = 0; a < aplRows.length; a++) {
+    var ar = aplRows[a];
+    if (ar[COL_APL.NOM_ID].toString()        === nominationId.toString() &&
+        ar[COL_APL.APPEAL_TYPE].toString()   === 'nomination_objection' &&
+        ar[COL_APL.OBJECTOR_ROLL].toString() === sess.identity.toString()) {
+      return { success: true, filed: true, objectionId: ar[COL_APL.ID].toString() };
+    }
+  }
+  return { success: true, filed: false };
+}
+
+// ── _fmtISTServer ──
+function _fmtISTServer(isoStr) {
+  if (!isoStr) return '-';
+  var ms = new Date(isoStr).getTime();
+  if (isNaN(ms)) return isoStr.toString();
+  var IST_OFFSET_MS = 330 * 60 * 1000;
+  var d = new Date(ms + IST_OFFSET_MS);
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var h = d.getUTCHours(), m = d.getUTCMinutes();
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  var mm = m < 10 ? '0' + m : '' + m;
+  return d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear() +
+         ', ' + h + ':' + mm + ' ' + ampm + ' IST';
+}
+
+// ── _buildElectionRecordHtml ──
+function _buildElectionRecordHtml(record, generatedBy) {
+  var NAVY = '#1a3a5c', GOLD = '#b8960c';
+  var css =
+    'body{font-family:Arial,Helvetica,sans-serif;color:#222;font-size:11px;margin:0;padding:0;}' +
+    'h1{font-size:18px;color:' + NAVY + ';margin:0 0 4px;}' +
+    'h2{font-size:14px;color:' + NAVY + ';border-bottom:2px solid ' + GOLD + ';' +
+      'padding-bottom:4px;margin:22px 0 10px;page-break-after:avoid;}' +
+    'table{width:100%;border-collapse:collapse;margin-bottom:8px;}' +
+    'th{background:#f0f4f8;color:' + NAVY + ';text-align:left;padding:5px 7px;font-size:10px;border:1px solid #d9e0e7;}' +
+    'td{padding:5px 7px;border:1px solid #e5e7eb;font-size:10px;vertical-align:top;}' +
+    '.label{color:#555;width:180px;font-weight:bold;}' +
+    '.muted{color:#888;font-style:italic;}' +
+    '.banner{background:' + NAVY + ';color:#fff;padding:16px 20px;border-top:4px solid ' + GOLD + ';}' +
+    '.note{background:#fef9c3;border:1px solid #fde68a;padding:8px 10px;font-size:10px;color:#92400e;margin-top:6px;}' +
+    '.footer{margin-top:24px;font-size:9px;color:#888;text-align:center;}';
+
+  var html = '<html><head><meta charset="utf-8"><style>' + css + '</style></head><body>';
+
+  html += '<div class="banner"><h1 style="color:#fff;">Election Record</h1>' +
+    '<div style="font-size:12px;">' + escHtml(record.election.title) + '</div>' +
+    '<div style="font-size:10px;margin-top:4px;opacity:.85;">SSKZM OBA Elections - SOP Section 8.6</div></div>';
+
+  html += '<h2>1. Election Summary</h2><table>' +
+    '<tr><td class="label">Title</td><td>' + escHtml(record.election.title) + '</td></tr>' +
+    '<tr><td class="label">Description</td><td>' + escHtml(record.election.description || '-') + '</td></tr>' +
+    '<tr><td class="label">Mode</td><td>' + escHtml(record.election.mode) + '</td></tr>' +
+    '<tr><td class="label">Trial Election</td><td>' + (record.election.trial ? 'Yes' : 'No') + '</td></tr>' +
+    '<tr><td class="label">Voting Window</td><td>' + _fmtISTServer(record.election.voteStart) + ' to ' + _fmtISTServer(record.election.voteClose) + '</td></tr>' +
+    '<tr><td class="label">Candidate List Published</td><td>' + _fmtISTServer(record.election.candPubAt) + '</td></tr>' +
+    '<tr><td class="label">Voter Roll Certified</td><td>' + _fmtISTServer(record.election.certifiedAt) + '</td></tr>' +
+    '<tr><td class="label">SGM Date</td><td>' + _fmtISTServer(record.election.sgmDate) + '</td></tr>' +
+    '<tr><td class="label">Votes Sheet Hash (at close)</td><td style="font-family:monospace;font-size:9px;">' + escHtml(record.election.votesHash || '-') + '</td></tr>' +
+    '<tr><td class="label">Certified Voter Roll Size</td><td>' + record.voterRoll.totalCertified + ' members</td></tr>' +
+    '</table>';
+
+  html += '<h2>2. Winners Summary (Appendix F.2)</h2><table><tr><th>Post</th><th>Winner(s) / Status</th><th>Votes</th></tr>';
+  record.winnersSummary.forEach(function(w) {
+    var winnerCell, votesCell;
+    if (w.winners.length === 0) {
+      winnerCell = '<span class="muted">No candidate contested this post — vacant</span>';
+      votesCell  = '—';
+    } else {
+      winnerCell = w.winners.map(function(win) { return escHtml(win.name); }).join('<br>') +
+        (w.tie ? ' <strong style="color:#c0392b;">(TIE for final seat - see Draw of Lots)</strong>' : '');
+      votesCell  = w.winners.map(function(win) { return win.votes; }).join('<br>');
+    }
+    html += '<tr><td>' + escHtml(w.post) + (w.seatCount > 1 ? ' (' + w.seatCount + ' seats)' : '') +
+      '</td><td>' + winnerCell + '</td><td>' + votesCell + '</td></tr>';
+  });
+  html += '</table>';
+
+  html += '<h2>3. Final Candidate List as Published</h2>';
+  if (record.candidates.length === 0) {
+    html += '<div class="muted">No candidates on record.</div>';
+  } else {
+    html += '<table><tr><th>Post</th><th>Candidate</th><th>Roll No.</th><th>Batch</th></tr>';
+    record.candidates.forEach(function(c) {
+      html += '<tr><td>' + escHtml(c.post) + '</td><td>' + escHtml(c.name) + '</td><td>' + escHtml(c.roll) + '</td><td>' + escHtml((c.batch || '').toString()) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  html += '<h2>4. Vote Tally Co-Signature and Integrity Verification</h2>';
+  html += '<table><tr><th>Event</th><th>By</th><th>Details</th><th>Timestamp</th></tr>';
+  record.tallyCoSigns.forEach(function(e) {
+    html += '<tr><td>Tally Co-Sign</td><td>' + escHtml(e.adminId) + '</td><td>' + escHtml(e.description) + '</td><td>' + _fmtISTServer(e.timestamp) + '</td></tr>';
+  });
+  record.hashVerification.forEach(function(e) {
+    html += '<tr><td>' + (e.action === 'votes_hash_verified' ? 'Hash Verified' : 'HASH MISMATCH') +
+      '</td><td>' + escHtml(e.adminId) + '</td><td>' + escHtml(e.description) + '</td><td>' + _fmtISTServer(e.timestamp) + '</td></tr>';
+  });
+  if (record.tallyCoSigns.length === 0 && record.hashVerification.length === 0) {
+    html += '<tr><td colspan="4" class="muted">No co-sign or hash verification events on record.</td></tr>';
+  }
+  html += '</table>';
+
+  html += '<h2>5. Record of Draw of Lots</h2>';
+  if (record.drawOfLots.length === 0) {
+    html += '<div class="muted">No draw of lots was conducted for this election.</div>';
+  } else {
+    html += '<table><tr><th>Recorded By</th><th>Details</th><th>Timestamp</th></tr>';
+    record.drawOfLots.forEach(function(e) {
+      html += '<tr><td>' + escHtml(e.adminId) + '</td><td>' + escHtml(e.description) + '</td><td>' + _fmtISTServer(e.timestamp) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  html += '<h2>6. Nomination Scrutiny Record</h2>';
+  if (record.scrutinyLog.length === 0) {
+    html += '<div class="muted">No scrutiny log entries on record.</div>';
+  } else {
+    html += '<table><tr><th>Candidate Roll</th><th>Post</th><th>Check Item</th><th>Result</th><th>Notes</th><th>Logged At</th><th>By</th></tr>';
+    record.scrutinyLog.forEach(function(s) {
+      html += '<tr><td>' + escHtml(s.candRoll) + '</td><td>' + escHtml(s.post) + '</td><td>' + escHtml(s.checkItem) +
+        '</td><td>' + escHtml(s.checkResult) + '</td><td>' + escHtml(s.notes) + '</td><td>' + _fmtISTServer(s.loggedAt) +
+        '</td><td>' + escHtml(s.loggedBy) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  html += '<h2>7. Code of Conduct Complaints</h2>';
+  if (record.complaints.length === 0) {
+    html += '<div class="muted">No complaints filed.</div>';
+  } else {
+    html += '<table><tr><th>Filed By</th><th>Against</th><th>Status</th><th>Decision</th><th>Filed At</th></tr>';
+    record.complaints.forEach(function(cm) {
+      html += '<tr><td>' + escHtml(cm.complainantRoll || '') + '</td><td>' + escHtml(cm.respondentRoll || '') +
+        '</td><td>' + escHtml(cm.status || '') + '</td><td>' + escHtml(cm.decision || '') + '</td><td>' + _fmtISTServer(cm.filedAt) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  html += '<h2>8. Appeals Panel Proceedings and Decisions (including third-party objections)</h2>';
+  if (record.appeals.length === 0) {
+    html += '<div class="muted">No appeals or objections filed.</div>';
+  } else {
+    html += '<table><tr><th>Type</th><th>Candidate</th><th>Post</th><th>Filed By</th><th>Status</th><th>Decision</th><th>Filed At</th></tr>';
+    record.appeals.forEach(function(a) {
+      var type = a.appealType === 'nomination_objection' ? 'Third-Party Objection' : 'Rejection Appeal';
+      html += '<tr><td>' + type + '</td><td>' + escHtml(a.candName) + '</td><td>' + escHtml(a.post) +
+        '</td><td>' + escHtml(a.objectorRoll || '(candidate)') + '</td><td>' + escHtml(a.status) +
+        '</td><td>' + escHtml(a.decision || '') + '</td><td>' + _fmtISTServer(a.filedAt) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  html += '<h2>9. Scrutineers and Observers - Participation Record</h2>';
+  html += '<table><tr><th>Name / ID</th><th>Role</th><th>Status</th><th>Logged Actions</th></tr>';
+  record.scrutineersAndObservers.forEach(function(s) {
+    html += '<tr><td>' + escHtml(s.id) + '</td><td>' + escHtml(s.role) + '</td><td>' + escHtml(s.status) + '</td><td>' + s.actionCount + '</td></tr>';
+  });
+  html += '</table>';
+
+  html += '<h2>10. Pre-Election Security Verification Checklist</h2>';
+  if (record.securityChecklist && !record.securityChecklist.error) {
+    html += '<table><tr><th>Item</th><th>Done</th><th>At</th><th>By</th></tr>';
+    Object.keys(record.securityChecklist).forEach(function(k) {
+      var item = record.securityChecklist[k];
+      html += '<tr><td>' + escHtml(k) + '</td><td>' + (item.done ? 'Yes' : 'No') + '</td><td>' + _fmtISTServer(item.at) + '</td><td>' + escHtml(item.by || '') + '</td></tr>';
+    });
+    html += '</table>';
+  } else {
+    html += '<div class="muted">Checklist data unavailable.</div>';
+  }
+
+  html += '<h2>11. AdminLog - Entries for This Election (' + record.adminLog.length +
+    ' of ' + record.adminLogTotalSystemWide + ' total system-wide entries)</h2>';
+  html += '<table><tr><th>Timestamp</th><th>Admin</th><th>Action</th><th>Description</th></tr>';
+  record.adminLog.forEach(function(l) {
+    html += '<tr><td>' + _fmtISTServer(l.timestamp) + '</td><td>' + escHtml(l.adminId) + '</td><td>' + escHtml(l.action) +
+      '</td><td>' + escHtml(l.description) + '</td></tr>';
+  });
+  html += '</table>';
+
+  html += '<h2>12. Known Gaps in This Record</h2>' +
+    '<div class="note">Technical interruptions: ' + escHtml(record.notes.technicalInterruptions) + '</div>' +
+    '<div class="note" style="margin-top:6px;">VVA verification summary: ' + escHtml(record.notes.vvaVerificationSummary) + '</div>' +
+    '<div class="note" style="margin-top:6px;">AdminLog scope: ' + escHtml(record.notes.adminLogScope) + '</div>';
+
+  html += '<div class="footer">Generated by ' + escHtml(generatedBy) + ' on ' + _fmtISTServer(now().toISOString()) +
+    ' - SSKZM OBA Election Management System</div>';
+
+  html += '</body></html>';
+  return html;
+}
+
+// ── generateElectionRecordPDF ──
+function generateElectionRecordPDF(token, electionId, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'generateElectionRecordPDF', electionId);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  var dataResult = getElectionRecordData(token, electionId);
+  if (!dataResult.success) return { success: false, message: dataResult.message };
+
+  var record = dataResult.record;
+  var html = _buildElectionRecordHtml(record, sess.identity);
+
+  try {
+    var blob = HtmlService.createHtmlOutput(html).getAs('application/pdf');
+    var filename = 'Election Record - ' + record.election.title + ' - ' +
+      Utilities.formatDate(new Date(), 'GMT+5:30', 'yyyy-MM-dd') + '.pdf';
+    blob.setName(filename);
+
+    var folder = getOrCreateElectionFolder(electionId, record.election.title);
+    var file   = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var driveUrl = file.getUrl();
+
+    appendAdminLog(sess.identity, 'election_record_pdf_generated',
+      'Election Record PDF generated and stored: ' + filename, '', electionId);
+
+    return { success: true, driveUrl: driveUrl, filename: filename };
+  } catch (err) {
+    return { success: false, message: 'PDF generation failed: ' + err.toString() };
+  }
+}
+// ============================================================
+// createPreVoteBackup - SOP Appendix H/J Part F. Exports Voters,
+//   Elections, Candidates, ScrutinyLog and AdminLog sheets to CSV,
+//   stores them in the election's Drive folder under a timestamped
+//   Backups subfolder, and automatically records checklist items
+//   F1-F5 as complete. Closes the gap between "I backed up" and
+//   "the system knows I backed up."
+// Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
+// ============================================================
+function createPreVoteBackup(token, electionId, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'createPreVoteBackup', electionId);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) { elec = elecRows[i]; break; }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+
+  var sheetsToBackup = [
+    { key: 'F1', label: 'Voters',      name: SHEETS.VOTERS },
+    { key: 'F2', label: 'Elections',   name: SHEETS.ELECTIONS },
+    { key: 'F3', label: 'Candidates',  name: SHEETS.CANDIDATES },
+    { key: 'F4', label: 'ScrutinyLog', name: SHEETS.SCRUTINY_LOG },
+    { key: 'F5', label: 'AdminLog',    name: SHEETS.ADMIN_LOG }
+  ];
+
+  try {
+    var folder = getOrCreateElectionFolder(electionId, elec[COL.ELEC_TITLE].toString());
+
+    var backupsIter = folder.getFoldersByName('Backups');
+    var backupsRoot = backupsIter.hasNext() ? backupsIter.next() : folder.createFolder('Backups');
+
+    var ts = Utilities.formatDate(new Date(), 'GMT+5:30', 'yyyy-MM-dd_HHmm');
+    var runFolder = backupsRoot.createFolder(ts);
+
+    var results = [];
+    sheetsToBackup.forEach(function(s) {
+      var sh = getSheet(s.name);
+      var rowCount = 0;
+      var csv = '';
+      if (sh) {
+        var data = sh.getDataRange().getValues();
+        rowCount = data.length;
+        csv = data.map(function(row) {
+          return row.map(function(cell) {
+            var v = (cell === null || cell === undefined) ? '' : cell.toString();
+            if (v.indexOf(',') !== -1 || v.indexOf('"') !== -1 || v.indexOf('\n') !== -1) {
+              v = '"' + v.replace(/"/g, '""') + '"';
+            }
+            return v;
+          }).join(',');
+        }).join('\n');
+      }
+      var blob = Utilities.newBlob(csv, 'text/csv', s.label + '.csv');
+      var file = runFolder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+      results.push({ key: s.key, label: s.label, url: file.getUrl(), rowCount: rowCount });
+
+      recordChecklistItem(token, electionId, s.key,
+        'Auto-backup ' + ts + ' — ' + rowCount + ' rows — ' + file.getUrl());
+    });
+
+    appendAdminLog(sess.identity, 'pre_vote_backup_created',
+      'Pre-vote backup created: ' + results.length + ' sheets exported to ' + runFolder.getUrl(),
+      '', electionId);
+
+    return { success: true, folderUrl: runFolder.getUrl(), timestamp: ts, files: results };
+  } catch (err) {
+    return { success: false, message: 'Backup failed: ' + err.toString() };
+  }
 }
