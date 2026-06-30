@@ -289,7 +289,7 @@ var ROLES = [
     {id:'admins-main',label:'Admin account management',mk:'admins',callouts:[
       {el:'Admins tab',tag:'What this is',title:'All admin roles are managed from this tab',body:['Shows all admin accounts: Deputy RO, TEM, Scrutineers, and Observers. You see each account status (Active/Disabled) and activation history.','You create accounts here and the system sends activation emails. Each account type has a different activation flow — Scrutineers click an acceptance link; Observers click an accreditation link; TEM receives a Declaration of Impartiality.']},
       {el:'Deputy RO activation',tag:'How to use it',title:'The Deputy RO is inactive until you explicitly activate them',body:['The Deputy RO account exists from the time of appointment but has no active permissions until you click Activate. Activation is witnessed and logged.','Note: if the Deputy RO is serving on the Appeals Panel they must recuse themselves from the DRO role during that period. When the Appeals Panel process concludes you reactivate them.','The Deputy RO can be simultaneously active alongside you if required. Either party can trigger deactivation. All changes logged in AdminLog.']},
-      {el:'TEM authorisation (planned)',tag:'Coming soon',title:'TEM write actions require a per-action Authorisation ID from you — planned feature',body:['The Technical Election Manager has full read access but every write action requires a valid Authorisation ID that you issue in advance. The TEM tier is designed this way so technical work can be delegated without granting policy-level authority.','Authorisation can be scoped to specific actions or granted as ALL_ACTIONS for the duration of a technical session. All TEM actions are logged under the TEM AdminID.','The TEM Authorisation tab (S45) is planned for a future build.']}
+      {el:'TEM authorisation',tag:'How to use it',title:'TEM write actions require a per-action Authorisation ID from you',body:['The Technical Election Manager has full read access but every write action requires a valid Authorisation ID that you issue in advance. The TEM tier is designed this way so technical work can be delegated without granting policy-level authority.','Authorisation can be scoped to a specific action or granted as ALL_ACTIONS for the duration of a technical session. You set an optional expiry. All TEM actions are logged under the TEM AdminID.','Issue AuthIDs from the TEM Auth tab. The TEM selects the active AuthID from a dropdown in their panel before performing any write action. Each AuthID can only be used once.']}
     ]}
   ]},
   {id:'log',label:'Log',screens:[
@@ -316,7 +316,7 @@ var ROLES = [
     {id:'tem-main',label:'TEM panel — read + scoped write',mk:'tem-main',callouts:[
       {el:'TEM role',tag:'What this is',title:'Full read access and scoped write access with RO authorisation',body:['The Technical Election Manager is an optional appointment — typically an alumni with technical expertise, or an external professional. The TEM may be a non-alumni, in which case their roll number field is left blank.','The TEM can read everything in the system — all tabs, AdminLog, all data — without any authorisation. This read access is available from the moment of appointment.','Any write action requires a valid Authorisation ID issued by the RO before the action. The RO scopes the authorisation to specific actions or grants blanket ALL_ACTIONS for a defined technical session.']},
       {el:'Declaration of Impartiality',tag:'Constitutional basis',title:'The TEM signs a Declaration of Impartiality before activation',body:['Before the TEM account is activated the system sends them a Declaration of Impartiality (Appendix G1) to sign. This commits them to technical neutrality and records any conflicts of interest.','The signed declaration is witnessed by the RO and filed in the election record. Until the signed declaration is received and confirmed the TEM account remains inactive.','The TEM cannot advance election status, make scrutiny decisions, or access the tally during the voting window — these are reserved for RO-tier roles.']},
-      {el:'TEM AuthorisationID (planned)',tag:'Coming soon',title:'The Authorisation ID system — planned feature',body:['The TEM Authorisation tab (S45) will be built in a future session. It will allow the RO to issue Authorisation IDs scoped to specific action types, with an expiry and a log of all uses.','Until this module is built TEM tier write actions are handled by the RO directly. The TEM can still be appointed and given read access.']}
+      {el:'TEM AuthorisationID',tag:'How to use it',title:'The Authorisation ID system',body:['The TEM Auth tab lets you issue Authorisation IDs scoped to specific action types, with an optional expiry. The TEM selects the AuthID from a dropdown before performing any write action in their panel.','Each AuthID is single-use — it can only be used for the action type it was issued for, and only once. ALL_ACTIONS scope allows one write action of any type.','All authorisations are logged in the TEM Auth tab. You can revoke an unused AuthID at any time. Revocation takes effect immediately — the TEM cannot use a revoked AuthID even if it has not expired.']}
     ]}
   ]}
 ]},
@@ -373,7 +373,7 @@ var ROLES = [
   ]},
   {id:'ec-landing',label:'Landing Page',screens:[
     {id:'ec-lp-main',label:'Landing page content (planned)',mk:'ec-landing',callouts:[
-      {el:'Landing Page tab',tag:'Coming soon',title:'EC-managed landing page content — planned feature',body:['This tab will allow the EC to update specific content on the public-facing EMS landing page — such as the election schedule description, contact details, and announcements — without touching the system code.','The LandingPageContent module is planned for a future build. Currently the landing page content is managed directly in the code.']}
+      {el:'Landing Page tab',tag:'How to use it',title:'EC-managed landing page content',body:['The Landing Page tab in the EC Officer panel lets the EC update specific content on the public-facing landing page — such as the election schedule description, contact details, and announcements.','The RO and TEM can also update landing page content from the Settings tab in the admin panel. Changes take effect immediately on the public landing page.','The LandingPageContent module stores content as key-value pairs. Keys include: sgm_date, sgm_venue, agm_date, announcement, and vva_url (Voter Verification App link).']}
     ]}
   ]}
 ]}
@@ -580,7 +580,7 @@ function mk(id, callouts) {
       + '<div class="mk-row" style="margin-top:8px;"><div class="mk-row-head"><span style="font-size:10px;">Capt. Soni (Retd) — Deputy RO</span><span class="mk-badge mk-badge-gray">Inactive</span></div></div>'
       + '<div class="mk-row"><div class="mk-row-head"><span style="font-size:10px;">Ravi Krishnan — Scrutineer</span><span class="mk-badge mk-badge-green">Active</span></div></div>'
       + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">'
-      + cbt('Deputy RO activation', callouts) + cbt('TEM authorisation (planned)', callouts)
+      + cbt('Deputy RO activation', callouts) + cbt('TEM authorisation', callouts)
       + '</div></div></div>';
     break;
 
@@ -617,7 +617,7 @@ function mk(id, callouts) {
       + '<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">'
       + cbt('TEM role', callouts)
       + cbt('Declaration of Impartiality', callouts)
-      + cbt('TEM AuthorisationID (planned)', callouts)
+      + cbt('TEM AuthorisationID', callouts)
       + '</div></div></div>';
     break;
 

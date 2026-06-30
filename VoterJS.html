@@ -1,4 +1,17 @@
 <script>
+function fmtIST(isoStr) {
+    if (!isoStr) return '';
+    var ms = new Date(isoStr).getTime();
+    if (isNaN(ms)) return isoStr.toString();
+    var d = new Date(ms + 330 * 60 * 1000);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var h = d.getUTCHours(), m = d.getUTCMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    var mm = m < 10 ? '0' + m : '' + m;
+    return d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear() +
+           ', ' + h + ':' + mm + ' ' + ampm + ' IST';
+  }
 // ============================================================
 // VOTER PANEL — Session 25 full build
 // Role: VOTER
@@ -66,24 +79,24 @@ var VoterPanel = (function() {
   function _renderTab(tabId) {
     if (tabId === 'ballot') {
       setTimeout(function() { _loadBallot(); }, 0);
-      return _spinner('Loading election status…');
+      return _spinner('Loading election status\u2026');
     }
     if (tabId === 'nominations') {
       setTimeout(function() { _loadNominationsBoard(); }, 0);
-      return _spinner('Loading nominations board…');
+      return _spinner('Loading nominations board\u2026');
     }
     if (tabId === 'receipts') {
       setTimeout(function() { _loadReceipts(); }, 0);
-      return _spinner('Loading your receipts…');
+      return _spinner('Loading your receipts\u2026');
     }
     if (tabId === 'complaints') {
       setTimeout(function() { _loadComplaints(); }, 0);
-      return _spinner('Loading complaints…');
+      return _spinner('Loading complaints\u2026');
     }
     if (tabId === 'help') {
       return _renderHelp();
     }
-    return _spinner('Loading…');
+    return _spinner('Loading\u2026');
   }
 
   function _loadBallot() {
@@ -92,6 +105,17 @@ var VoterPanel = (function() {
         var c = document.getElementById('voter-content');
         if (!c || _currentTab !== 'ballot') return;
         if (!res || !res.success) {
+          if (res && res.wrongRole) {
+            c.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
+              '<div style="font-size:2rem;margin-bottom:12px;">[NO]</div>' +
+              '<div style="font-size:1rem;font-weight:700;color:#991b1b;margin-bottom:8px;">Wrong Portal</div>' +
+              '<div style="font-size:.9rem;color:#374151;margin-bottom:20px;">' +
+                escHtml(res.message) + '</div>' +
+              '<button onclick="App.logout()" style="padding:12px 28px;background:#1a3a5c;' +
+                'color:#fff;border:none;border-radius:6px;font-size:.9rem;cursor:pointer;">' +
+                'Return to Login</button></div>';
+            return;
+          }
           c.innerHTML = _errorCard(res && res.message ? res.message : 'Could not load election status.');
           return;
         }
@@ -132,7 +156,7 @@ var VoterPanel = (function() {
       return;
     }
     if (status === 'paused') {
-      c.innerHTML = _statusCard('⏸️', 'Voting Temporarily Paused',
+      c.innerHTML = _statusCard('[PAUSED]', 'Voting Temporarily Paused',
         'The Returning Officer has paused voting. Please check back later.' +
         (_election.ecContact ? '<br><br>Contact: <strong>' + escHtml(_election.ecContact) + '</strong>' : ''),
         _election.isTrial ? 'trial' : '');
@@ -143,7 +167,7 @@ var VoterPanel = (function() {
       return;
     }
     if (status === 'scrutiny') {
-      c.innerHTML = _statusCard('🔍', 'Nominations Under Scrutiny',
+      c.innerHTML = _statusCard('[SEARCH]', 'Nominations Under Scrutiny',
         'The Returning Officer is reviewing nominations. No action required from you at this stage.',
         _election.isTrial ? 'trial' : '');
       return;
@@ -159,7 +183,7 @@ var VoterPanel = (function() {
     }
     if (status === 'declared') { _declaredCard(); return; }
     if (status === 'draft') {
-      c.innerHTML = _statusCard('📋', 'Election Pending',
+      c.innerHTML = _statusCard('☰', 'Election Pending',
         'An election has been created but has not been opened yet. Watch for announcements.',
         _election.isTrial ? 'trial' : '');
       return;
@@ -169,7 +193,7 @@ var VoterPanel = (function() {
 
   function _renderActiveBallot() {
     if (_candidatesByPost.length === 0) {
-      return _statusCard('📋', 'No Candidates Yet', 'The candidate list is not yet available.', '');
+      return _statusCard('☰', 'No Candidates Yet', 'The candidate list is not yet available.', '');
     }
     var totalPosts = _candidatesByPost.length;
     var doneCount  = _votedPosts.length;
@@ -178,7 +202,7 @@ var VoterPanel = (function() {
     var trialBanner = _election.isTrial
       ? '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;' +
         'padding:10px 14px;font-size:.82rem;color:#856404;margin-bottom:14px;">' +
-        '⚠️ <strong>Trial Election</strong> — This is a test. Your votes will not count.</div>'
+        '⚠ <strong>Trial Election</strong> \u2014 This is a test. Your votes will not count.</div>'
       : '';
 
     var progressPct = Math.round((doneCount / totalPosts) * 100);
@@ -223,7 +247,7 @@ var VoterPanel = (function() {
   function _renderPostCard(pg, voted, receiptToken) {
     var seatLine = pg.seatCount > 1
       ? '<div style="font-size:.8rem;color:#1a3a5c;background:#eff6ff;padding:4px 10px;' +
-        'border-radius:4px;margin-bottom:10px;display:inline-block;">📌 Elect <strong>' +
+        'border-radius:4px;margin-bottom:10px;display:inline-block;">[PIN] Elect <strong>' +
         pg.seatCount + '</strong> candidates for this post</div><br>'
       : '';
     var dis = voted ? 'disabled ' : '';
@@ -234,15 +258,16 @@ var VoterPanel = (function() {
     for (var i = 0; i < pg.candidates.length; i++) {
       var cd = pg.candidates[i];
       candidateRows +=
-        '<label style="display:flex;align-items:flex-start;gap:12px;padding:12px;' +
+        '<label style=\"display:flex;align-items:flex-start;gap:12px;padding:12px;' +
         'background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px;' +
-        'cursor:' + cur + ';opacity:' + opa + ';">' +
-          '<input type="radio" name="vote_' + escHtml(pg.post) + '" value="' + escHtml(cd.id) + '" ' + dis +
-          'style="margin-top:4px;width:18px;height:18px;flex-shrink:0;">' +
-          '<div style="flex:1;">' +
-            '<div style="font-size:.95rem;font-weight:600;color:#1f2937;">' + escHtml(cd.name) + '</div>' +
-            '<div style="font-size:.8rem;color:#6b7280;">Batch: ' + escHtml(cd.batch) + '</div>' +
-            (cd.bio ? '<div style="font-size:.82rem;color:#374151;margin-top:4px;line-height:1.4;">' + escHtml(cd.bio) + '</div>' : '') +
+        'cursor:' + cur + ';opacity:' + opa + ';\">' +
+          '<input type=\"radio\" name=\"vote_' + escHtml(pg.post) + '\" value=\"' + escHtml(cd.id) + '\" ' + dis +
+          'style=\"margin-top:4px;width:18px;height:18px;flex-shrink:0;\">' +
+          (cd.photo ? '<img src=\"' + escHtml(cd.photo) + '\" style=\"width:48px;height:48px;object-fit:cover;border-radius:50%;border:2px solid #d1d5db;flex-shrink:0;margin-top:2px;\">' : '') +
+          '<div style=\"flex:1;\">' +
+            '<div style=\"font-size:.95rem;font-weight:600;color:#1f2937;\">' + escHtml(cd.name) + '</div>' +
+            '<div style=\"font-size:.8rem;color:#6b7280;\">Batch: ' + escHtml(cd.batch) + '</div>' +
+            (cd.bio ? '<div style=\"font-size:.82rem;color:#374151;margin-top:4px;line-height:1.4;\">' + escHtml(cd.bio) + '</div>' : '') +
           '</div>' +
         '</label>';
     }
@@ -266,7 +291,7 @@ var VoterPanel = (function() {
     var voteBtn = voted
       ? '<div style="display:flex;align-items:center;gap:8px;padding:12px;background:#d1fae5;' +
         'border-radius:6px;font-size:.9rem;color:#065f46;">✅ Voted' +
-        (receiptToken ? ' — Receipt: <code style="font-size:.78rem;background:#f0fdf4;' +
+        (receiptToken ? ' \u2014 Receipt: <code style="font-size:.78rem;background:#f0fdf4;' +
           'padding:2px 6px;border-radius:3px;">' + escHtml(receiptToken) + '</code>' : '') + '</div>'
       : '<button onclick="VoterPanel.submitVote(\'' + escHtml(pg.post).replace(/'/g,"\\'") + '\')" ' +
         'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
@@ -301,7 +326,7 @@ var VoterPanel = (function() {
         btn = btns[b]; break;
       }
     }
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
 
     google.script.run
       .withSuccessHandler(function(res) {
@@ -317,7 +342,7 @@ var VoterPanel = (function() {
         showToast('Vote recorded for ' + postName + ' ✅');
       })
       .withFailureHandler(function() {
-        showToast('Connection error — please try again.');
+        showToast('Connection error \u2014 please try again.');
         if (btn) { btn.disabled = false; btn.textContent = 'Cast Vote for this Post'; }
       })
       .castVote(App.token, _election.id, postName, selected);
@@ -337,7 +362,7 @@ var VoterPanel = (function() {
 
   function _noElectionCard() {
     return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-      '<div style="font-size:2.5rem;margin-bottom:12px;">🗳️</div>' +
+      '<div style="font-size:2.5rem;margin-bottom:12px;">[VOTE]</div>' +
       '<div style="font-size:1.1rem;font-weight:700;color:#374151;margin-bottom:8px;">No Election Scheduled</div>' +
       '<div style="font-size:.9rem;">No upcoming election is currently scheduled.</div></div>';
   }
@@ -353,18 +378,18 @@ var VoterPanel = (function() {
   }
 
   function _nomOpenCard(phase) {
-    var title = phase === 2 ? 'Nominations Open — Phase 2' : 'Nominations Open';
+    var title = phase === 2 ? 'Nominations Open \u2014 Phase 2' : 'Nominations Open';
     var body  = phase === 2
       ? 'Phase 2 nominations are open. Any member may nominate a fellow member.'
       : 'Nominations are open. You may nominate yourself for a position on the Executive Committee.';
     var deadline = _election.nomDeadline
-      ? '<br><br>Nomination deadline: <strong>' + escHtml(_election.nomDeadline) + '</strong>' : '';
+      ? '<br><br>Nomination deadline: <strong>' + fmtIST(_election.nomDeadline) + '</strong>' : '';
     var trialBadge = _election.isTrial
       ? '<span style="font-size:.75rem;background:#fef3c7;color:#92400e;padding:2px 8px;' +
         'border-radius:10px;font-weight:600;margin-left:8px;">TRIAL</span>' : '';
     return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:24px 16px;">' +
       '<div style="text-align:center;margin-bottom:16px;">' +
-        '<div style="font-size:2rem;margin-bottom:8px;">📝</div>' +
+        '<div style="font-size:2rem;margin-bottom:8px;">📋</div>' +
         '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;">' + escHtml(title) + trialBadge + '</div>' +
       '</div>' +
       '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' + body + deadline + '</div>' +
@@ -377,10 +402,10 @@ var VoterPanel = (function() {
       (phase === 2 ?
       '<button onclick="VoterPanel.showNominationForm_Phase2()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
-      '🤝 Nominate Another Member</button>' : '') +
+      '[AGREE] Nominate Another Member</button>' : '') +
       '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-      '📋 View Nominations Board</button></div>';
+      '☰ View Nominations Board</button></div>';
   }
 
   function _candidatesPublishedCard() {
@@ -391,14 +416,14 @@ var VoterPanel = (function() {
         'border-radius:10px;font-weight:600;margin-left:8px;">TRIAL</span>' : '';
     return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:24px 16px;">' +
       '<div style="text-align:center;margin-bottom:16px;">' +
-        '<div style="font-size:2rem;margin-bottom:8px;">📣</div>' +
+        '<div style="font-size:2rem;margin-bottom:8px;">📢</div>' +
         '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;">Candidates Published' + trialBadge + '</div>' +
       '</div>' +
       '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' +
         'The final list of candidates has been published. Voting will open shortly.' + vDay + '</div>' +
       '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#1a3a5c;' +
       'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
-      '📋 View Candidate List</button>' +
+      '☰ View Candidate List</button>' +
       '<button onclick="VoterPanel.showMyNominations()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
       '📄 My Nominations</button></div>';
@@ -406,7 +431,7 @@ var VoterPanel = (function() {
 
   function _declaredCard() {
     var c = document.getElementById('voter-content');
-    if (c) c.innerHTML = _spinner('Loading results…');
+    if (c) c.innerHTML = _spinner('Loading results\u2026');
     var elecId = _election ? _election.id : null;
     google.script.run
       .withSuccessHandler(function(res) {
@@ -465,7 +490,7 @@ var VoterPanel = (function() {
           '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
           (j < cands.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + '">' +
             '<div style="width:26px;text-align:center;font-size:1rem;flex-shrink:0;">' +
-              (isElected ? '✅' : '<span style="color:#d1d5db;">○</span>') +
+              (isElected ? '✅' : '<span style="color:#d1d5db;">o</span>') +
             '</div>' +
             '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:.9rem;font-weight:' + (isElected ? '700' : '400') + ';' +
@@ -487,7 +512,7 @@ var VoterPanel = (function() {
         html +=
           '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;' +
           'border-top:1px solid #f3f4f6;margin-top:2px;">' +
-            '<div style="width:26px;text-align:center;flex-shrink:0;color:#9ca3af;">—</div>' +
+            '<div style="width:26px;text-align:center;flex-shrink:0;color:#9ca3af;">\u2014</div>' +
             '<div style="flex:1;font-size:.82rem;color:#9ca3af;">NOTA</div>' +
             '<div style="font-size:.82rem;color:#9ca3af;flex-shrink:0;min-width:40px;text-align:right;">' +
               post.nota + ' vote' + (post.nota !== 1 ? 's' : '') +
@@ -524,7 +549,7 @@ var VoterPanel = (function() {
           var c = document.getElementById('voter-content');
           if (!c || _currentTab !== 'nominations') return;
           if (!res || !res.success || !res.election) {
-            c.innerHTML = _statusCard('📋', 'No Active Election', 'There is no election currently in progress.', '');
+            c.innerHTML = _statusCard('☰', 'No Active Election', 'There is no election currently in progress.', '');
             return;
           }
           _election = res.election;
@@ -561,18 +586,34 @@ var VoterPanel = (function() {
   function _renderNominationsBoard(res) {
     var posts = res.posts || [];
     if (posts.length === 0) {
-      return _statusCard('📋', 'No Nominations Yet', 'No nominations have been confirmed yet.', '');
+      return _statusCard('☰', 'No Nominations Yet', 'No nominations have been confirmed yet.', '');
     }
     var statusLabel = {
-      nominations_open: 'Nominations Open', nominations_open_phase2: 'Nominations Open — Phase 2',
+      nominations_open: 'Nominations Open', nominations_open_phase2: 'Nominations Open \u2014 Phase 2',
       scrutiny: 'Under Scrutiny', candidates_published: 'Final Candidate List',
       active: 'Voting in Progress', paused: 'Voting Paused',
       closed: 'Voting Closed', declared: 'Results Declared'
     }[res.electionStatus] || res.electionStatus;
 
+    var candPubAt = res.candPubAt || null;
+    var objWindowOpen = false;
+    if (res.electionStatus === 'candidates_published' && candPubAt) {
+      var deadlineMs = new Date(candPubAt).getTime() + (48 * 60 * 60 * 1000);
+      objWindowOpen = Date.now() < deadlineMs;
+    }
+
     var html = '<div style="margin-bottom:14px;">' +
       '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">' + escHtml(res.electionTitle) + '</div>' +
       '<div style="font-size:.8rem;color:#6b7280;">' + escHtml(statusLabel) + '</div></div>';
+
+    if (objWindowOpen) {
+      html +=
+        '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;' +
+        'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#92400e;">' +
+        '⚠ <strong>Objection window is open.</strong> If you believe any accepted candidate is constitutionally ineligible, ' +
+        'you may file a formal objection. Objections must cite specific eligibility grounds and be filed within 48 hours of candidate list publication.' +
+        '</div>';
+    }
 
     for (var i = 0; i < posts.length; i++) {
       var pg = posts[i];
@@ -587,7 +628,14 @@ var VoterPanel = (function() {
       for (var j = 0; j < noms.length; j++) {
         var nom = noms[j];
         var badge = nom.status === 'accepted'
-          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">✓ Confirmed Candidate</span>'
+          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">\u2713 Confirmed Candidate</span>'
+          : '';
+        var objBtn = (objWindowOpen && nom.status === 'accepted' && nom.id)
+          ? '<button onclick="_showObjModal(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.name) + '\',\'' + escHtml(pg.post) + '\')" ' +
+            'style="margin-top:8px;width:100%;padding:9px;background:#fff;color:#b45309;' +
+            'border:1.5px solid #b45309;border-radius:4px;font-size:.8rem;cursor:pointer;min-height:40px;">' +
+            '⚠ File Objection Against This Nomination' +
+            '</button>'
           : '';
         html += '<div style="padding:10px 0;border-bottom:1px solid #f9fafb;">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
@@ -595,11 +643,115 @@ var VoterPanel = (function() {
           '</div>' +
           '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">Batch: ' + escHtml(nom.batch) + '</div>' +
           (nom.bio ? '<div style="font-size:.82rem;color:#374151;margin-top:6px;line-height:1.5;">' + escHtml(nom.bio) + '</div>' : '') +
+          objBtn +
           '</div>';
       }
       html += '</div>';
     }
+
+    // ── Objection modal (hidden, shown per nomination) ──────────
+    html +=
+      '<div id="obj-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;' +
+      'overflow-y:auto;padding:20px 12px;">' +
+        '<div style="background:#fff;border-radius:8px;max-width:480px;margin:0 auto;padding:20px 16px;">' +
+          '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">File a Formal Objection</div>' +
+          '<div id="obj-modal-subhead" style="font-size:.82rem;color:#6b7280;margin-bottom:14px;"></div>' +
+
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Grounds for Objection <span style="color:#dc2626;">*</span></div>' +
+          '<select id="obj-grounds" style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+          'border-radius:4px;margin-bottom:12px;box-sizing:border-box;">' +
+            '<option value="">— Select grounds —</option>' +
+            '<option value="Tenure bar — T1 consecutive term limit">Tenure bar — T1 consecutive term limit</option>' +
+            '<option value="Tenure bar — T2 total term limit">Tenure bar — T2 total term limit</option>' +
+            '<option value="Not a Life Member of SSKZM OBA">Not a Life Member of SSKZM OBA</option>' +
+            '<option value="Holding a disqualifying office or position">Holding a disqualifying office or position</option>' +
+            '<option value="Presidential eligibility rule not satisfied">Presidential eligibility rule not satisfied</option>' +
+            '<option value="Other constitutional ground — specify below">Other constitutional ground — specify below</option>' +
+          '</select>' +
+
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Supporting Details <span style="color:#dc2626;">*</span></div>' +
+          '<textarea id="obj-text" placeholder="State the specific facts you rely on in support of this objection…" ' +
+          'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;' +
+          'margin-bottom:12px;box-sizing:border-box;min-height:100px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
+
+          '<div style="background:#fef3c7;border-radius:4px;padding:10px 12px;font-size:.78rem;' +
+          'color:#92400e;margin-bottom:14px;line-height:1.5;">' +
+          '<strong>Important:</strong> A formal objection is a serious constitutional act. Only file if you have specific, ' +
+          'factual grounds to believe the candidate is constitutionally ineligible. Frivolous objections may be summarily ' +
+          'dismissed by the Appeals Panel. Your identity as objector will be known to the Appeals Panel and the Returning Officer.' +
+          '</div>' +
+
+          '<div id="obj-error" style="display:none;color:#dc2626;font-size:.82rem;margin-bottom:10px;"></div>' +
+
+          '<button onclick="_submitObjection()" ' +
+          'style="width:100%;padding:12px;background:#b45309;color:#fff;border:none;border-radius:4px;' +
+          'font-size:.9rem;cursor:pointer;min-height:44px;margin-bottom:10px;">Submit Objection</button>' +
+          '<button onclick="_closeObjModal()" ' +
+          'style="width:100%;padding:11px;background:#fff;color:#374151;border:1.5px solid #d1d5db;' +
+          'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Cancel</button>' +
+        '</div>' +
+      '</div>';
+
     return html;
+  }
+
+  var _objNomId = null;
+
+  function _showObjModal(nomId, candName, post) {
+    _objNomId = nomId;
+    var sub = document.getElementById('obj-modal-subhead');
+    if (sub) sub.textContent = candName + ' \u2014 ' + post;
+    var sel = document.getElementById('obj-grounds');
+    if (sel) sel.value = '';
+    var ta = document.getElementById('obj-text');
+    if (ta) ta.value = '';
+    var err = document.getElementById('obj-error');
+    if (err) { err.style.display = 'none'; err.textContent = ''; }
+    var m = document.getElementById('obj-modal');
+    if (m) m.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function _closeObjModal() {
+    var m = document.getElementById('obj-modal');
+    if (m) m.style.display = 'none';
+    document.body.style.overflow = '';
+    _objNomId = null;
+  }
+
+  function _submitObjection() {
+    var grounds = (document.getElementById('obj-grounds') || {}).value || '';
+    var text    = (document.getElementById('obj-text')    || {}).value || '';
+    var errEl   = document.getElementById('obj-error');
+    if (!grounds) {
+      if (errEl) { errEl.textContent = 'Please select grounds for your objection.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (!text.trim()) {
+      if (errEl) { errEl.textContent = 'Please provide supporting details.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (!_objNomId) { return; }
+
+    var btn = document.querySelector('#obj-modal button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
+    if (errEl) { errEl.style.display = 'none'; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Submission failed.'; errEl.style.display = 'block'; }
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+          return;
+        }
+        _closeObjModal();
+        showToast('Objection filed. Reference: ' + res.objectionId);
+      })
+      .withFailureHandler(function(e) {
+        if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+      })
+      .fileObjection(App.token, _objNomId, grounds, text.trim());
   }
 
   function _loadReceipts() {
@@ -637,17 +789,26 @@ var VoterPanel = (function() {
         '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">No Receipts Yet</div>' +
         '<div style="font-size:.85rem;">Your vote receipts will appear here after you vote.</div></div>';
     }
+    var baseUrl = window.location.href.split('?')[0];
     var html = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;' +
       'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#1d4ed8;">' +
-      '🔒 Your votes are anonymous. These receipts confirm <em>that</em> you voted, not <em>how</em> you voted.</div>';
+      '🔒 Your votes are anonymous. These receipts confirm <em>that</em> you voted, not <em>how</em> you voted. ' +
+      'After results are declared, use the Verify button to confirm your vote is on record.</div>';
     for (var k = 0; k < all.length; k++) {
       var r = all[k];
+      var verifyUrl = r._token ? (baseUrl + '?action=verifyToken&voteId=' + encodeURIComponent(r._token)) : '';
       html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:10px;">' +
         '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:4px;">' + escHtml(r.post) + '</div>' +
-        '<div style="font-size:.78rem;color:#6b7280;">Voted: ' + escHtml(r.votedAt.toString().split('T')[0] || r.votedAt.toString()) + '</div>' +
-        (r._token ? '<div style="font-size:.78rem;color:#374151;margin-top:6px;">Receipt token: ' +
-          '<code style="background:#f0fdf4;padding:2px 6px;border-radius:3px;font-size:.75rem;color:#065f46;">' +
-          escHtml(r._token) + '</code></div>' : '') +
+        '<div style="font-size:.78rem;color:#6b7280;">Voted: ' + fmtIST(r.votedAt) + '</div>' +
+        (r._token
+          ? '<div style="font-size:.78rem;color:#374151;margin-top:6px;">Receipt token: ' +
+            '<code style="background:#f0fdf4;padding:2px 6px;border-radius:3px;font-size:.75rem;color:#065f46;">' +
+            escHtml(r._token) + '</code></div>' +
+            '<a href="' + escHtml(verifyUrl) + '" target="_blank" rel="noopener" ' +
+            'style="display:inline-block;margin-top:8px;padding:6px 14px;background:#f0fdf4;' +
+            'color:#065f46;border:1.5px solid #86efac;border-radius:4px;font-size:.78rem;' +
+            'font-weight:600;text-decoration:none;">\u2713 Verify this vote</a>'
+          : '') +
         '</div>';
     }
     return html;
@@ -655,16 +816,16 @@ var VoterPanel = (function() {
 
   function _renderHelp() {
     return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;margin-bottom:14px;">' +
-      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">🗳️ Voting Guide</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">[VOTE] Voting Guide</div>' +
       _helpItem('Who can vote?', 'All Life Members on the electoral roll, verified by the sub-committee before the election.') +
       _helpItem('How do I vote?', 'Tap <strong>My Ballot</strong> when voting is open. For each post, select a candidate (or NOTA/Abstain) and tap "Cast Vote". You will receive a receipt token.') +
       _helpItem('Can I change my vote?', 'No. Once cast, a vote cannot be changed or withdrawn.') +
-      _helpItem('What is NOTA?', '<strong>None of the Above</strong> — records your preference that none of the listed candidates should hold this post.') +
+      _helpItem('What is NOTA?', '<strong>None of the Above</strong> \u2014 records your preference that none of the listed candidates should hold this post.') +
       _helpItem('What is Abstain?', 'Choosing Abstain means you are opting out of voting for that post. It is recorded as a valid action.') +
-      _helpItem('What is a receipt token?', 'A random code confirming your vote was recorded. It does not reveal who you voted for — votes are anonymous.') +
+      _helpItem('What is a receipt token?', 'A random code confirming your vote was recorded. It does not reveal who you voted for \u2014 votes are anonymous.') +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
-      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:12px;">📞 Contact</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:12px;">[CONTACT] Contact</div>' +
       '<div style="font-size:.88rem;color:#374151;line-height:1.8;">For help during the election, contact the Returning Officer.<br>' +
         'For technical issues, email the EC Officer.<br><br>' +
         '<em>Contact details will be published with the election notice.</em></div></div>';
@@ -684,7 +845,7 @@ var VoterPanel = (function() {
 
   function _errorCard(msg) {
     return '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;' +
-      'padding:14px 16px;font-size:.9rem;color:#991b1b;">⚠️ ' + escHtml(msg) + '</div>';
+      'padding:14px 16px;font-size:.9rem;color:#991b1b;">⚠ ' + escHtml(msg) + '</div>';
   }
 
   function showNominationsBoard() { NavMenu.switchTab('nominations'); }
@@ -724,7 +885,7 @@ var VoterPanel = (function() {
       }
       return true;
     });
-    var postOptions = '<option value="">— Select a post —</option>';
+    var postOptions = '<option value="">\u2014 Select a post \u2014</option>';
     for (var i = 0; i < posts.length; i++) {
       postOptions += '<option value="' + escHtml(posts[i]) + '">' + escHtml(posts[i]) + '</option>';
     }
@@ -732,10 +893,10 @@ var VoterPanel = (function() {
     return '<div style="margin-bottom:12px;">' +
         '<button onclick="VoterPanel._backToBallot()" ' +
         'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
-        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">\u2190 Back</button>' +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
-        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">🤝 Nominate Another Member</div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">[AGREE] Nominate Another Member</div>' +
         '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">You will be recorded as the Proposer. The candidate will receive an email asking them to accept or decline.</div>' +
 
         '<div style="margin-bottom:14px;">' +
@@ -758,7 +919,7 @@ var VoterPanel = (function() {
 
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
-            'Seconder Roll Number <span style="font-weight:400;color:#9ca3af;">(optional — can be added later)</span>' +
+            'Seconder Roll Number <span style="font-weight:400;color:#9ca3af;">(optional \u2014 can be added later)</span>' +
           '</label>' +
           '<div style="display:flex;gap:8px;">' +
             '<input type="text" id="p2-sec-roll" placeholder="e.g. SSK002" inputmode="text" ' +
@@ -770,14 +931,14 @@ var VoterPanel = (function() {
         '</div>' +
 
         '<div style="margin-bottom:14px;">' +
-          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
-          '<textarea id="p2-bio" maxlength="1000" placeholder="Brief introduction for the nominations board…" ' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional \u2014 max 300 characters)</span></label>' +
+          '<textarea id="p2-bio" maxlength="1000" placeholder="Brief introduction for the nominations board\u2026" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
         '</div>' +
 
         '<div style="margin-bottom:16px;padding:12px;background:#eff6ff;border-radius:6px;font-size:.82rem;color:#1d4ed8;line-height:1.5;">' +
-          'ℹ️ By submitting, you confirm you are proposing this member in good faith. ' +
+          '(i) By submitting, you confirm you are proposing this member in good faith. ' +
           'The candidate must accept before the nomination appears on the board.' +
         '</div>' +
 
@@ -787,7 +948,7 @@ var VoterPanel = (function() {
         '<button onclick="VoterPanel._submitPhase2()" ' +
         'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
         'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-        '🤝 Submit Nomination</button>' +
+        '[AGREE] Submit Nomination</button>' +
       '</div>';
   }
 
@@ -798,20 +959,20 @@ var VoterPanel = (function() {
     var roll = rollEl.value.trim();
     if (!roll) { nameEl.innerHTML = ''; return; }
     nameEl.style.color = '#9ca3af';
-    nameEl.innerHTML = 'Looking up…';
+    nameEl.innerHTML = 'Looking up\u2026';
     google.script.run
       .withSuccessHandler(function(res) {
         if (res && res.success) {
           nameEl.style.color = '#059669';
-          nameEl.innerHTML = '✓ ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
+          nameEl.innerHTML = '\u2713 ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
         } else {
           nameEl.style.color = '#dc2626';
-          nameEl.innerHTML = '✗ ' + escHtml((res && res.message) || 'Not found');
+          nameEl.innerHTML = '\u2717 ' + escHtml((res && res.message) || 'Not found');
         }
       })
       .withFailureHandler(function() {
         nameEl.style.color = '#dc2626';
-        nameEl.innerHTML = '✗ Connection error';
+        nameEl.innerHTML = '\u2717 Connection error';
       })
       .lookupVoterName(App.token, roll);
   }
@@ -836,11 +997,11 @@ var VoterPanel = (function() {
     if (!_election || !_election.id) { _p2Error('Election data missing. Please reload.'); return; }
 
     var btn = document.querySelector('[onclick="VoterPanel._submitPhase2()"]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
 
     google.script.run
       .withSuccessHandler(function(res) {
-        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
+        if (btn) { btn.disabled = false; btn.textContent = '[AGREE] Submit Nomination'; }
         if (!res || !res.success) {
           _p2Error((res && res.message) || 'Submission failed. Please try again.');
           return;
@@ -860,7 +1021,7 @@ var VoterPanel = (function() {
         }
       })
       .withFailureHandler(function() {
-        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
+        if (btn) { btn.disabled = false; btn.textContent = '[AGREE] Submit Nomination'; }
         _p2Error('Connection error. Please try again.');
       })
       .submitNomination_Phase2(App.token, _election.id, post, candRoll, secRoll, bio);
@@ -902,7 +1063,7 @@ var VoterPanel = (function() {
       }
       return true;
     });
-    var postOptions = '<option value="">— Select a post —</option>';
+    var postOptions = '<option value="">\u2014 Select a post \u2014</option>';
     for (var i = 0; i < posts.length; i++) {
       postOptions += '<option value="' + escHtml(posts[i]) + '">' +
         escHtml(posts[i]) + '</option>';
@@ -911,7 +1072,7 @@ var VoterPanel = (function() {
     return '<div style="margin-bottom:12px;">' +
         '<button onclick="VoterPanel._backToBallot()" ' +
         'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
-        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">\u2190 Back</button>' +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
         '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:16px;">✍️ Nominate Myself</div>' +
@@ -946,12 +1107,21 @@ var VoterPanel = (function() {
         '</div>' +
 
         '<div style="margin-bottom:14px;">' +
-          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional — max 300 characters)</span></label>' +
-          '<textarea id="nom-bio" maxlength="1000" placeholder="Brief introduction for the nominations board…" ' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional \u2014 max 300 characters)</span></label>' +
+          '<textarea id="nom-bio" maxlength="1000" placeholder="Brief introduction for the nominations board\u2026" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
         '</div>' +
-
+        '<div style=\"margin-bottom:14px;\">' +
+          '<label style=\"display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;\">Photo <span style=\"font-weight:400;color:#9ca3af;\">(optional \u2014 JPEG/PNG, max 2MB)</span></label>' +
+          '<input type=\"file\" id=\"nom-photo\" accept=\"image/jpeg,image/png,image/webp\" ' +
+          'style=\"width:100%;font-size:.88rem;padding:8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;\">' +
+          '<div id=\"nom-photo-preview\" style=\"display:none;margin-top:8px;\">' +
+            '<img id=\"nom-photo-img\" src=\"\" style=\"width:64px;height:64px;object-fit:cover;border-radius:50%;border:2px solid #1a3a5c;\">' +
+            '<span style=\"font-size:.8rem;color:#059669;margin-left:10px;\">&#10003; Photo ready to upload</span>' +
+          '</div>' +
+          '<div id=\"nom-photo-error\" style=\"display:none;font-size:.8rem;color:#991b1b;margin-top:4px;\"></div>' +
+        '</div>' +
         '<div style="margin-bottom:16px;padding:12px;background:#eff6ff;border-radius:6px;font-size:.82rem;color:#1d4ed8;">' +
           '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">' +
             '<input type="checkbox" id="nom-declaration" style="margin-top:3px;width:18px;height:18px;flex-shrink:0;">' +
@@ -977,20 +1147,20 @@ var VoterPanel = (function() {
     var roll = rollEl.value.trim();
     if (!roll) { nameEl.textContent = ''; return; }
     nameEl.style.color = '#6b7280';
-    nameEl.textContent = 'Looking up…';
+    nameEl.textContent = 'Looking up\u2026';
     google.script.run
       .withSuccessHandler(function(res) {
         if (!nameEl) return;
         if (res && res.success) {
           nameEl.style.color = '#059669';
-          nameEl.textContent = '✓ ' + res.name + ' (Batch ' + res.batch + ')';
+          nameEl.textContent = '\u2713 ' + res.name + ' (Batch ' + res.batch + ')';
         } else {
           nameEl.style.color = '#dc2626';
-          nameEl.textContent = '✗ ' + ((res && res.message) || 'Not found');
+          nameEl.textContent = '\u2717 ' + ((res && res.message) || 'Not found');
         }
       })
       .withFailureHandler(function() {
-        if (nameEl) { nameEl.style.color = '#dc2626'; nameEl.textContent = '✗ Connection error'; }
+        if (nameEl) { nameEl.style.color = '#dc2626'; nameEl.textContent = '\u2717 Connection error'; }
       })
       .lookupVoterName(App.token, roll);
   }
@@ -1009,7 +1179,12 @@ var VoterPanel = (function() {
     var prop = propEl.value.trim();
     var sec  = secEl.value.trim();
     var bio  = bioEl ? bioEl.value.trim() : '';
-
+    var photoEl   = document.getElementById('nom-photo');
+    var photoFile = photoEl && photoEl.files && photoEl.files[0] ? photoEl.files[0] : null;
+    if (photoFile && photoFile.size > 2097152) {
+      _showNomError('Photo is too large. Maximum size is 2MB.');
+      return;
+    }
     if (!post) { _showNomError('Please select a post.'); return; }
     if (!prop) { _showNomError('Please enter the proposer\'s roll number.'); return; }
     if (!sec)  { _showNomError('Please enter the seconder\'s roll number.'); return; }
@@ -1018,37 +1193,65 @@ var VoterPanel = (function() {
     if (errEl) errEl.style.display = 'none';
 
     var btn = document.querySelector('button[onclick="VoterPanel._submitNomination()"]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
 
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res || !res.success) {
-          _showNomError((res && res.message) || 'Submission failed. Please try again.');
+    function _doSubmit() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            _showNomError((res && res.message) || 'Submission failed. Please try again.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
+            return;
+          }
+          function _showSuccess() {
+            var c = document.getElementById('voter-content');
+            if (c) c.innerHTML =
+              '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+              'padding:32px 16px;text-align:center;">' +
+                '<div style="font-size:3rem;margin-bottom:12px;">✅</div>' +
+                '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">Nomination Submitted!</div>' +
+                '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' +
+                  'Your nomination for <strong>' + escHtml(post) + '</strong> has been submitted.<br><br>' +
+                  'Confirmation emails have been sent to your proposer and seconder. ' +
+                  'Your nomination will be confirmed once both have clicked their links.' +
+                '</div>' +
+                '<button onclick="VoterPanel.showMyNominations()" ' +
+                'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
+                'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
+                '📄 View My Nominations</button>' +
+              '</div>';
+          }
+          if (photoFile) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+              var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+              google.script.run
+                .withSuccessHandler(function(pRes) {
+                  if (!pRes || !pRes.success) {
+                    var pe = document.getElementById('nom-photo-error');
+                    if (pe) { pe.textContent = (pRes && pRes.message) || 'Photo upload failed.'; pe.style.display = 'block'; }
+                  }
+                  _showSuccess();
+                })
+                .withFailureHandler(function() {
+                  var pe = document.getElementById('nom-photo-error');
+                  if (pe) { pe.textContent = 'Photo upload failed — please contact the RO.'; pe.style.display = 'block'; }
+                  _showSuccess();
+                })
+                .uploadNominationPhoto(App.token, _election.id, b64, photoFile.type, photoFile.name);
+            };
+            reader.readAsDataURL(photoFile);
+          } else {
+            _showSuccess();
+          }
+        })
+        .withFailureHandler(function() {
+          _showNomError('Connection error \u2014 please try again.');
           if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
-          return;
-        }
-        var c = document.getElementById('voter-content');
-        if (c) c.innerHTML =
-          '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
-          'padding:32px 16px;text-align:center;">' +
-            '<div style="font-size:3rem;margin-bottom:12px;">✅</div>' +
-            '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">Nomination Submitted!</div>' +
-            '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' +
-              'Your nomination for <strong>' + escHtml(post) + '</strong> has been submitted.<br><br>' +
-              'Confirmation emails have been sent to your proposer and seconder. ' +
-              'Your nomination will be confirmed once both have clicked their links.' +
-            '</div>' +
-            '<button onclick="VoterPanel.showMyNominations()" ' +
-            'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
-            'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-            '📄 View My Nominations</button>' +
-          '</div>';
-      })
-      .withFailureHandler(function() {
-        _showNomError('Connection error — please try again.');
-        if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
-      })
-      .submitNomination(App.token, _election.id, post, prop, sec, bio);
+        })
+        .submitNomination(App.token, _election.id, post, prop, sec, bio);
+    }
+    _doSubmit();
   }
 
   function _showNomError(msg) {
@@ -1067,7 +1270,7 @@ var VoterPanel = (function() {
   function showMyNominations() {
     var c = document.getElementById('voter-content');
     if (!c) return;
-    c.innerHTML = _spinner('Loading your nominations…');
+    c.innerHTML = _spinner('Loading your nominations\u2026');
 
     var elecId = _election ? _election.id : null;
     if (!elecId) {
@@ -1114,9 +1317,9 @@ var VoterPanel = (function() {
       submitted:           'Awaiting Proposer/Seconder',
       consent_pending:     'Awaiting Candidate Consent',
       pending_confirmation:'Awaiting Seconder Confirmation',
-      confirmed:           'Submitted — Awaiting Scrutiny',
-      pending_scrutiny:    'Submitted — Awaiting Scrutiny',
-      accepted:            'Accepted ✓',
+      confirmed:           'Submitted \u2014 Awaiting Scrutiny',
+      pending_scrutiny:    'Submitted \u2014 Awaiting Scrutiny',
+      accepted:            'Accepted \u2713',
       rejected:            'Rejected',
       withdrawn:           'Withdrawn',
       consent_declined:    'Consent Declined',
@@ -1139,14 +1342,14 @@ var VoterPanel = (function() {
       '<div style="margin-bottom:12px;">' +
         '<button onclick="VoterPanel._backToBallot()" ' +
         'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
-        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">\u2190 Back</button>' +
       '</div>' +
       '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">📄 My Nominations</div>';
 
     if (nominations.length === 0) {
       html +=
         '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-          '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+          '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
           '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Nominations Yet</div>' +
           '<div style="font-size:.85rem;margin-bottom:16px;">You have not submitted any nominations.</div>' +
           '<button onclick="VoterPanel.showNominationForm()" ' +
@@ -1171,31 +1374,41 @@ var VoterPanel = (function() {
           '</div>' +
           '<div style="font-size:.8rem;color:#6b7280;margin-bottom:8px;">' +
             'Submitted: ' + escHtml(nom.submittedAt.toString().split('T')[0] || nom.submittedAt.toString()) +
-            ' · Role: ' + escHtml(nom.role) +
+            ' \u00b7 Role: ' + escHtml(nom.role) +
           '</div>' +
           '<div style="display:flex;gap:12px;font-size:.82rem;margin-bottom:8px;">' +
             '<span style="color:' + (nom.propConfirmed ? '#059669' : '#9ca3af') + ';">' +
-              (nom.propConfirmed ? '✓' : '○') + ' Proposer confirmed</span>' +
+              (nom.propConfirmed ? '\u2713' : 'o') + ' Proposer confirmed</span>' +
             '<span style="color:' + (nom.secConfirmed ? '#059669' : '#9ca3af') + ';">' +
-              (nom.secConfirmed ? '✓' : '○') + ' Seconder confirmed</span>' +
+              (nom.secConfirmed ? '\u2713' : 'o') + ' Seconder confirmed</span>' +
           '</div>' +
           (nom.rejectionReason ?
             '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
             'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
             '<strong>Rejection reason:</strong> ' + escHtml(nom.rejectionReason) + '</div>' : '') +
           (nom.status === 'rejected' && nom.role === 'candidate' &&
-           (_election && (_election.status === 'scrutiny' || _election.status === 'candidates_published')) ?
+           (_election && (_election.status === 'scrutiny' || _election.status === 'candidates_published')) &&
+           (!nom.appealDeadlinePassed) ?
             '<button onclick="VoterPanel._showAppealForm(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.post) + '\')" ' +
             'style="width:100%;padding:12px;background:#fff;color:#b45309;border:1.5px solid #b45309;' +
-            'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">' +
-            '⚖️ File an Appeal</button>' +
+            'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:4px;">' +
+            '⚖ File an Appeal</button>' +
+            (nom.appealDeadlineStr ? '<div style="font-size:.78rem;color:#92400e;text-align:center;margin-bottom:8px;">' +
+            '⏱ Appeal window closes: ' + escHtml(nom.appealDeadlineStr) + '</div>' : '') +
             '<div id="appeal-form-' + escHtml(nom.id) + '" style="display:none;' +
             'background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px;margin-bottom:8px;">' +
-              '<div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:8px;">Appeal against rejection — ' + escHtml(nom.post) + '</div>' +
+              '<div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:8px;">Appeal against rejection \u2014 ' + escHtml(nom.post) + '</div>' +
               '<textarea id="appeal-text-' + escHtml(nom.id) + '" rows="4" ' +
               'placeholder="State the grounds for your appeal. Include any facts or documents that support your case." ' +
               'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #fde68a;border-radius:4px;' +
               'box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>' +
+              '<div style="margin-bottom:8px;">' +
+                '<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:4px;">Supporting Document (optional)</div>' +
+                '<input type="file" id="appeal-doc-' + escHtml(nom.id) + '" ' +
+                'accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" ' +
+                'style="width:100%;font-size:.82rem;">' +
+                '<div style="font-size:.75rem;color:#9ca3af;margin-top:3px;">PDF, image, or Word document. Max 5MB.</div>' +
+              '</div>' +
               '<div style="display:flex;gap:8px;">' +
                 '<button onclick="VoterPanel._submitAppeal(\'' + escHtml(nom.id) + '\')" ' +
                 'style="flex:1;padding:11px;background:#b45309;color:#fff;border:none;border-radius:4px;' +
@@ -1205,8 +1418,15 @@ var VoterPanel = (function() {
                 'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Cancel</button>' +
               '</div>' +
             '</div>' : '') +
-          (nom.phase2 && !nom.secRoll &&
-           (nom.role === 'proposer' ||
+          (nom.status === 'rejected' && nom.role === 'candidate' &&
+           (_election && (_election.status === 'scrutiny' || _election.status === 'candidates_published')) &&
+           nom.appealDeadlinePassed ?
+            '<div style="padding:10px 12px;background:#f3f4f6;border:1px solid #d1d5db;' +
+            'border-radius:4px;font-size:.82rem;color:#6b7280;margin-bottom:8px;">' +
+            '🔒 Appeal window closed' +
+            (nom.appealDeadlineStr ? ' \u2014 deadline was ' + escHtml(nom.appealDeadlineStr) : '') +
+            '</div>' : '') +
+           ((nom.role === 'proposer' ||
             (nom.role === 'candidate' && nom.consentStatus === 'accepted')) ?
             '<div style="margin-bottom:8px;">' +
               '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Add Seconder</div>' +
@@ -1219,7 +1439,7 @@ var VoterPanel = (function() {
               '<div id="sec-name-' + escHtml(nom.id) + '" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:6px;"></div>' +
               '<button onclick="VoterPanel._submitAddSeconder(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.role) + '\')" ' +
               'style="width:100%;padding:10px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
-              'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">➕ Add Seconder</button>' +
+              'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;margin-bottom:8px;">+ Add Seconder</button>' +
             '</div>' : '') +
           (( nom.status === 'submitted' || nom.status === 'confirmed' ||
              nom.status === 'consent_pending' || nom.status === 'pending_confirmation' ||
@@ -1239,12 +1459,12 @@ var VoterPanel = (function() {
               'style="width:100%;padding:12px;background:#fff;color:#dc2626;border:1.5px solid #dc2626;' +
               'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">Withdraw Candidature</button>' +
               (nom.withdrawDeadline ? '<div style="font-size:.78rem;color:#6b7280;text-align:center;margin-top:4px;">' +
-              '⏰ Withdrawal closes: ' + escHtml(nom.withdrawDeadline) + ' IST</div>' : '') +
+              '⏱ Withdrawal closes: ' + escHtml(nom.withdrawDeadline) + ' IST</div>' : '') +
               '</div>'
             :
               '<div style="margin-top:4px;padding:10px 12px;background:#f3f4f6;border:1px solid #d1d5db;' +
               'border-radius:4px;font-size:.82rem;color:#6b7280;text-align:center;">' +
-              '🔒 Withdrawal closed — ' + escHtml(nom.withdrawDeadline) + ' IST</div>'
+              '🔒 Withdrawal closed \u2014 ' + escHtml(nom.withdrawDeadline) + ' IST</div>'
             )
             : '') +
         '</div>';
@@ -1268,14 +1488,46 @@ var VoterPanel = (function() {
     var text = textEl.value.trim();
     if (!text) { showToast('Please enter the grounds for your appeal.', true); return; }
 
+    var docEl   = document.getElementById('appeal-doc-' + nomId);
+    var docFile = docEl && docEl.files && docEl.files[0] ? docEl.files[0] : null;
+    if (docFile && docFile.size > 5242880) {
+      showToast('Document too large. Maximum size is 5MB.', true); return;
+    }
+
     google.script.run
       .withSuccessHandler(function(res) {
         if (!res || !res.success) {
           showToast((res && res.message) || 'Appeal submission failed.', true);
           return;
         }
-        showToast('Appeal filed. Reference: ' + res.appealId);
-        _loadMyNominations();
+        var appealId = res.appealId;
+        // Upload supporting document if provided
+        if (docFile) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+            google.script.run
+              .withSuccessHandler(function(dRes) {
+                if (!dRes || !dRes.success) {
+                  showToast('Appeal filed (Ref: ' + appealId + ') but document upload failed: ' +
+                    ((dRes && dRes.message) || 'Unknown error'), true);
+                } else {
+                  showToast('Appeal filed with supporting document. Reference: ' + appealId);
+                }
+                _loadMyNominations();
+              })
+              .withFailureHandler(function() {
+                showToast('Appeal filed (Ref: ' + appealId + ') but document upload failed.', true);
+                _loadMyNominations();
+              })
+              .storeAppealDocument(App.token, _election.id, appealId,
+                docFile.name, b64, docFile.type);
+          };
+          reader.readAsDataURL(docFile);
+        } else {
+          showToast('Appeal filed. Reference: ' + appealId);
+          _loadMyNominations();
+        }
       })
       .withFailureHandler(function() { showToast('Connection error.', true); })
       .fileAppeal(App.token, nomId, text);
@@ -1302,20 +1554,20 @@ var VoterPanel = (function() {
     var roll = rollEl.value.trim();
     if (!roll) { nameEl.innerHTML = ''; return; }
     nameEl.style.color = '#9ca3af';
-    nameEl.innerHTML = 'Looking up…';
+    nameEl.innerHTML = 'Looking up\u2026';
     google.script.run
       .withSuccessHandler(function(res) {
         if (res && res.success) {
           nameEl.style.color = '#059669';
-          nameEl.innerHTML = '✓ ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
+          nameEl.innerHTML = '\u2713 ' + escHtml(res.name) + (res.batch ? ' (Batch ' + escHtml(res.batch) + ')' : '');
         } else {
           nameEl.style.color = '#dc2626';
-          nameEl.innerHTML = '✗ ' + escHtml((res && res.message) || 'Not found');
+          nameEl.innerHTML = '\u2717 ' + escHtml((res && res.message) || 'Not found');
         }
       })
       .withFailureHandler(function() {
         nameEl.style.color = '#dc2626';
-        nameEl.innerHTML = '✗ Connection error';
+        nameEl.innerHTML = '\u2717 Connection error';
       })
       .lookupVoterName(App.token, roll);
   }
@@ -1363,10 +1615,10 @@ var VoterPanel = (function() {
 
   function _renderComplaintsTab(complaints) {
     var statusLabels = {
-      filed:               'Filed — Awaiting Review',
+      filed:               'Filed \u2014 Awaiting Review',
       under_review:        'Under Review',
-      resolved_upheld:     'Resolved — Upheld',
-      resolved_dismissed:  'Resolved — Dismissed',
+      resolved_upheld:     'Resolved \u2014 Upheld',
+      resolved_dismissed:  'Resolved \u2014 Dismissed',
       referred_to_ec:      'Referred to Executive Committee'
     };
     var statusColors = {
@@ -1394,19 +1646,19 @@ var VoterPanel = (function() {
     // ── File new complaint form ──
     html +=
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:18px;">' +
-        '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">📝 File a New Complaint</div>' +
+        '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">📋 File a New Complaint</div>' +
         '<div style="margin-bottom:10px;">' +
-          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Roll No. (optional)</label>' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against \u2014 Roll No. (optional)</label>' +
           '<input type="text" id="cmp-against-roll" placeholder="e.g. SSK001" inputmode="text" maxlength="20" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
-          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Name (optional)</label>' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against \u2014 Name (optional)</label>' +
           '<input type="text" id="cmp-against" placeholder="Full name of member" maxlength="100" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
-          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against — Batch (optional)</label>' +
+          '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against \u2014 Batch (optional)</label>' +
           '<input type="text" id="cmp-against-batch" placeholder="e.g. 1995" inputmode="numeric" maxlength="4" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
@@ -1429,7 +1681,7 @@ var VoterPanel = (function() {
     if (complaints.length === 0) {
       html +=
         '<div style="text-align:center;padding:24px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">📭</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">[EMPTY]</div>' +
           '<div style="font-size:.9rem;">You have not filed any complaints for this election.</div>' +
         '</div>';
     } else {
@@ -1476,7 +1728,7 @@ var VoterPanel = (function() {
     var elecId  = _election ? _election.id : null;
 
     var btn = document.querySelector('button[onclick="VoterPanel._submitComplaint()"]');
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
 
     google.script.run
       .withSuccessHandler(function(res) {

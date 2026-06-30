@@ -5,6 +5,23 @@
 // ============================================================
 var AdminPanel = (function() {
 
+  // IST timestamp formatter — converts any ISO/Date string to IST display
+  // Returns e.g. "28 Jun 2026, 11:32 PM IST"
+  function fmtIST(isoStr) {
+    if (!isoStr) return '';
+    var ms = new Date(isoStr).getTime();
+    if (isNaN(ms)) return isoStr;
+    var IST_OFFSET_MS = 330 * 60 * 1000; // UTC+5:30
+    var d = new Date(ms + IST_OFFSET_MS);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var h = d.getUTCHours(), m = d.getUTCMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    var mm = m < 10 ? '0' + m : '' + m;
+    return d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear() +
+           ', ' + h + ':' + mm + ' ' + ampm + ' IST';
+  }
+
   var _currentTab = '';
 
   // Tab definitions per role
@@ -14,48 +31,64 @@ var AdminPanel = (function() {
       { id:'nominations',      label:'Nominations' },
       { id:'scrutiny',         label:'Scrutiny' },
       { id:'candidates',       label:'Candidates' },
-      { id:'voters',           label:'Voters' },
+      { id:'presec',           label:'PreSec' },
       { id:'voter_roll_draft', label:'Roll Draft' },
+      { id:'voters',           label:'Voters' },
       { id:'tally',            label:'Tally' },
-      { id:'handover',         label:'Handover' },
       { id:'admins',           label:'Admins' },
-      { id:'adminlog',         label:'Log' },
-      { id:'complaints',       label:'Complaints' },
+      { id:'adminlog',         label:'Admin Log' },
       { id:'appeals',          label:'Appeals' },
+      { id:'complaints',       label:'Complaints' },
       { id:'documents',        label:'Documents' },
-      { id:'settings',         label:'Settings' }
+      { id:'handover',         label:'Handover' },
+      { id:'observations',     label:'Observations' },
+      { id:'settings',         label:'Settings' },
+      { id:'tem_auth',         label:'TEM Auth' }
     ],
     DEPUTY_RO: [
-      { id:'elections',   label:'Elections' },
-      { id:'nominations', label:'Nominations' },
-      { id:'scrutiny',    label:'Scrutiny' },
-      { id:'candidates',  label:'Candidates' },
-      { id:'voters',      label:'Voters' },
-      { id:'tally',       label:'Tally' },
-      { id:'handover',    label:'Handover' },
-      { id:'adminlog',    label:'Log' },
-      { id:'complaints',  label:'Complaints' },
-      { id:'appeals',     label:'Appeals' }
+      { id:'elections',    label:'Elections' },
+      { id:'nominations',  label:'Nominations' },
+      { id:'scrutiny',     label:'Scrutiny' },
+      { id:'candidates',   label:'Candidates' },
+      { id:'voters',       label:'Voters' },
+      { id:'tally',        label:'Tally' },
+      { id:'adminlog',     label:'Admin Log' },
+      { id:'appeals',      label:'Appeals' },
+      { id:'complaints',   label:'Complaints' },
+      { id:'handover',     label:'Handover' },
+      { id:'observations', label:'Observations' }
     ],
     TEM: [
-      { id:'elections',   label:'Elections' },
-      { id:'nominations', label:'Nominations' },
-      { id:'scrutiny',    label:'Scrutiny' },
-      { id:'candidates',  label:'Candidates' },
-      { id:'voters',      label:'Voters' },
-      { id:'tally',       label:'Tally' },
-      { id:'adminlog',    label:'Log' }
+      { id:'elections',        label:'Elections' },
+      { id:'nominations',      label:'Nominations' },
+      { id:'scrutiny',         label:'Scrutiny' },
+      { id:'candidates',       label:'Candidates' },
+      { id:'presec',           label:'PreSec' },
+      { id:'voter_roll_draft', label:'Roll Draft' },
+      { id:'voters',           label:'Voters' },
+      { id:'tally',            label:'Tally' },
+      { id:'admins',           label:'Admins' },
+      { id:'adminlog',         label:'Admin Log' },
+      { id:'appeals',          label:'Appeals' },
+      { id:'complaints',       label:'Complaints' },
+      { id:'documents',        label:'Documents' },
+      { id:'handover',         label:'Handover' },
+      { id:'observations',     label:'Observations' },
+      { id:'settings',         label:'Settings' }
     ],
     SCRUTINEER: [
-      { id:'tally',     label:'Tally' },
-      { id:'handover',  label:'Handover' },
-      { id:'scrutiny',  label:'Scrutiny' },
-      { id:'votedlog',  label:'Voted Log' },
-      { id:'adminlog',  label:'Log' }
+      { id:'scrutiny',     label:'Scrutiny' },
+      { id:'presec',       label:'PreSec' },
+      { id:'tally',        label:'Tally' },
+      { id:'adminlog',     label:'Admin Log' },
+      { id:'handover',     label:'Handover' },
+      { id:'observations', label:'Observations' },
+      { id:'votedlog',     label:'Voted Log' }
     ],
     OBSERVER: [
-      { id:'dashboard', label:'Dashboard' },
-      { id:'results',   label:'Results' }
+      { id:'dashboard',    label:'Dashboard' },
+      { id:'observations', label:'Observations' },
+      { id:'results',      label:'Results' }
     ]
   };
 
@@ -83,16 +116,21 @@ var AdminPanel = (function() {
         bar.style.cssText = 'background:#fefce8;border-bottom:1px solid #fde047;' +
           'padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
         bar.innerHTML =
-          '<span style="font-size:.9rem;color:#854d0e;font-weight:600;">' +
-            'TEM Authorisation ID required for write actions:</span>' +
-          '<input id="tem-authid" type="text" placeholder="Enter AuthID" ' +
+          '<span style="font-size:.9rem;color:#854d0e;font-weight:600;">Active Authorisation:</span>' +
+          '<select id="tem-authid" ' +
             'style="font-size:.9rem;padding:8px 10px;border:1px solid #fde047;' +
-            'border-radius:4px;width:200px;" />' +
-          '<span id="tem-authstatus" style="font-size:.85rem;color:#6b7280;">' +
-            'Not validated</span>';
+            'border-radius:4px;min-width:260px;max-width:100%;background:#fff;">' +
+            '<option value="">Loading…</option>' +
+          '</select>' +
+          '<button onclick="AdminPanel._refreshTEMAuthBar()" ' +
+            'style="font-size:.82rem;padding:6px 10px;background:#fff;color:#854d0e;' +
+            'border:1px solid #fde047;border-radius:4px;cursor:pointer;min-height:36px;">' +
+            '↻ Refresh</button>' +
+          '<span id="tem-authstatus" style="font-size:.82rem;color:#6b7280;">Loading…</span>';
         var navBar = document.getElementById('nav-bar');
         navBar.parentNode.insertBefore(bar, navBar.nextSibling);
       }
+      AdminPanel._refreshTEMAuthBar();
     } else {
       if (temBar) temBar.parentNode.removeChild(temBar);
     }
@@ -186,6 +224,14 @@ var AdminPanel = (function() {
         '<div style="font-size:.85rem;margin-top:12px;">Loading handover checklist…</div>' +
         '</div></div>';
     }
+    if (tabId === 'tem_auth') {
+      setTimeout(function() { AdminPanel._loadTEMAuth(); }, 0);
+      return '<div id="tem-auth-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading TEM authorisations…</div>' +
+        '</div></div>';
+    }
     if (tabId === 'votedlog') {
       setTimeout(function() { AdminPanel._loadVotedLog(); }, 0);
       return '<div id="votedlog-content">' +
@@ -237,6 +283,35 @@ var AdminPanel = (function() {
         '</div></div>';
     }
 
+    if (tabId === 'dashboard') {
+      setTimeout(function() { AdminPanel._loadObserverDashboard(); }, 0);
+      return '<div id="observer-dashboard-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading dashboard...</div>' +
+        '</div></div>';
+    }
+
+    if (tabId === 'observations') {
+      setTimeout(function() { AdminPanel._loadObservations(); }, 0);
+      return '<div id="observations-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading observations…</div>' +
+        '</div></div>';
+    }
+    
+    if (tabId === 'presec') {
+      var presecElecId = AdminPanel._currentElectionId || AdminPanel._scrutinySelectedElec || '';
+      if (!presecElecId) {
+        return '<div style="padding:16px;color:#b91c1c;font-size:.9rem;">No election selected. Go to Elections tab first.</div>';
+      }
+      setTimeout(function() { AdminPanel._openPresecChecklist(presecElecId); }, 0);
+      return '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+        '<div class="spinner"></div>' +
+        '<div style="font-size:.85rem;margin-top:12px;">Loading checklist\u2026</div></div>';
+    }
+
     if (tabId === 'voter_roll_draft') {
       setTimeout(function() { AdminPanel._loadVoterRollDraft('all', ''); }, 0);
       return '<div id="vrd-content">' +
@@ -263,7 +338,7 @@ var AdminPanel = (function() {
     };
     var label = labels[tabId] || tabId;
     return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
+      '<div style="font-size:2rem;margin-bottom:12px;">🏗</div>' +
       '<div style="font-size:1.1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
         escHtml(label) + '</div>' +
       '<div style="font-size:0.85rem;">This tab is being built. Check back soon.</div>' +
@@ -283,7 +358,7 @@ function _loadElections(role) {
         }
 
         var elections = res.elections || [];
-        var isRO = role === 'RO_ADMIN';
+        var isRO = (role === 'RO_ADMIN' || role === 'TEM');
 
         // Status → badge class map
         var badgeMap = {
@@ -313,7 +388,7 @@ function _loadElections(role) {
         if (elections.length === 0) {
           html += '<div class="panel-card">' +
             '<div class="panel-card-body" style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
             '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No elections yet</div>' +
             (isRO ? '<div style="font-size:.85rem;">Use the button above to create one.</div>' : '') +
             '</div></div>';
@@ -343,7 +418,7 @@ function _loadElections(role) {
 
               // Dates row
               '<div style="font-size:.82rem;color:#666;margin-bottom:10px;">' +
-                (el.startDate ? '📅 ' + escHtml(el.startDate) : 'No start date') +
+                (el.startDate ? '[DATE] ' + escHtml(el.startDate) : 'No start date') +
                 (el.endDate   ? ' → ' + escHtml(el.endDate)   : '') +
               '</div>' +
 
@@ -359,7 +434,7 @@ function _loadElections(role) {
               '</div></div>';
           });
         }
-
+        if (elections.length === 1) AdminPanel._currentElectionId = elections[0].id;
         content.innerHTML = html;
       })
       .withFailureHandler(function(err) {
@@ -502,13 +577,14 @@ function _loadElections(role) {
         .createElection(App.token, {
           title:   title,
           mode:    AdminPanel._mode,
-          isTrial: AdminPanel._trial
-        });
+         isTrial: AdminPanel._trial
+        }, getTEMAuthId()); 
     },
 
     manageElection: function(id) {
   var content = document.getElementById('admin-content');
   if (!content) return;
+  AdminPanel._currentElectionId = id;
 
   // Loading state
   content.innerHTML =
@@ -541,7 +617,7 @@ _renderManageScreen: function(el) {
   var content = document.getElementById('admin-content');
   if (!content) return;
 
-  var isRO    = (App.role === 'RO_ADMIN');
+  var isRO    = (App.role === 'RO_ADMIN' || App.role === 'TEM');
   var isDraft = el.status === 'draft' || (el.isTrial && el.status !== 'active');
 
   var statusBadgeMap = {
@@ -607,17 +683,33 @@ _renderManageScreen: function(el) {
           '<p style="font-size:.85rem;color:#374151;margin-bottom:14px;">' +
             AdminPanel._advanceStatusMsg(el.status) +
           '</p>' +
-          '<button class="btn btn-primary" id="btn-advance-status" ' +
-            'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advance.next + '\')" ' +
-            'style="width:100%;padding:14px;font-size:1rem;margin-bottom:8px;">' +
-            '▶ ' + advance.label +
-          '</button>' +
           (advanceSecondary ?
             '<button class="btn btn-outline" ' +
               'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advanceSecondary.next + '\')" ' +
               'style="width:100%;padding:14px;font-size:1rem;margin-bottom:8px;">' +
               '↺ ' + advanceSecondary.label +
             '</button>' : '') +
+          '<button class="btn btn-primary" id="btn-advance-status" ' +
+            'onclick="AdminPanel._advanceStatus(\'' + escHtml(el.id) + '\',\'' + advance.next + '\')" ' +
+            'style="width:100%;padding:14px;font-size:1rem;margin-bottom:8px;">' +
+            '▶ ' + advance.label +
+          '</button>' +
+          // PreSec checklist direct button when at candidates_published
+          (el.status === 'candidates_published' ?
+            '<button onclick="AdminPanel._openPresecChecklist(\'' + escHtml(el.id) + '\')" ' +
+              'style="width:100%;padding:12px;background:#f8fafc;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '☰ Pre-Election Security Checklist (Appendix H)' +
+            '</button>'
+          : '') +
+          // Nomination call email button when nominations are open
+          (el.status === 'nominations_open' || el.status === 'nominations_open_phase2' ?
+            '<button onclick="AdminPanel._sendNominationCall()" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '✉ Send Nomination Call to All Members' +
+            '</button>'
+          : '') +
           '<div id="advance-status-error" ' +
             'style="margin-top:10px;color:#c0392b;font-size:.85rem;display:none;"></div>' +
         '</div>' +
@@ -690,12 +782,12 @@ _renderManageScreen: function(el) {
 
     // Election Schedule card
     '<div class="panel-card" style="margin-bottom:12px;" id="schedule-card">' +
-      '<div class="panel-card-header">📅 Election Schedule</div>' +
+      '<div class="panel-card-header">[DATE] Election Schedule</div>' +
       '<div class="panel-card-body">' +
         (el.isTrial ?
           '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;' +
           'padding:10px 14px;font-size:.82rem;color:#92400e;margin-bottom:14px;">' +
-          '⚠️ <strong>Trial mode</strong> — SOP floor checks are not enforced for trial elections.' +
+          '⚠ <strong>Trial mode</strong> — SOP floor checks are not enforced for trial elections.' +
           '</div>' : '') +
         '<div style="display:flex;gap:8px;margin-bottom:4px;">' +
           '<div style="flex:1;">' +
@@ -799,7 +891,7 @@ _renderManageScreen: function(el) {
     // Purge trial data — trial elections only
     (el.isTrial && isRO ?
         '<div class="panel-card" style="margin-bottom:12px;border:1.5px solid #f59e0b;">' +
-          '<div class="panel-card-header" style="background:#fef3c7;color:#92400e;">⚠️ Purge Trial Data</div>' +
+          '<div class="panel-card-header" style="background:#fef3c7;color:#92400e;">⚠ Purge Trial Data</div>' +
           '<div class="panel-card-body">' +
             '<p style="font-size:.85rem;color:#374151;margin-bottom:14px;">' +
               'Clears all nominations, candidates, votes, scrutiny records, complaints and appeals ' +
@@ -832,14 +924,14 @@ _renderManageScreen: function(el) {
               'this.style.display=\'none\';" ' +
               'style="width:100%;padding:14px;font-size:1rem;background:#fff;color:#d97706;' +
               'border:2px solid #d97706;border-radius:4px;cursor:pointer;">' +
-              '🗑️ Purge Trial Data' +
+              '[DEL] Purge Trial Data' +
             '</button>' +
           '</div>' +
         '</div>'
       : '') +
     '';
-
-  content.innerHTML = html;
+  
+    content.innerHTML = html;
 
   // Load existing schedule into form after DOM is set
   setTimeout(function() {
@@ -886,8 +978,28 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) {
-        showToast('Status updated.');
-        AdminPanel.switchTab('elections');
+        if (nextStatus === 'candidates_published') {
+          // Fire publishCandidates to send notification emails to all accepted candidates
+          var pubAuthId = AdminPanel.getTEMAuthId ? AdminPanel.getTEMAuthId() : '';
+          google.script.run
+            .withSuccessHandler(function(pubRes) {
+              if (pubRes && pubRes.success) {
+                showToast('Candidate list published. ' + (pubRes.sent || 0) + ' notification email(s) sent.');
+              } else {
+                showToast('Status updated. Email notifications could not be sent: ' +
+                  ((pubRes && pubRes.message) || 'Unknown error'));
+              }
+              AdminPanel.switchTab('elections');
+            })
+            .withFailureHandler(function() {
+              showToast('Status updated. Email notification call failed — check AdminLog.');
+              AdminPanel.switchTab('elections');
+            })
+            .publishCandidates(App.token, id, pubAuthId);
+        } else {
+          showToast('Status updated.');
+          AdminPanel.switchTab('elections');
+        }
       } else if (res && res.requiresOrgSecyComms) {
         // Show mandatory communication confirmation
         if (btn) { btn.textContent = '▶ ' + (nextStatus === 'nominations_open_phase2' ? 'Open Phase 2 Nominations' : 'Advance'); btn.disabled = false; }
@@ -906,7 +1018,7 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
           (lifted ? '#f59e0b' : '#93c5fd') + ';border-radius:6px;padding:14px;margin-top:10px;">' +
             '<div style="font-weight:700;color:' + (lifted ? '#92400e' : '#1e40af') +
               ';font-size:.9rem;margin-bottom:8px;">' +
-              (lifted ? '⚠️ Org Secy Restriction Lifted' : 'ℹ️ Org Secy Restriction Maintained') +
+              (lifted ? '⚠ Org Secy Restriction Lifted' : '(i) Org Secy Restriction Maintained') +
             '</div>' +
             '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;">' + escHtml(msg) + '</div>' +
             '<div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
@@ -938,7 +1050,7 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
           '<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:6px;' +
           'padding:14px;margin-top:10px;">' +
             '<div style="font-weight:700;color:#991b1b;font-size:.9rem;margin-bottom:8px;">' +
-              '⚠️ Mandatory Post(s) Vacant: ' + escHtml(vacantList) +
+              '⚠ Mandatory Post(s) Vacant: ' + escHtml(vacantList) +
             '</div>' +
             '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
               'Voting cannot be activated until all mandatory posts have a candidate, ' +
@@ -971,7 +1083,7 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
           '<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;' +
           'padding:14px;margin-top:10px;">' +
             '<div style="font-weight:700;color:#92400e;font-size:.9rem;margin-bottom:8px;">' +
-              '⚠️ Pre-Election Security Verification Checklist Incomplete' +
+              '⚠ Pre-Election Security Verification Checklist Incomplete' +
             '</div>' +
             '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
               'All items in Appendix H must be completed before voting can be activated. ' +
@@ -980,7 +1092,7 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
             '<button onclick="AdminPanel._openPresecChecklist(\'' + escHtml(id) + '\')" ' +
               'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
               'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
-              '📋 Open Pre-Election Security Checklist' +
+              '☰ Open Pre-Election Security Checklist' +
             '</button>' +
             '<button onclick="AdminPanel._advanceStatus(\'' + escHtml(id) + '\',\'active\')" ' +
               'style="width:100%;padding:12px;background:#059669;color:#fff;border:none;' +
@@ -1003,15 +1115,15 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
       }
       if (btn) { btn.textContent = '▶ Open Nominations'; btn.disabled = false; }
     })
-    .updateElectionStatus(App.token, id, nextStatus, overrideNote || '');
+    .updateElectionStatus(App.token, id, nextStatus, overrideNote || '', getTEMAuthId());
 },
 
 _openPresecChecklist: function(electionId) {
-  var modal = document.getElementById('modal-overlay');
-  var body  = document.getElementById('modal-body');
-  if (!modal || !body) return;
-  body.innerHTML = '<div style="padding:16px;font-size:.9rem;color:#6b7280;">Loading checklist…</div>';
-  modal.style.display = 'flex';
+  var body = document.getElementById('admin-content');
+  if (!body) return;
+  body.innerHTML = '<div style=\"text-align:center;padding:32px 16px;color:#6b7280;\">' +
+    '<div class=\"spinner\"></div>' +
+    '<div style=\"font-size:.85rem;margin-top:12px;\">Loading checklist\u2026</div></div>';
 
   google.script.run
     .withSuccessHandler(function(res) {
@@ -1026,7 +1138,7 @@ _openPresecChecklist: function(electionId) {
       var html =
         '<div style="padding:4px 0 16px;">' +
           '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">' +
-            '📋 Pre-Election Security Verification Checklist' +
+            '☰ Pre-Election Security Verification Checklist' +
           '</div>' +
           '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">' +
             'Items marked ★ require confirmation by two Scrutineers after RO/TEM marks them done.' +
@@ -1060,10 +1172,9 @@ _openPresecChecklist: function(electionId) {
                   escHtml(item.label) +
                 '</div>' +
                 (!done ?
-                  '<button onclick="AdminPanel._recordPresecItem(\'' + escHtml(electionId) +
-                  '\',\'' + escHtml(item.code) + '\')" ' +
-                  'style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;' +
-                  'border-radius:4px;font-size:.8rem;cursor:pointer;">Mark Done</button>'
+                  (App.role === 'SCRUTINEER'
+                    ? '<div style="font-size:.78rem;color:#6b7280;">Awaiting RO/TEM action</div>'
+                    : '<button onclick="AdminPanel._recordPresecItem(\'' + escHtml(electionId) + '\',\'' + escHtml(item.code) + '\')" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;font-size:.8rem;cursor:pointer;">Mark Done</button>')
                 :
                   '<div style="font-size:.78rem;color:#059669;margin-bottom:4px;">' +
                     '✓ Done — ' + escHtml(item.completedBy) + ' (' + escHtml(item.completedRole) + ')' +
@@ -1074,7 +1185,13 @@ _openPresecChecklist: function(electionId) {
                     '</div>' +
                     '<div style="font-size:.78rem;color:' + (sc2done ? '#059669' : '#6b7280') + ';">' +
                       (sc2done ? '★ Scrutineer 2: ' + escHtml(item.sc2By) : '★ Awaiting Scrutineer 2 confirmation') +
-                    '</div>'
+                    '</div>' +
+                    (App.role === 'SCRUTINEER' && (!sc1done || !sc2done) ?
+                      '<button onclick="AdminPanel._confirmPresecItemSC(\'' + escHtml(electionId) +
+                      '\',\'' + escHtml(item.code) + '\')" ' +
+                      'style="padding:6px 14px;background:#059669;color:#fff;border:none;' +
+                      'border-radius:4px;font-size:.8rem;cursor:pointer;margin-top:4px;">★ Confirm</button>'
+                    : '')
                   : '')
                 ) +
               '</div>' +
@@ -1089,7 +1206,7 @@ _openPresecChecklist: function(electionId) {
         'border:1.5px solid ' + (allDone ? '#86efac' : '#f59e0b') + ';' +
         'font-weight:700;font-size:.9rem;color:' + (allDone ? '#166534' : '#92400e') + ';">' +
           (allDone ? '✅ Checklist complete — voting may be activated.' :
-                     '⚠️ Checklist incomplete — complete all items before activating voting.') +
+                     '⚠ Checklist incomplete — complete all items before activating voting.') +
         '</div>' +
         '</div>';
 
@@ -1113,6 +1230,19 @@ _recordPresecItem: function(electionId, itemCode) {
     .withFailureHandler(function() { showToast('Error recording item.'); })
     .recordChecklistItem(App.token, electionId, itemCode, '');
 },
+_confirmPresecItemSC: function(electionId, itemCode) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        AdminPanel._openPresecChecklist(electionId);
+      } else {
+        showToast((res && res.message) || 'Failed to confirm item.', true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Error confirming item.', true); })
+    .confirmChecklistItemScrutineer(App.token, electionId, itemCode);
+},
+
 _confirmOrgSecyComms: function(id, nextStatus) {
   var textEl = document.getElementById('orgsecy-comms-text');
   var errEl  = document.getElementById('orgsecy-comms-err');
@@ -1161,7 +1291,7 @@ _saveElection: function(id) {
       errEl.style.display = 'block';
       if (btn) { btn.textContent = 'Save Changes'; btn.disabled = false; }
     })
-    .updateElection(App.token, id, data);
+    .updateElection(App.token, id, data, getTEMAuthId());
 },
 
 _deleteElection: function(id) {
@@ -1177,7 +1307,7 @@ _deleteElection: function(id) {
     .withFailureHandler(function() {
       showToast('Error — delete failed.');
     })
-    .deleteElection(App.token, id);
+    .deleteElection(App.token, id, getTEMAuthId());
 },
 
 // ── ADMINS TAB ───────────────────────────────────────────────
@@ -1215,7 +1345,25 @@ _renderAdminsList: function(admins) {
       '<button class="btn btn-primary" onclick="AdminPanel.showAddAdmin()" ' +
         'style="width:100%;padding:14px;font-size:1rem;">+ Add Admin Account</button>' +
     '</div>' +
-    '<div id="add-admin-form-area"></div>';
+    '<div id="add-admin-form-area"></div>' +
+    // No-TEM declaration button — RO only
+    (App.role === 'RO_ADMIN' ?
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">TEM Declaration</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+            'If no Technical Election Manager is being appointed for this election, the SOP (2A.3) ' +
+            'requires the RO to record this decision in the AdminLog before the nomination window opens.' +
+          '</div>' +
+          '<button onclick="AdminPanel._recordNoTEM()" ' +
+            'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+            'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;">' +
+            'Record: No TEM Appointed for This Election' +
+          '</button>' +
+          '<div id="no-tem-result" style="display:none;margin-top:10px;font-size:.85rem;color:#16a34a;"></div>' +
+        '</div>' +
+      '</div>'
+    : '');
 
   if (admins.length === 0) {
     html += '<div class="panel-card"><div class="panel-card-body" ' +
@@ -1258,7 +1406,7 @@ _renderAdminsList: function(admins) {
             escHtml(a.type || '') + '</div>' +
           '<div>' + escHtml(a.email) + '</div>' +
           (a.addedAt ? '<div style="margin-top:2px;">Added: ' +
-            escHtml(a.addedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC') + '</div>' : '') +
+            escHtml(fmtIST(a.addedAt)) + '</div>' : '') +
         '</div>' +
 
         // Action buttons
@@ -1280,8 +1428,8 @@ _renderAdminsList: function(admins) {
                   'background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:4px;cursor:pointer;">' +
                   'Re-enable Account</button>') +
 
-          // Deputy RO activation — only for DEPUTY_RO accounts
-          (a.role === 'DEPUTY_RO'
+          // Deputy RO activation — only for DEPUTY_RO accounts, not available to TEM
+          (a.role === 'DEPUTY_RO' && App.role !== 'TEM'
             ? (a.deputyROActive
                 ? '<button onclick="AdminPanel._confirmDeactivateDeputyRO(\'' + escHtml(a.id) + '\',\'' + escHtml(a.name) + '\')" ' +
                     'style="flex:1;min-width:120px;padding:11px 8px;font-size:.85rem;' +
@@ -1336,11 +1484,11 @@ showAddAdmin: function() {
         '<select id="new-admin-role" style="width:100%;box-sizing:border-box;padding:12px 10px;' +
           'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;">' +
           '<option value="">— Select role —</option>' +
-          '<option value="DEPUTY_RO">Deputy RO</option>' +
-          '<option value="TEM">Technical Election Manager</option>' +
+          (App.role !== 'TEM' ? '<option value="DEPUTY_RO">Deputy RO</option>' : '') +
+          (App.role !== 'TEM' ? '<option value="TEM">Technical Election Manager</option>' : '') +
           '<option value="SCRUTINEER">Scrutineer</option>' +
           '<option value="OBSERVER">Observer</option>' +
-          '<option value="RO_ADMIN">Returning Officer (RO_ADMIN)</option>' +
+          (App.role !== 'TEM' ? '<option value="RO_ADMIN">Returning Officer (RO_ADMIN)</option>' : '') +
         '</select>' +
 
         '<label for="new-admin-email">Email Address (for OTP)</label>' +
@@ -1409,7 +1557,7 @@ _submitAddAdmin: function() {
       if (btn) { btn.textContent = 'Add Admin'; btn.disabled = false; }
     })
     .addAdmin(App.token, { id: id, name: name, role: role,
-                            email: email, type: type, rollNo: rollNo });
+                            email: email, type: type, rollNo: rollNo }, getTEMAuthId());
 },
 
 _resendScrutineerLink: function(adminId, adminName) {
@@ -1476,7 +1624,7 @@ _doDisable: function(adminId) {
       }
     })
     .withFailureHandler(function() { showToast('Error — disable failed.'); })
-    .disableAdmin(App.token, adminId);
+    .disableAdmin(App.token, adminId, getTEMAuthId());
 },
 
 _confirmEnable: function(adminId, adminName) {
@@ -1511,7 +1659,7 @@ _doEnable: function(adminId) {
       }
     })
     .withFailureHandler(function() { showToast('Error — re-enable failed.'); })
-    .enableAdmin(App.token, adminId);
+    .enableAdmin(App.token, adminId, getTEMAuthId());
 },
 
 _confirmActivateDeputyRO: function(adminId, adminName) {
@@ -1549,7 +1697,7 @@ _doActivateDeputyRO: function(adminId) {
       }
     })
     .withFailureHandler(function() { showToast('Error — activation failed.'); })
-    .activateDeputyRO(App.token, adminId, note);
+    .activateDeputyRO(App.token, adminId, note, getTEMAuthId());
 },
 
 _confirmDeactivateDeputyRO: function(adminId, adminName) {
@@ -1589,7 +1737,29 @@ _doDeactivateDeputyRO: function(adminId) {
       }
     })
     .withFailureHandler(function() { showToast('Error — deactivation failed.'); })
-    .deactivateDeputyRO(App.token, adminId, note);
+    .deactivateDeputyRO(App.token, adminId, note, getTEMAuthId());
+},
+
+// ── NO-TEM DECLARATION ───────────────────────────────────────
+_recordNoTEM: function() {
+  var electionId = AdminPanel._currentElectionId || '';
+  if (!electionId) {
+    showToast('Select an election first from the Elections tab.', true);
+    return;
+  }
+  if (!confirm('Record that no TEM has been appointed for election ' + electionId + '?\n\nThis will be logged to AdminLog.')) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var el = document.getElementById('no-tem-result');
+      if (res && res.success) {
+        showToast('No-TEM declaration recorded in AdminLog.');
+        if (el) { el.textContent = 'Recorded successfully in AdminLog.'; el.style.display = 'block'; }
+      } else {
+        showToast((res && res.message) || 'Failed to record.', true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Error recording declaration.', true); })
+    .recordNoTEMDeclaration(App.token, electionId);
 },
 
 // ── VOTERS TAB ───────────────────────────────────────────────
@@ -1662,7 +1832,7 @@ _renderVoterList: function(res, role, search) {
   if (voters.length === 0) {
     html += '<div class="panel-card"><div class="panel-card-body" ' +
       'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-      '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
       '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No voters found</div>' +
       (search ? '<div style="font-size:.85rem;">Try a different search term.</div>' :
                 '<div style="font-size:.85rem;">The voter roll is empty.</div>') +
@@ -1746,7 +1916,7 @@ _loadNominations: function() {
       if (!res || !res.success || !res.elections || res.elections.length === 0) {
         c.innerHTML = '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '<div style="font-size:.85rem;margin-top:4px;">Create an election first.</div>' +
           '</div></div>';
@@ -1784,8 +1954,8 @@ _renderNominationsShell: function(elections) {
   });
   selHtml += '</select>';
 
-  var isRO = (App.role || '').toUpperCase() === 'RO_ADMIN';
-  var selElec = elections.length ? elections[0] : null;
+  var isRO = ((App.role || '').toUpperCase() === 'RO_ADMIN' || (App.role || '').toUpperCase() === 'TEM');
+  var selElec = elections.find(function(e) { return e.id === AdminPanel._nominationsSelectedElec; }) || elections[0];
   var nomOpen = selElec && (selElec.status === 'nominations_open' || selElec.status === 'nominations_open_phase2');
 
   var manualBtn = (isRO && nomOpen) ?
@@ -1844,8 +2014,13 @@ _renderNominationsShell: function(elections) {
       'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;' +
       'box-sizing:border-box;resize:vertical;margin-bottom:14px;"></textarea>' +
 
-      '<div id="mn-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
-      '<div id="mn-ok" style="color:#16a34a;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+      '<div style="margin-bottom:14px;">' +
+  '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Supporting Documents</div>' +
+  '<div style="font-size:.78rem;color:#6b7280;margin-bottom:8px;">Upload 3 documents (nomination paper, proposer confirmation, seconder confirmation). Acceptance will be blocked until 3 documents are present.</div>' +
+  '<div id="mn-doc-uploader"></div>' +
+'</div>' +
+'<div id="mn-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+'<div id="mn-ok" style="color:#16a34a;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
 
       '<div style="display:flex;gap:10px;">' +
         '<button onclick="AdminPanel._submitManualNom()" ' +
@@ -1995,7 +2170,7 @@ _saveSchedule: function(elecId) {
         res.warnings.forEach(function(w) {
           var color = w.severity === 'block' ? '#fef2f2' : '#fffbeb';
           var border = w.severity === 'block' ? '#fca5a5' : '#fbbf24';
-          var icon = w.severity === 'block' ? '🔴' : '🟡';
+          var icon = w.severity === 'block' ? '[RED]' : '[YEL]';
           html += '<div style="background:' + color + ';border:1px solid ' + border + ';' +
             'border-radius:4px;padding:8px 12px;margin-bottom:6px;font-size:.8rem;">' +
             icon + ' ' + escHtml(w.message) + '</div>';
@@ -2013,7 +2188,7 @@ _saveSchedule: function(elecId) {
     .withFailureHandler(function() {
       if (errEl) { errEl.innerHTML = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
     })
-    .setElectionSchedule(App.token, elecId, schedData);
+    .setElectionSchedule(App.token, elecId, schedData, getTEMAuthId());
 },
 
 // Publish schedule to Landing Page
@@ -2034,7 +2209,7 @@ _publishSchedule: function(elecId) {
     .withFailureHandler(function() {
       if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
     })
-    .publishSchedule(App.token, elecId);
+    .publishSchedule(App.token, elecId, getTEMAuthId());
 },
 
 _toggleManualNomForm: function() {
@@ -2050,8 +2225,18 @@ _toggleManualNomForm: function() {
       var el = document.getElementById(id); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
     });
     var sel = document.getElementById('mn-post'); if (sel) sel.value = '';
+    // Inject doc uploader for manual_ro_nomination category
+    var uploaderEl = document.getElementById('mn-doc-uploader');
+    if (uploaderEl) {
+      uploaderEl.innerHTML = AdminPanel._renderDocUploader({
+        electionId:    AdminPanel._nominationsSelectedElec,
+        category:      'manual_ro_nomination',
+        categoryLabel: 'Supporting Documents (Nomination Paper + Confirmations)',
+        containerId:   'mn-doc-uploader'
+      });
+    }
   }
-},
+  },
 
 _mnLookup: function(role) {
   var rollEl  = document.getElementById('mn-' + role + '-roll');
@@ -2119,7 +2304,7 @@ _submitManualNom: function() {
     .withFailureHandler(function() {
       if (errEl) { errEl.innerHTML = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
     })
-    .submitNominationManual(App.token, elecId, candRoll, post, propRoll, secRoll, bio);
+    .submitNominationManual(App.token, elecId, candRoll, post, propRoll, secRoll, bio, getTEMAuthId());
 },
 
 _loadNominationsList: function(elecId) {
@@ -2153,7 +2338,7 @@ _renderNominationsList: function(noms) {
   if (noms.length === 0) {
     return '<div class="panel-card"><div class="panel-card-body" ' +
       'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-      '<div style="font-size:1.5rem;margin-bottom:8px;">📋</div>' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">☰</div>' +
       '<div style="font-weight:600;color:#374151;">No nominations yet</div>' +
       '</div></div>';
   }
@@ -2217,14 +2402,23 @@ _renderNominationsList: function(noms) {
             '<span class="status-badge ' + badge + '" style="font-size:.75rem;">' +
               escHtml(n.status) + '</span>' +
           '</div>' +
-
+          
+          // Photo thumbnail
+          (n.photo
+            ? '<div style=\"margin-bottom:8px;\">' +
+                '<img src=\"' + escHtml(n.photo) + '\" ' +
+                'style=\"width:52px;height:52px;object-fit:cover;border-radius:50%;' +
+                'border:2px solid #d1d5db;\">' +
+              '</div>'
+            : '') +
+            
           // Roll + batch
           '<div style="font-size:.8rem;color:#6b7280;margin-bottom:8px;">' +
             'Roll: <strong>' + escHtml(n.candRoll) + '</strong>' +
             ' &nbsp;·&nbsp; Batch ' + escHtml(n.candBatch) +
             (n.submittedAt
               ? ' &nbsp;·&nbsp; ' +
-                escHtml(n.submittedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC')
+                escHtml(fmtIST(n.submittedAt))
               : '') +
           '</div>' +
 
@@ -2410,7 +2604,7 @@ _doWithdraw: function(nomId) {
             '<div style="padding:10px;background:#dcfce7;border-radius:4px;' +
               'font-size:.85rem;color:#166534;margin-bottom:12px;">' +
               '✓ Last verified ' +
-              escHtml(new Date(res.versionVerifiedAt).toLocaleString('en-IN')) +
+              escHtml(fmtIST(res.versionVerifiedAt)) +
               ' by ' + escHtml(res.versionVerifiedBy) +
             '</div>'
           : '') +
@@ -2464,13 +2658,151 @@ _doWithdraw: function(nomId) {
           '</div>' +
           (res.lastLogAt ?
             '<div style="font-size:.78rem;color:#9ca3af;margin-top:3px;">' +
-              escHtml(new Date(res.lastLogAt).toLocaleString('en-IN')) +
+              escHtml(fmtIST(res.lastLogAt)) +
             '</div>'
           : '') +
         '</div>' +
       '</div>';
 
+    // Landing Page Content
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Landing Page Content</div>' +
+        '<div class="panel-card-body">' +
+          '<div id="lpc-load-err" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lpc-list"><div style="text-align:center;padding:16px;color:#6b7280;font-size:.85rem;">Loading…</div></div>' +
+          '<div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:14px;">' +
+            '<div style="font-size:.83rem;font-weight:600;color:#374151;margin-bottom:8px;">Update a value</div>' +
+            '<div style="margin-bottom:8px;">' +
+              '<label style="font-size:.78rem;color:#6b7280;display:block;margin-bottom:3px;">Key</label>' +
+              '<select id="lpc-key" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;background:#fff;">' +
+                '<option value="">— select key —</option>' +
+                '<option value="sgm_date">sgm_date — SGM date</option>' +
+                '<option value="sgm_venue">sgm_venue — SGM venue</option>' +
+                '<option value="sgm_notice">sgm_notice — SGM notice text</option>' +
+                '<option value="agm_date">agm_date — AGM date</option>' +
+                '<option value="agm_notice">agm_notice — AGM notice text</option>' +
+                '<option value="announcement">announcement — Public announcement</option>' +
+                '<option value="vva_url">vva_url — Voter Verification App URL</option>' +
+                '<option value="sop_url">sop_url — Election SOP Document URL</option>' +
+                '<option value="techspec_url">techspec_url — Technical Specification Document URL</option>' +
+                '<option value="sop_url">sop_url — Election SOP Document URL</option>' +
+                '<option value="techspec_url">techspec_url — Tech Specification Document URL</option>' +
+              '</select>' +
+            '</div>' +
+            '<div style="margin-bottom:8px;">' +
+              '<label style="font-size:.78rem;color:#6b7280;display:block;margin-bottom:3px;">Value</label>' +
+              '<textarea id="lpc-value" rows="3" ' +
+                'style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;' +
+                'font-size:.88rem;resize:vertical;box-sizing:border-box;"></textarea>' +
+            '</div>' +
+            '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">' +
+              '<label style="font-size:.83rem;color:#374151;display:flex;align-items:center;gap:6px;cursor:pointer;">' +
+                '<input type="checkbox" id="lpc-public" style="width:16px;height:16px;"> ' +
+                'Visible on public landing page' +
+              '</label>' +
+            '</div>' +
+            '<div id="lpc-save-err" style="color:#c0392b;font-size:.83rem;margin-bottom:6px;display:none;"></div>' +
+            '<button onclick="AdminPanel._saveLPCItem()" id="btn-lpc-save" ' +
+              'style="width:100%;padding:12px;font-size:.9rem;font-weight:600;' +
+              'background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Save</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    setTimeout(function() { AdminPanel._loadLPCList(); }, 0);
+
     return html;
+  },
+
+  _loadLPCList: function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var listEl = document.getElementById('lpc-list');
+        var errEl  = document.getElementById('lpc-load-err');
+        if (!listEl) return;
+        if (!res || !res.success) {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed to load content.'; errEl.style.display = 'block'; }
+          listEl.innerHTML = '';
+          return;
+        }
+        if (!res.items || res.items.length === 0) {
+          listEl.innerHTML = '<div style="font-size:.83rem;color:#6b7280;">No content keys set yet.</div>';
+          return;
+        }
+        var rows = res.items.map(function(item) {
+          var pub = item.public
+            ? '<span style="font-size:.72rem;padding:1px 6px;border-radius:8px;background:#dcfce7;color:#166534;font-weight:600;">public</span>'
+            : '<span style="font-size:.72rem;padding:1px 6px;border-radius:8px;background:#f3f4f6;color:#6b7280;">internal</span>';
+          var upd = item.updatedAt
+            ? '<div style="font-size:.73rem;color:#9ca3af;margin-top:2px;">Updated ' +
+                escHtml(fmtIST(item.updatedAt)) +
+                ' by ' + escHtml(item.updatedBy) + '</div>'
+            : '';
+          return '<div style="padding:10px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+              '<span style="font-size:.82rem;font-weight:600;color:#1a3a5c;font-family:monospace;">' + escHtml(item.key) + '</span>' +
+              pub +
+            '</div>' +
+            '<div style="font-size:.83rem;color:#374151;word-break:break-word;">' + escHtml(item.label) + '</div>' +
+            '<div style="font-size:.84rem;color:#555;margin-top:3px;word-break:break-all;background:#f9fafb;' +
+              'padding:5px 8px;border-radius:3px;border:1px solid #e5e7eb;">' +
+              escHtml(item.value || '—') +
+            '</div>' +
+            upd +
+          '</div>';
+        }).join('');
+        listEl.innerHTML = '<div style="margin-bottom:6px;">' + rows + '</div>';
+      })
+      .withFailureHandler(function() {
+        var errEl = document.getElementById('lpc-load-err');
+        if (errEl) { errEl.textContent = 'Error loading content list.'; errEl.style.display = 'block'; }
+      })
+      .getLandingPageContent();
+  },
+
+  _saveLPCItem: function() {
+    var keyEl   = document.getElementById('lpc-key');
+    var valEl   = document.getElementById('lpc-value');
+    var pubEl   = document.getElementById('lpc-public');
+    var btn     = document.getElementById('btn-lpc-save');
+    var errEl   = document.getElementById('lpc-save-err');
+    if (!keyEl || !valEl) return;
+
+    var key   = keyEl.value.trim();
+    var value = valEl.value.trim();
+    if (!key)   { if (errEl) { errEl.textContent = 'Select a key.';  errEl.style.display = 'block'; } return; }
+    if (!value) { if (errEl) { errEl.textContent = 'Enter a value.'; errEl.style.display = 'block'; } return; }
+    if (errEl) errEl.style.display = 'none';
+
+    var isPublic = pubEl ? pubEl.checked : false;
+    var labels = {
+      sgm_date: 'SGM date', sgm_venue: 'SGM venue', sgm_notice: 'SGM notice text',
+      agm_date: 'AGM date', agm_notice: 'AGM notice text',
+      announcement: 'Public announcement', vva_url: 'Voter Verification App URL', sop_url: 'Election SOP URL', techspec_url: 'Tech Spec URL'
+    };
+    var label = labels[key] || key;
+
+    if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+        if (res && res.success) {
+          showToast('Landing page content updated.');
+          if (valEl) valEl.value = '';
+          if (keyEl) keyEl.value = '';
+          if (pubEl) pubEl.checked = false;
+          AdminPanel._loadLPCList();
+        } else {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Save failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .setLandingPageContent(App.token, key, value, 'text', label, isPublic, getTEMAuthId());
   },
 
   _confirmVersionVerified: function() {
@@ -2494,7 +2826,7 @@ _doWithdraw: function(nomId) {
         if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
-      .recordVersionVerified(App.token);
+      .recordVersionVerified(App.token, getTEMAuthId());
   },
 
 // ── HANDOVER TAB ─────────────────────────────────────────────
@@ -2511,7 +2843,7 @@ _doWithdraw: function(nomId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -2591,7 +2923,7 @@ _doWithdraw: function(nomId) {
   _renderHandoverChecklist: function(res, elecId) {
     var items   = res.items;
     var role    = res.role;
-    var isRO    = (role === 'RO_ADMIN');
+    var isRO    = (role === 'RO_ADMIN' || role === 'TEM');
     var isScrut = (role === 'SCRUTINEER');
 
     var ITEMS = [
@@ -2688,7 +3020,7 @@ _doWithdraw: function(nomId) {
             '</div>' +
             (isDone ?
               '<div style="font-size:.78rem;color:#6b7280;">' +
-                'Completed ' + escHtml(state.at ? new Date(state.at).toLocaleString('en-IN') : '') +
+                'Completed ' + escHtml(fmtIST(state.at)) +
                 (state.by ? ' by ' + escHtml(state.by) : '') +
               '</div>'
             :
@@ -2742,10 +3074,10 @@ _doWithdraw: function(nomId) {
         }
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .lockECOfficers(App.token);
+      .lockECOfficers(App.token, getTEMAuthId());
   },
 
-  _applySheetProtections: function() {
+_applySheetProtections: function() {
     if (!confirm('Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.')) return;
 
     google.script.run
@@ -2758,7 +3090,7 @@ _doWithdraw: function(nomId) {
         }
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .applySheetProtections(App.token);
+      .applySheetProtections(App.token, getTEMAuthId());
   },
 
   _confirmGithubTransferred: function() {
@@ -2774,7 +3106,7 @@ _doWithdraw: function(nomId) {
         }
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .recordGithubTransferred(App.token);
+      .recordGithubTransferred(App.token, getTEMAuthId());
   },
 
   _recordScrutPartA: function(elecId) {
@@ -2804,7 +3136,7 @@ _doWithdraw: function(nomId) {
         if (btn) { btn.textContent = 'Record Part A Confirmation'; btn.disabled = false; }
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
-      .recordScrutineerConfirmation(App.token, elecId, 'A', text);
+      .recordScrutineerConfirmation(App.token, elecId, 'A', text, getTEMAuthId());
   },
 
 // ── TALLY TAB ────────────────────────────────────────────────
@@ -2821,7 +3153,7 @@ _doWithdraw: function(nomId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -2851,7 +3183,7 @@ _doWithdraw: function(nomId) {
         if (c2) c2.innerHTML =
           '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '</div></div>';
         return;
@@ -3188,7 +3520,7 @@ _loadVotedLogData: function(elecId) {
         if (btn) { btn.textContent = 'Co-sign Tally'; btn.disabled = false; }
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
-      .recordTallyCoSign(App.token, elecId, text);
+      .recordTallyCoSign(App.token, elecId, text, getTEMAuthId());
   },
 
 // ── CANDIDATES TAB ───────────────────────────────────────────
@@ -3205,7 +3537,7 @@ _loadVotedLogData: function(elecId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -3286,7 +3618,7 @@ _loadVotedLogData: function(elecId) {
     if (candidates.length === 0) {
       return '<div class="panel-card">' +
         '<div class="panel-card-body" style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-        '<div style="font-size:1.5rem;margin-bottom:8px;">📋</div>' +
+        '<div style="font-size:1.5rem;margin-bottom:8px;">☰</div>' +
         '<div style="font-weight:600;color:#374151;">No candidates yet</div>' +
         '<div style="font-size:.85rem;margin-top:6px;">Candidates appear here when nominations are accepted in Scrutiny.</div>' +
         '</div></div>';
@@ -3388,7 +3720,7 @@ _loadVotedLogData: function(elecId) {
         }
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .deleteCandidate(App.token, candId);
+      .deleteCandidate(App.token, candId, getTEMAuthId());
   },
 
 // ── SCRUTINY TAB ─────────────────────────────────────────────
@@ -3405,7 +3737,7 @@ _loadScrutiny: function() {
         c2.innerHTML =
           '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '</div></div>';
         return;
@@ -3661,7 +3993,7 @@ _renderScrutinyDetail: function(nom, checklist) {
         (nom.reinstated ?
           '<div style="margin-top:12px;padding:10px;background:#f0fdf4;' +
           'border-radius:4px;font-size:.85rem;color:#166534;">' +
-          '⚖️ <strong>Reinstated by appeal decision.</strong></div>'
+          '⚖ <strong>Reinstated by appeal decision.</strong></div>'
         : '') +
       '</div>' +
     '</div>';
@@ -3678,7 +4010,7 @@ _renderScrutinyDetail: function(nom, checklist) {
         '<div class="panel-card" style="border:1.5px solid #f59e0b;">' +
           '<div class="panel-card-body">' +
             '<div style="font-weight:600;color:#92400e;margin-bottom:8px;font-size:.9rem;">' +
-              '⚠️ Reverse Decision' +
+              '⚠ Reverse Decision' +
             '</div>' +
             '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
               'This will return the nomination to Pending Scrutiny. ' +
@@ -3751,6 +4083,34 @@ _renderScrutinyDetail: function(nom, checklist) {
 
   html += '</div></div>';
 
+  // Manual RO nominations: show doc uploader on scrutiny page
+  // Needed when docs couldn't be uploaded at nomination stage (e.g. election already advanced)
+  if (nom.entryMethod === 'manual_ro') {
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;" id="sc-doc-uploader-card">' +
+        '<div class="panel-card-header">Supporting Documents (Required — 3 minimum)</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+            'Upload nomination paper, proposer confirmation, and seconder confirmation. ' +
+            'Acceptance is blocked until 3 documents are present for this nomination.' +
+          '</div>' +
+          '<div id="sc-doc-uploader-' + escHtml(nom.id) + '"></div>' +
+        '</div>' +
+      '</div>';
+    setTimeout(function() {
+      var el = document.getElementById('sc-doc-uploader-' + nom.id);
+      if (el) {
+        el.innerHTML = AdminPanel._renderDocUploader({
+          electionId:    nom.elecId,
+          category:      'manual_ro_nomination',
+          categoryLabel: 'Nomination Documents',
+          containerId:   'sc-doc-uploader-' + nom.id,
+          nomRef:        nom.id
+        });
+      }
+    }, 0);
+  }
+
   if (isEditable) {
     html +=
       '<div id="scrutiny-action-err" ' +
@@ -3813,6 +4173,7 @@ _setCheckResult: function(nomId, checkItem, result) {
   });
 
   var notesEl = document.getElementById('chknotes-' + nomId + '-' + checkItem);
+  if (notesEl) notesEl.setAttribute('data-result', result);
   var notes   = notesEl ? notesEl.value.trim() : '';
 
   google.script.run
@@ -3826,15 +4187,7 @@ _setCheckResult: function(nomId, checkItem, result) {
 _saveCheckItemNotes: function(nomId, checkItem) {
   var notesEl = document.getElementById('chknotes-' + nomId + '-' + checkItem);
   if (!notesEl) return;
-  var results = ['Pending','Yes','No','N/A'];
-  var currentResult = 'Pending';
-  results.forEach(function(r) {
-    var btn = document.getElementById('chkbtn-' + nomId + '-' + checkItem + '-' + r);
-    if (btn && btn.style.background !== 'rgb(255, 255, 255)' &&
-        btn.style.background !== '#fff' && btn.style.background !== '') {
-      currentResult = r;
-    }
-  });
+  var currentResult = notesEl.getAttribute('data-result') || 'Pending';
   google.script.run
     .withSuccessHandler(function() {})
     .withFailureHandler(function() {})
@@ -3852,6 +4205,12 @@ _acceptNom: function(nomId) {
       if (res && res.success) {
         showToast('Nomination accepted.');
         AdminPanel._loadScrutiny();
+      } else if (res && res.requiresDocs) {
+        if (btn) { btn.textContent = '✓ Accept'; btn.disabled = false; }
+        var docsMsg = 'Manual RO nomination requires 3 supporting documents. ' +
+          (res.docsPresent || 0) + ' of 3 uploaded. ' +
+          'Please upload all documents in the Documents tab before accepting.';
+        if (errEl) { errEl.textContent = docsMsg; errEl.style.display = 'block'; }
       } else {
         if (btn) { btn.textContent = '✓ Accept'; btn.disabled = false; }
         if (errEl) { errEl.textContent = (res && res.message) || 'Accept failed.'; errEl.style.display = 'block'; }
@@ -3861,7 +4220,7 @@ _acceptNom: function(nomId) {
       if (btn) { btn.textContent = '✓ Accept'; btn.disabled = false; }
       if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
     })
-    .acceptNomination(App.token, nomId);
+    .acceptNomination(App.token, nomId, getTEMAuthId());
 },
 
 _undoAccept: function(nomId) {
@@ -3884,7 +4243,7 @@ _undoAccept: function(nomId) {
       if (btn) { btn.textContent = 'Undo Acceptance'; btn.disabled = false; }
       if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
     })
-    .undoAcceptNomination(App.token, nomId);
+    .undoAcceptNomination(App.token, nomId, getTEMAuthId());
 },
 
 _undoReject: function(nomId) {
@@ -3907,7 +4266,7 @@ _undoReject: function(nomId) {
       if (btn) { btn.textContent = 'Undo Rejection'; btn.disabled = false; }
       if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
     })
-    .undoRejectNomination(App.token, nomId);
+    .undoRejectNomination(App.token, nomId, getTEMAuthId());
 },
 
 _rejectNomPrompt: function(nomId) {
@@ -3946,7 +4305,7 @@ _confirmRejectNom: function(nomId) {
       var btn = document.getElementById('btn-reject-nom');
       if (btn) btn.disabled = false;
     })
-    .rejectNomination(App.token, nomId, reason);
+    .rejectNomination(App.token, nomId, reason, getTEMAuthId());
 },
 
   // ── ADMIN LOG TAB ────────────────────────────────────────────
@@ -4016,14 +4375,14 @@ _renderAdminLog: function(res, filter) {
   if (entries.length === 0) {
     html += '<div class="panel-card"><div class="panel-card-body" ' +
       'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-      '<div style="font-size:1.5rem;margin-bottom:8px;">📋</div>' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">☰</div>' +
       '<div style="font-weight:600;color:#374151;">No log entries found</div>' +
       '</div></div>';
     return html;
   }
 
   entries.forEach(function(e) {
-    var ts = e.timestamp ? e.timestamp.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC' : '';
+    var ts = fmtIST(e.timestamp);
     html +=
       '<div style="padding:11px 14px;border-bottom:1px solid #f3f4f6;">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px;">' +
@@ -4119,7 +4478,7 @@ _renderComplaints: function(complaints) {
   if (complaints.length === 0) {
     html +=
       '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+        '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
         '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Complaints</div>' +
         '<div style="font-size:.85rem;">No complaints have been filed for this election.</div>' +
       '</div>';
@@ -4222,7 +4581,353 @@ _saveComplaint: function(complaintId, idx) {
       AdminPanel._loadComplaints();
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .updateComplaintStatus(App.token, complaintId, status, notes, resolution);
+    .updateComplaintStatus(App.token, complaintId, status, notes, resolution, getTEMAuthId());
+},
+
+
+// ── OBSERVER DASHBOARD TAB ────────────────────────────────
+
+_observerDashboardTimer: null,
+
+_loadObserverDashboard: function() {
+  var c = document.getElementById('observer-dashboard-content');
+  if (!c) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c2 = document.getElementById('observer-dashboard-content');
+      if (!c2) return;
+      c2.innerHTML = AdminPanel._renderObserverDashboard(res);
+      if (AdminPanel._observerDashboardTimer) clearInterval(AdminPanel._observerDashboardTimer);
+      AdminPanel._observerDashboardTimer = setInterval(function() {
+        if (document.getElementById('observer-dashboard-content')) {
+          AdminPanel._refreshObserverDashboard();
+        } else {
+          clearInterval(AdminPanel._observerDashboardTimer);
+        }
+      }, 60000);
+    })
+    .withFailureHandler(function() {
+      var c2 = document.getElementById('observer-dashboard-content');
+      if (c2) c2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading dashboard.</div>';
+    })
+    .getObserverDashboard(App.token);
+},
+
+_refreshObserverDashboard: function() {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c2 = document.getElementById('observer-dashboard-content');
+      if (!c2) return;
+      c2.innerHTML = AdminPanel._renderObserverDashboard(res);
+    })
+    .withFailureHandler(function() {})
+    .getObserverDashboard(App.token);
+},
+
+_renderObserverDashboard: function(res) {
+  var now = new Date().toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+  if (!res || !res.success) {
+    return '<div style="padding:20px;color:#c0392b;font-size:.9rem;">' +
+      escHtml((res && res.message) || 'Failed to load dashboard.') + '</div>';
+  }
+
+  if (res.noActiveElec) {
+    return '<div class="panel-card" style="margin:16px;">' +
+      '<div class="panel-card-body" style="text-align:center;padding:40px 20px;">' +
+        '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:8px;">No Active Voting Window</div>' +
+        '<div style="font-size:.88rem;color:#6b7280;line-height:1.5;">' +
+          escHtml(res.message || 'Observer access is available during the voting window only.') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  var statusLabel = res.status === 'paused'
+    ? '<span style="font-size:.78rem;padding:2px 8px;border-radius:8px;background:#fef3c7;color:#92400e;font-weight:600;">PAUSED</span>'
+    : '<span style="font-size:.78rem;padding:2px 8px;border-radius:8px;background:#dcfce7;color:#166534;font-weight:600;">VOTING OPEN</span>';
+
+  var pct = res.turnoutPct || 0;
+  var barColor = pct >= 75 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#3b82f6';
+
+  var html =
+    '<div style="padding:16px;">' +
+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">' +
+      '<div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;">' + escHtml(res.electionTitle) + '</div>' +
+        '<div style="margin-top:4px;">' + statusLabel + '</div>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+        '<div style="font-size:.72rem;color:#9ca3af;">Last updated</div>' +
+        '<div style="font-size:.78rem;color:#6b7280;font-weight:600;">' + now + '</div>' +
+        '<button onclick="AdminPanel._refreshObserverDashboard()" ' +
+          'style="margin-top:4px;font-size:.78rem;padding:4px 10px;background:#f3f4f6;' +
+          'color:#374151;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">' +
+          'Refresh</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="panel-card" style="margin-bottom:12px;">' +
+      '<div class="panel-card-header">Overall Participation</div>' +
+      '<div class="panel-card-body">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">' +
+          '<div>' +
+            '<span style="font-size:2rem;font-weight:700;color:#1a3a5c;">' + pct + '%</span>' +
+            '<span style="font-size:.85rem;color:#6b7280;margin-left:6px;">turnout</span>' +
+          '</div>' +
+          '<div style="text-align:right;font-size:.83rem;color:#6b7280;">' +
+            '<strong style="color:#374151;">' + res.totalVoted + '</strong> of ' +
+            '<strong style="color:#374151;">' + res.totalEligible + '</strong> voters' +
+          '</div>' +
+        '</div>' +
+        '<div style="height:12px;background:#f3f4f6;border-radius:6px;overflow:hidden;">' +
+          '<div style="height:100%;width:' + Math.min(pct, 100) + '%;background:' + barColor + ';border-radius:6px;"></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="panel-card">' +
+      '<div class="panel-card-header">Votes Cast by Post</div>' +
+      '<div class="panel-card-body" style="padding:0;">';
+
+  if (!res.postSummary || res.postSummary.length === 0) {
+    html += '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:.88rem;">No votes cast yet.</div>';
+  } else {
+    for (var pi = 0; pi < res.postSummary.length; pi++) {
+      var p = res.postSummary[pi];
+      var postPct = res.totalEligible > 0 ? Math.round((p.votesCast / res.totalEligible) * 1000) / 10 : 0;
+      html +=
+        '<div style="padding:12px 16px;' + (pi > 0 ? 'border-top:1px solid #f3f4f6;' : '') + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+            '<div style="font-size:.88rem;font-weight:600;color:#374151;">' + escHtml(p.post) + '</div>' +
+            '<div style="font-size:.88rem;color:#1a3a5c;font-weight:600;">' +
+              p.votesCast + ' <span style="font-size:.75rem;color:#6b7280;font-weight:400;">votes</span>' +
+            '</div>' +
+          '</div>' +
+          '<div style="height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden;">' +
+            '<div style="height:100%;width:' + Math.min(postPct, 100) + '%;background:#3b82f6;border-radius:3px;"></div>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+
+  html +=
+      '</div>' +
+    '</div>' +
+
+    '<div style="margin-top:12px;padding:10px 14px;background:#f9fafb;border-radius:6px;' +
+      'border:1px solid #e5e7eb;font-size:.76rem;color:#9ca3af;line-height:1.4;">' +
+      'Participation counts only. Voter identities and vote distribution between candidates are not visible to Observers.' +
+    '</div>' +
+
+    '<div style="text-align:center;margin-top:10px;font-size:.75rem;color:#d1d5db;">Auto-refreshes every 60 seconds</div>' +
+
+    '</div>';
+
+  return html;
+},
+
+
+// ── OBSERVATIONS TAB ──────────────────────────────────────
+
+_loadObservations: function() {
+  var c = document.getElementById('observations-content');
+  if (!c) return;
+  var isAdmin = (App.role === 'RO_ADMIN' || App.role === 'DEPUTY_RO' || App.role === 'TEM');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c2 = document.getElementById('observations-content');
+      if (!c2) return;
+      if (!res || !res.success) {
+        c2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+          escHtml((res && res.message) || 'Failed to load observations.') + '</div>';
+        return;
+      }
+      c2.innerHTML = AdminPanel._renderObservations(res.items || [], isAdmin);
+    })
+    .withFailureHandler(function() {
+      var c2 = document.getElementById('observations-content');
+      if (c2) c2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading observations.</div>';
+    })
+    .getObservations(App.token, AdminPanel._currentElectionId || '');
+},
+
+_renderObservations: function(items, isAdmin) {
+  var sevBadge = function(s) {
+    var map = {
+      info:    ['#dbeafe','#1e40af','Info'],
+      concern: ['#fef3c7','#92400e','Concern'],
+      urgent:  ['#fee2e2','#991b1b','Urgent']
+    };
+    var v = map[s] || map['info'];
+    return '<span style="font-size:.72rem;padding:1px 7px;border-radius:8px;font-weight:600;' +
+      'background:' + v[0] + ';color:' + v[1] + ';">' + v[2] + '</span>';
+  };
+  var statusBadge = function(s) {
+    if (s === 'responded') return '<span style="font-size:.72rem;padding:1px 7px;border-radius:8px;background:#dcfce7;color:#166534;font-weight:600;">Responded</span>';
+    if (s === 'noted')     return '<span style="font-size:.72rem;padding:1px 7px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-weight:600;">Noted</span>';
+    return '<span style="font-size:.72rem;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e;font-weight:600;">Pending</span>';
+  };
+
+  var html = '';
+
+  // Submit form — for Scrutineers and Observers
+  if (App.role === 'SCRUTINEER' || App.role === 'OBSERVER') {
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Submit Observation</div>' +
+        '<div class="panel-card-body">' +
+          (App.role === 'OBSERVER' ?
+            '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">Observer observations can only be submitted during the active voting window.</div>' : '') +
+          '<div style="margin-bottom:8px;">' +
+            '<label style="font-size:.78rem;color:#6b7280;display:block;margin-bottom:3px;">Severity</label>' +
+            '<select id="obs-severity" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;background:#fff;">' +
+              '<option value="info">Info \u2014 general note</option>' +
+              '<option value="concern">Concern \u2014 requires RO attention</option>' +
+              '<option value="urgent">Urgent \u2014 immediate attention needed</option>' +
+            '</select>' +
+          '</div>' +
+          '<div style="margin-bottom:8px;">' +
+            '<label style="font-size:.78rem;color:#6b7280;display:block;margin-bottom:3px;">Observation</label>' +
+            '<textarea id="obs-text" rows="4" placeholder="Describe your observation in detail\u2026" ' +
+              'style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;' +
+              'font-size:.88rem;resize:vertical;box-sizing:border-box;"></textarea>' +
+          '</div>' +
+          '<div id="obs-submit-err" style="color:#c0392b;font-size:.83rem;margin-bottom:6px;display:none;"></div>' +
+          '<button onclick="AdminPanel._submitObservation()" id="btn-obs-submit" ' +
+            'style="width:100%;padding:12px;font-size:.9rem;font-weight:600;' +
+            'background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Submit Observation</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  // Pending count banner — for admins
+  if (isAdmin) {
+    var pending = items.filter(function(x) { return x.resolutionStatus === 'pending'; }).length;
+    if (pending > 0) {
+      html +=
+        '<div style="padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;' +
+          'font-size:.85rem;color:#92400e;font-weight:600;margin-bottom:12px;">' +
+          '\u26a0 ' + pending + ' observation' + (pending > 1 ? 's' : '') + ' pending response' +
+        '</div>';
+    }
+  }
+
+  if (items.length === 0) {
+    html += '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:.88rem;">No observations yet.</div>';
+    return html;
+  }
+
+  items.forEach(function(obs, idx) {
+    var dt = obs.observedAt ? fmtIST(obs.observedAt) : '';
+    var typeLbl = obs.obsType === 'scrutineer' ? 'Scrutineer' : 'Observer';
+    var replySection = '';
+
+    if (isAdmin && obs.resolutionStatus === 'pending') {
+      replySection =
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">' +
+          '<textarea id="obs-reply-' + escHtml(obs.obsId) + '" rows="2" ' +
+            'placeholder="Your response\u2026" ' +
+            'style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;' +
+            'font-size:.85rem;resize:vertical;box-sizing:border-box;margin-bottom:6px;"></textarea>' +
+          '<button onclick="AdminPanel._replyObservationBtn(this)" data-obsid="' + escHtml(obs.obsId) + '" ' +
+            'style="width:100%;padding:10px;font-size:.85rem;font-weight:600;' +
+            'background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Send Response</button>' +
+        '</div>';
+    } else if (obs.responseText) {
+      replySection =
+        '<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-radius:4px;' +
+          'border-left:3px solid #22c55e;">' +
+          '<div style="font-size:.75rem;color:#166534;font-weight:600;margin-bottom:3px;">RO Response \u2014 ' +
+            escHtml(obs.acknowledgedBy) + ' \u00b7 ' +
+            (obs.acknowledgedAt ? fmtIST(obs.acknowledgedAt) : '') +
+          '</div>' +
+          '<div style="font-size:.85rem;color:#374151;">' + escHtml(obs.responseText) + '</div>' +
+        '</div>';
+    }
+
+    html +=
+      '<div class="panel-card" style="margin-bottom:10px;">' +
+        '<div class="panel-card-body">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">' +
+            '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
+              '<span style="font-size:.78rem;font-weight:600;color:#1a3a5c;">' + escHtml(typeLbl) + '</span>' +
+              sevBadge(obs.severity) +
+              statusBadge(obs.resolutionStatus) +
+            '</div>' +
+            '<span style="font-size:.75rem;color:#9ca3af;white-space:nowrap;">' + escHtml(dt) + '</span>' +
+          '</div>' +
+          (isAdmin ? '<div style="font-size:.75rem;color:#6b7280;margin-bottom:4px;">From: ' + escHtml(obs.observerId) + '</div>' : '') +
+          '<div style="font-size:.88rem;color:#374151;line-height:1.5;">' + escHtml(obs.obsText) + '</div>' +
+          replySection +
+        '</div>' +
+      '</div>';
+  });
+
+  return html;
+},
+
+_submitObservation: function() {
+  var textEl = document.getElementById('obs-text');
+  var sevEl  = document.getElementById('obs-severity');
+  var btn    = document.getElementById('btn-obs-submit');
+  var errEl  = document.getElementById('obs-submit-err');
+  if (!textEl) return;
+
+  var text = textEl.value.trim();
+  var sev  = sevEl ? sevEl.value : 'info';
+  if (!text) { if (errEl) { errEl.textContent = 'Please enter your observation.'; errEl.style.display = 'block'; } return; }
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.textContent = 'Submitting\u2026'; btn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.textContent = 'Submit Observation'; btn.disabled = false; }
+      if (res && res.success) {
+        showToast('Observation submitted.');
+        if (textEl) textEl.value = '';
+        AdminPanel._loadObservations();
+      } else {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed to submit.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = 'Submit Observation'; btn.disabled = false; }
+      if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    })
+    .submitObservation(App.token, AdminPanel._currentElectionId || '', text, sev);
+},
+
+_replyObservationBtn: function(btn) {
+  var obsId = btn.getAttribute('data-obsid');
+  AdminPanel._replyObservation(obsId);
+},
+
+_replyObservation: function(obsId) {
+  var replyEl = document.getElementById('obs-reply-' + obsId);
+  if (!replyEl) return;
+  var text = replyEl.value.trim();
+  if (!text) { showToast('Please enter a response.', true); return; }
+
+  replyEl.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (replyEl) replyEl.disabled = false;
+      if (res && res.success) {
+        showToast('Response sent.');
+        AdminPanel._loadObservations();
+      } else {
+        showToast((res && res.message) || 'Failed to save response.', true);
+      }
+    })
+    .withFailureHandler(function() {
+      if (replyEl) replyEl.disabled = false;
+      showToast('Connection error.', true);
+    })
+    .replyObservation(App.token, obsId, text, getTEMAuthId());
 },
 
 // ── APPEALS TAB ───────────────────────────────────────────
@@ -4251,31 +4956,38 @@ _loadAppeals: function() {
 
 _renderAppeals: function(appeals) {
   var statusLabels = {
-    filed:        'Filed',
-    under_review: 'Under Review',
-    upheld:       'Upheld',
-    dismissed:    'Dismissed'
+    filed:             'Filed',
+    under_review:      'Under Review',
+    upheld:            'Upheld',
+    dismissed:         'Dismissed',
+    panel_no_response: 'Panel No Response'
   };
   var statusColors = {
-    filed:        '#fef3c7',
-    under_review: '#eff6ff',
-    upheld:       '#d1fae5',
-    dismissed:    '#f3f4f6'
+    filed:             '#fef3c7',
+    under_review:      '#eff6ff',
+    upheld:            '#d1fae5',
+    dismissed:         '#f3f4f6',
+    panel_no_response: '#fce7f3'
   };
 
   var pendingCount = appeals.filter(function(a) {
     return a.status === 'filed' || a.status === 'under_review';
   }).length;
+  var objectionCount = appeals.filter(function(a) {
+    return a.appealType === 'nomination_objection' && a.status === 'filed';
+  }).length;
 
+  // ── Summary bar ──────────────────────────────────────────────
   var html =
     '<div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
       '<div style="font-size:.9rem;color:#6b7280;">' +
-        '<strong style="color:#374151;">' + appeals.length + '</strong> appeal' +
-        (appeals.length !== 1 ? 's' : '') + ' on record' +
+        '<strong style="color:#374151;">' + appeals.length + '</strong> record(s) — ' +
+        appeals.filter(function(a){ return a.appealType !== 'nomination_objection'; }).length + ' appeal(s), ' +
+        appeals.filter(function(a){ return a.appealType === 'nomination_objection'; }).length + ' objection(s)' +
       '</div>' +
       (pendingCount > 0
         ? '<span style="font-size:.78rem;background:#fef3c7;color:#92400e;padding:3px 10px;' +
-          'border-radius:10px;font-weight:600;">⚠️ ' + pendingCount + ' pending</span>'
+          'border-radius:10px;font-weight:600;">⚠ ' + pendingCount + ' pending</span>'
         : '<span style="font-size:.78rem;background:#d1fae5;color:#065f46;padding:3px 10px;' +
           'border-radius:10px;font-weight:600;">✓ None pending</span>') +
     '</div>';
@@ -4284,17 +4996,38 @@ _renderAppeals: function(appeals) {
     html +=
       '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;' +
       'padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:#92400e;">' +
-      '⚠️ <strong>Voting cannot be activated while appeals are pending.</strong> ' +
-      'All appeals must be decided (upheld or dismissed) before the election can move to active.' +
+      '⚠ <strong>Voting cannot be activated while appeals or objections are pending.</strong> ' +
+      'The Appeals Panel has 48 hours from the close of the filing window to decide (96 hours total from candidate list publication). ' +
+      'After this, undecided items are automatically marked <em>Panel No Response</em> and voting can proceed.' +
+      '</div>';
+  }
+
+  // ── Consolidated objection summary button ────────────────────
+  if (objectionCount > 0) {
+    html +=
+      '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;' +
+      'padding:12px 16px;margin-bottom:14px;">' +
+      '<div style="font-size:.88rem;font-weight:600;color:#1e40af;margin-bottom:6px;">' +
+        '📋 Objection Window Actions' +
+      '</div>' +
+      '<div style="font-size:.82rem;color:#374151;margin-bottom:10px;">' +
+        objectionCount + ' open objection(s) are waiting. When the 48-hour filing window closes, ' +
+        'use the button below to send the consolidated summary to the Appeals Panel.' +
+      '</div>' +
+      '<button onclick="AdminPanel._sendObjSummary()" ' +
+        'style="width:100%;padding:11px;background:#1e40af;color:#fff;border:none;' +
+        'border-radius:4px;font-size:.88rem;cursor:pointer;min-height:44px;">' +
+        'Send Consolidated Objection Summary to Appeals Panel' +
+      '</button>' +
       '</div>';
   }
 
   if (appeals.length === 0) {
     html +=
       '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
-        '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Appeals</div>' +
-        '<div style="font-size:.85rem;">No appeals have been filed for this election.</div>' +
+        '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
+        '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Appeals or Objections</div>' +
+        '<div style="font-size:.85rem;">None have been filed for this election.</div>' +
       '</div>';
     return html;
   }
@@ -4303,6 +5036,14 @@ _renderAppeals: function(appeals) {
     var apl = appeals[i];
     var bgColor     = statusColors[apl.status] || '#f9fafb';
     var statusLabel = statusLabels[apl.status] || apl.status;
+    var isObjection = apl.appealType === 'nomination_objection';
+    var typeBadge =
+      '<span style="font-size:.72rem;padding:2px 8px;border-radius:8px;font-weight:600;' +
+      'background:' + (isObjection ? '#eff6ff' : '#f3f4f6') + ';' +
+      'color:' + (isObjection ? '#1e40af' : '#374151') + ';margin-left:6px;">' +
+      (isObjection ? 'Nomination Objection' : 'Rejection Appeal') +
+      '</span>';
+
     html +=
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
       'padding:16px;margin-bottom:14px;">' +
@@ -4311,11 +5052,15 @@ _renderAppeals: function(appeals) {
         'gap:8px;margin-bottom:10px;">' +
           '<div>' +
             '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:2px;">' +
-              escHtml(apl.id) + '</div>' +
+              escHtml(apl.id) + typeBadge + '</div>' +
             '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;">' +
               escHtml(apl.candName) + '</div>' +
             '<div style="font-size:.82rem;color:#6b7280;">' +
               'Post: ' + escHtml(apl.post) + '</div>' +
+            (isObjection && apl.objectorRoll
+              ? '<div style="font-size:.78rem;color:#1e40af;margin-top:2px;">' +
+                'Objector Roll: ' + escHtml(apl.objectorRoll) + '</div>'
+              : '') +
             '<div style="font-size:.78rem;color:#9ca3af;margin-top:2px;">' +
               'Filed: ' + escHtml(apl.filedAt.toString().split('T')[0] || apl.filedAt.toString()) +
             '</div>' +
@@ -4327,7 +5072,7 @@ _renderAppeals: function(appeals) {
         '</div>' +
 
         '<div style="font-size:.88rem;color:#1f2937;background:#f9fafb;border-radius:6px;' +
-        'padding:10px 12px;margin-bottom:12px;line-height:1.5;">' +
+        'padding:10px 12px;margin-bottom:12px;line-height:1.5;white-space:pre-wrap;">' +
           escHtml(apl.appealText) +
         '</div>' +
 
@@ -4338,13 +5083,23 @@ _renderAppeals: function(appeals) {
 
         '<div style="border-top:1px solid #f3f4f6;padding-top:12px;">' +
           '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:8px;">Record Decision</div>' +
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Upload Panel Ruling Document</div>' +
+          '<input type="file" id="apl-ruling-' + i + '" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" ' +
+            'style="width:100%;font-size:.82rem;margin-bottom:4px;">' +
+          '<div style="font-size:.75rem;color:#9ca3af;margin-bottom:10px;">PDF, image or Word. Max 5MB. Stored in DocStore against this record.</div>' +
+          '<button onclick="AdminPanel._uploadRuling(\'' + escHtml(apl.id) + '\',\'' + escHtml(apl.electionId) + '\',' + i + ')" ' +
+            'style="width:100%;padding:10px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+            'border-radius:4px;font-size:.85rem;cursor:pointer;min-height:40px;margin-bottom:12px;">' +
+            '📎 Upload Ruling Document' +
+          '</button>' +
           '<select id="apl-status-' + i + '" ' +
             'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
             'border-radius:4px;margin-bottom:8px;box-sizing:border-box;">' +
-            '<option value="filed"' +        (apl.status==='filed'?        ' selected':'') + '>Filed</option>' +
-            '<option value="under_review"' + (apl.status==='under_review'? ' selected':'') + '>Under Review</option>' +
-            '<option value="upheld"' +       (apl.status==='upheld'?       ' selected':'') + '>Upheld — Reinstate Nomination</option>' +
-            '<option value="dismissed"' +    (apl.status==='dismissed'?    ' selected':'') + '>Dismissed</option>' +
+            '<option value="filed"' +             (apl.status==='filed'?             ' selected':'') + '>Filed</option>' +
+            '<option value="under_review"' +      (apl.status==='under_review'?      ' selected':'') + '>Under Review</option>' +
+            '<option value="upheld"' +            (apl.status==='upheld'?            ' selected':'') + '>' + (isObjection ? 'Upheld — Revoke Acceptance' : 'Upheld — Reinstate Nomination') + '</option>' +
+            '<option value="dismissed"' +         (apl.status==='dismissed'?         ' selected':'') + '>Dismissed</option>' +
+            '<option value="panel_no_response"' + (apl.status==='panel_no_response'? ' selected':'') + '>Panel No Response</option>' +
           '</select>' +
           '<textarea id="apl-notes-' + i + '" placeholder="RO notes (optional)…" ' +
             'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
@@ -4352,7 +5107,7 @@ _renderAppeals: function(appeals) {
             'font-family:Arial,sans-serif;resize:vertical;">' +
             escHtml(apl.roNotes) +
           '</textarea>' +
-          '<textarea id="apl-dec-' + i + '" placeholder="Decision text (reasons)…" ' +
+          '<textarea id="apl-dec-' + i + '" placeholder="Decision text / reasons (required for upheld or dismissed)…" ' +
             'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
             'border-radius:4px;margin-bottom:8px;box-sizing:border-box;min-height:60px;' +
             'font-family:Arial,sans-serif;resize:vertical;">' +
@@ -4368,6 +5123,23 @@ _renderAppeals: function(appeals) {
       '</div>';
   }
   return html;
+},
+
+_sendObjSummary: function() {
+  var electionId = AdminPanel._currentElectionId;
+  if (!electionId) { showToast('No election selected.', true); return; }
+  if (!confirm('Send consolidated objection summary to the Appeals Panel now?\n\nOnly do this after the 48-hour filing window has closed.')) return;
+  showToast('Sending…');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
+      showToast('Sent. Candidates with objections: ' + res.candidatesWithObjections +
+        ' | Total objections: ' + res.totalObjections +
+        ' | Panel recipients: ' + res.panelRecipients);
+      AdminPanel._loadAppeals();
+    })
+    .withFailureHandler(function(e) { showToast('Error: ' + e.message, true); })
+    .sendConsolidatedObjectionSummary(SharedState.token, electionId);
 },
 
 _doPurgeTrial: function(electionId) {
@@ -4390,7 +5162,32 @@ _doPurgeTrial: function(electionId) {
       AdminPanel.switchTab('elections');
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .purgeTrialData(App.token, electionId, phrase);
+    .purgeTrialData(App.token, electionId, phrase, getTEMAuthId());
+},
+
+_uploadRuling: function(appealId, electionId, idx) {
+  var fileEl = document.getElementById('apl-ruling-' + idx);
+  if (!fileEl || !fileEl.files || !fileEl.files[0]) {
+    showToast('Please select a document to upload.', true); return;
+  }
+  var file = fileEl.files[0];
+  if (file.size > 5242880) { showToast('File too large. Maximum 5MB.', true); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Upload failed.', true); return;
+        }
+        showToast('Ruling document uploaded successfully.');
+        fileEl.value = '';
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .storeAppealRuling(App.token, electionId, appealId,
+        file.name, b64, file.type, getTEMAuthId());
+  };
+  reader.readAsDataURL(file);
 },
 
 _saveAppeal: function(appealId, idx) {
@@ -4408,17 +5205,29 @@ _saveAppeal: function(appealId, idx) {
     return;
   }
 
+  if (decision === 'upheld') {
+    if (!confirm('Record this appeal as UPHELD?\n\nThis will:\n' +
+        '• Reinstate the nomination to pending scrutiny\n' +
+        '• Roll the election back from candidates_published to scrutiny\n' +
+        '• Clear the candidate list publication timestamp\n' +
+        '• Notify the candidate by email\n\nThis cannot be undone.')) return;
+  }
+
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
         showToast((res && res.message) || 'Update failed.', true);
         return;
       }
-      showToast('Appeal decision saved.');
+      if (res.rolledBack) {
+        showToast('Appeal upheld. Nomination reinstated. Election rolled back to scrutiny.');
+      } else {
+        showToast('Appeal decision saved.');
+      }
       AdminPanel._loadAppeals();
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .updateAppealDecision(App.token, appealId, decision, notes, decText);
+    .updateAppealDecision(App.token, appealId, decision, notes, decText, getTEMAuthId());
 },
 
   // ============================================================
@@ -4449,7 +5258,7 @@ _renderVoterRollDraft: function(rows, filter, search) {
     var status = (r[10] || '').toString();
     if (filter === 'objected')  return status === 'objected';
     if (filter === 'unresolved') return status === 'objected';
-    if (filter === 'resolved')  return status === 'resolved_retained' || status === 'resolved_removed';
+    if (filter === 'resolved')  return status === 'resolved_retained' || status === 'resolved_removed' || status === 'resolved_added';
     return true; // 'all'
   });
 
@@ -4465,7 +5274,8 @@ _renderVoterRollDraft: function(rows, filter, search) {
       'none':               ['#e5e7eb','#374151','No objection'],
       'objected':           ['#fef3c7','#92400e','⚠ Objected'],
       'resolved_retained':  ['#d1fae5','#065f46','✓ Retained'],
-      'resolved_removed':   ['#fee2e2','#991b1b','✗ Removed']
+      'resolved_removed':   ['#fee2e2','#991b1b','✗ Removed'],
+      'resolved_added':     ['#ede9fe','#5b21b6','✚ Added']
     };
     var v = map[status] || map['none'];
     return '<span style="background:' + v[0] + ';color:' + v[1] +
@@ -4536,13 +5346,78 @@ _renderVoterRollDraft: function(rows, filter, search) {
       'No rows in draft. Upload a voter roll CSV in the Voters tab first.' +
       '</div>';
   } else {
-    html += '<button onclick="AdminPanel._certifyRoll()" ' +
+    html += '<button onclick="AdminPanel._sendVoterRollNotice()" ' +
+      'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+      'border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;min-height:44px;margin-bottom:8px;">' +
+      '✉ Notify All Members — Draft Roll Published' +
+      '</button>' +
+      '<button onclick="AdminPanel._certifyRoll()" ' +
       'style="width:100%;padding:13px;background:#065f46;color:#fff;border:none;' +
       'border-radius:6px;font-size:1rem;font-weight:600;cursor:pointer;min-height:44px;">' +
       '✓ Certify Voter Roll (' + (total - removed) + ' voters)' +
-      '</button>';
+      '</button>' +
+      '<div id="vr-notice-result" style="display:none;margin-top:8px;font-size:.85rem;color:#16a34a;"></div>';
   }
   html += '</div>';
+
+  // Add Member form (collapsible)
+  html += '<div style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">' +
+    '<div style="font-size:.85rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">' +
+      '➕ Add Missing Member to Draft' +
+    '</div>' +
+    '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+      'Use during the objection period when a valid Life Member is found to be missing from the draft roll.' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<div style="flex:1;min-width:120px;">' +
+          '<label style="font-size:.78rem;color:#374151;font-weight:600;">Roll No *</label>' +
+          '<input id="vrd-add-roll" type="text" placeholder="e.g. 2001A" ' +
+            'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+            'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+        '</div>' +
+        '<div style="flex:2;min-width:160px;">' +
+          '<label style="font-size:.78rem;color:#374151;font-weight:600;">First Name *</label>' +
+          '<input id="vrd-add-name" type="text" placeholder="First name" ' +
+            'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+            'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+        '</div>' +
+        '<div style="flex:2;min-width:160px;">' +
+          '<label style="font-size:.78rem;color:#374151;font-weight:600;">Surname</label>' +
+          '<input id="vrd-add-surname" type="text" placeholder="Surname" ' +
+            'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+            'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<div style="flex:1;min-width:100px;">' +
+          '<label style="font-size:.78rem;color:#374151;font-weight:600;">Batch</label>' +
+          '<input id="vrd-add-batch" type="text" placeholder="e.g. 2001" ' +
+            'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+            'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+        '</div>' +
+        '<div style="flex:3;min-width:180px;">' +
+          '<label style="font-size:.78rem;color:#374151;font-weight:600;">Email</label>' +
+          '<input id="vrd-add-email" type="email" placeholder="member@email.com" ' +
+            'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+            'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<label style="font-size:.78rem;color:#374151;font-weight:600;">Reason for addition</label>' +
+        '<input id="vrd-add-notes" type="text" ' +
+          'placeholder="e.g. Life Member — omitted from source CSV due to data entry error." ' +
+          'style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:6px;' +
+          'font-size:.9rem;box-sizing:border-box;margin-top:3px;">' +
+      '</div>' +
+      '<div id="vrd-add-err" style="color:#b91c1c;font-size:.82rem;display:none;"></div>' +
+      '<button onclick="AdminPanel._addMemberToDraft()" ' +
+        'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+        'border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;min-height:44px;">' +
+        '➕ Add Member to Draft Roll' +
+      '</button>' +
+    '</div>' +
+  '</div>';
 
   // Row cards
   if (filtered.length === 0) {
@@ -4642,7 +5517,7 @@ _saveObjectionStatus: function(rollNo, idx) {
       );
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .updateObjectionStatus(App.token, rollNo, status, notes);
+    .updateObjectionStatus(App.token, rollNo, status, notes, getTEMAuthId());
 },
 
 _certifyRoll: function() {
@@ -4660,7 +5535,84 @@ _certifyRoll: function() {
       AdminPanel._loadVoterRollDraft('all', '');
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .certifyVoterRoll(App.token, '');
+    .certifyVoterRoll(App.token, '', getTEMAuthId());
+},
+
+_sendVoterRollNotice: function() {
+  var electionId = AdminPanel._currentElectionId || '';
+  if (!electionId) { showToast('Select an election first from the Elections tab.', true); return; }
+  var deadline = prompt('Enter the objection window closing date/time for the notification email\n(e.g. "5 July 2026, 11:59 PM IST"):\n\nLeave blank to omit deadline from email.');
+  if (deadline === null) return; // cancelled
+  var btn = document.querySelector('[onclick*="_sendVoterRollNotice"]');
+  if (btn) btn.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) btn.disabled = false;
+      var el = document.getElementById('vr-notice-result');
+      if (res && res.success) {
+        showToast(res.message);
+        if (el) { el.textContent = res.message; el.style.display = 'block'; }
+      } else {
+        showToast((res && res.message) || 'Send failed.', true);
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) btn.disabled = false;
+      showToast('Connection error.', true);
+    })
+    .sendVoterRollPublicationNotice(App.token, electionId, deadline || '', getTEMAuthId());
+},
+
+_sendNominationCall: function() {
+  var electionId = AdminPanel._currentElectionId || '';
+  if (!electionId) { showToast('Select an election first from the Elections tab.', true); return; }
+  var note = prompt('Optional: Enter any additional note to include in the nomination call email\n(leave blank for none):');
+  if (note === null) return; // cancelled
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast(res.message);
+      } else {
+        showToast((res && res.message) || 'Send failed.', true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .sendNominationCall(App.token, electionId, note || '', getTEMAuthId());
+},
+
+_addMemberToDraft: function() {
+  var rollNo  = (document.getElementById('vrd-add-roll')    || {}).value || '';
+  var name    = (document.getElementById('vrd-add-name')    || {}).value || '';
+  var surname = (document.getElementById('vrd-add-surname') || {}).value || '';
+  var batch   = (document.getElementById('vrd-add-batch')   || {}).value || '';
+  var email   = (document.getElementById('vrd-add-email')   || {}).value || '';
+  var notes   = (document.getElementById('vrd-add-notes')   || {}).value || '';
+  var errEl   = document.getElementById('vrd-add-err');
+
+  if (errEl) errEl.style.display = 'none';
+  if (!rollNo.trim()) {
+    if (errEl) { errEl.textContent = 'Roll number is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!name.trim()) {
+    if (errEl) { errEl.textContent = 'First name is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Member ' + rollNo.trim().toUpperCase() + ' added to draft roll.');
+        AdminPanel._loadVoterRollDraft('all', '');
+      } else {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Could not add member.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Connection error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .addVoterToDraft(App.token, rollNo.trim(), name.trim(), surname.trim(),
+                     batch.trim(), email.trim(), notes.trim(), getTEMAuthId());
 },
 
   // ── DOCUMENT UPLOADER — reusable component ─────────────────
@@ -4672,10 +5624,11 @@ _renderDocUploader: function(config) {
   var category  = config.category;
   var label     = config.categoryLabel || category;
   var container = config.containerId;
+  var nomRef    = config.nomRef || '';
 
   var html =
     '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:12px;">' +
-      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">📎 ' + escHtml(label) + '</div>' +
+      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">[CLIP] ' + escHtml(label) + '</div>' +
 
       '<div style="margin-bottom:10px;">' +
         '<input type="file" id="doc-file-' + escHtml(category) + '"' +
@@ -4691,7 +5644,7 @@ _renderDocUploader: function(config) {
       '</div>' +
 
       '<button onclick="AdminPanel._uploadDoc(\'' + escHtml(elecId) + '\',\'' +
-        escHtml(category) + '\',\'' + escHtml(container) + '\')"' +
+        escHtml(category) + '\',\'' + escHtml(container) + '\',\'' + escHtml(nomRef) + '\')"' +
         ' style="padding:10px 20px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;' +
         'font-size:.85rem;font-weight:600;cursor:pointer;min-height:44px;">Upload</button>' +
 
@@ -4717,7 +5670,7 @@ _loadDocuments: function(elecId, category) {
       }
       var html = '<div style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:6px;">Uploaded documents</div>';
       res.docs.forEach(function(d) {
-        var ts = d.uploadedAt ? d.uploadedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC' : '';
+        var ts = fmtIST(d.uploadedAt);
         html +=
           '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;' +
           'border-bottom:1px solid #f3f4f6;flex-wrap:wrap;">' +
@@ -4748,7 +5701,8 @@ _loadDocuments: function(elecId, category) {
     .getDocuments(App.token, elecId, category);
 },
 
-_uploadDoc: function(elecId, category, containerId) {
+_uploadDoc: function(elecId, category, containerId, nomRef) {
+  nomRef = nomRef || '';
   var fileInput = document.getElementById('doc-file-' + category);
   var notesInput = document.getElementById('doc-notes-' + category);
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
@@ -4776,7 +5730,7 @@ _uploadDoc: function(elecId, category, containerId) {
         AdminPanel._loadDocuments(elecId, category);
       })
       .withFailureHandler(function() { showToast('Upload failed — connection error.', true); })
-      .storeDocument(App.token, elecId, category, file.name, base64, file.type, notes);
+      .storeDocument(App.token, elecId, category, file.name, base64, file.type, notes, getTEMAuthId(), nomRef);
   };
   reader.readAsDataURL(file);
 },
@@ -4792,7 +5746,7 @@ _deleteDoc: function(docId, elecId, category) {
       AdminPanel._loadDocuments(elecId, category);
     })
     .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
-    .deleteDocument(App.token, docId);
+    .deleteDocument(App.token, docId, getTEMAuthId());
 },
 
   // ── DOCUMENTS TAB ─────────────────────────────────────────
@@ -4886,7 +5840,7 @@ _renderDocTabList: function(elecId) {
 _buildDocList: function(elecId, docs) {
   if (!docs || docs.length === 0) {
     return '<div style="text-align:center;padding:32px 16px;color:#6b7280;font-size:.88rem;">' +
-      '📂 No documents uploaded for this election yet.</div>';
+      '[FOLDER] No documents uploaded for this election yet.</div>';
   }
 
   // Group by category
@@ -4916,7 +5870,7 @@ _buildDocList: function(elecId, docs) {
 
     byCategory[cat].forEach(function(d) {
       var ts = d.uploadedAt
-        ? d.uploadedAt.replace('T',' ').replace(/\.\d+Z/,'') + ' UTC'
+        ? fmtIST(d.uploadedAt)
         : '';
       html +=
         '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;' +
@@ -4961,10 +5915,331 @@ _deleteDocFromTab: function(docId, elecId) {
       AdminPanel._renderDocTabListAsync(elecId);
     })
     .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
-    .deleteDocument(App.token, docId);
+    .deleteDocument(App.token, docId, getTEMAuthId());
 },
 
   };
 
 })();
+// ── TEM Auth helper — reads AuthID bar value ──────────────────
+function getTEMAuthId() {
+  var el = document.getElementById('tem-authid');
+  return el ? el.value.trim() : '';
+}
+
+// ── TEM AuthID bar — populates selector with active AuthIDs ──
+AdminPanel._refreshTEMAuthBar = function() {
+  var sel    = document.getElementById('tem-authid');
+  var status = document.getElementById('tem-authstatus');
+  if (!sel) return;
+
+  sel.innerHTML = '<option value="">Loading\u2026</option>';
+  if (status) status.textContent = 'Fetching\u2026';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        sel.innerHTML = '<option value="">Unable to load \u2014 contact RO</option>';
+        if (status) { status.textContent = 'Error'; status.style.color = '#b91c1c'; }
+        return;
+      }
+
+      var now    = new Date();
+      var active = (res.authorisations || []).filter(function(a) {
+        if (a.revoked) return false;
+        if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+        if (a.scope === 'ALL_ACTIONS' && a.usedCount >= 1) return false;
+        if (a.scope === 'specific_actions' && a.usedCount >= a.actionTypes.length) return false;
+        return true;
+      });
+
+      if (active.length === 0) {
+        sel.innerHTML = '<option value="" disabled selected>No active authorisations \u2014 contact RO</option>';
+        if (status) { status.textContent = 'None active'; status.style.color = '#b91c1c'; }
+        return;
+      }
+
+      var html = '<option value="">Select authorisation\u2026</option>';
+      active.forEach(function(a) {
+        var issuedMin = '';
+        if (a.issuedAt) {
+          var diff = Math.round((now - new Date(a.issuedAt)) / 60000);
+          issuedMin = diff < 60 ? diff + 'm ago' : Math.round(diff/60) + 'h ago';
+        }
+        var scopeLabel = a.scope === 'ALL_ACTIONS'
+          ? 'ALL ACTIONS (single-use)'
+          : a.actionTypes.join(', ');
+        var label = a.authId.slice(-8) + ' \u2014 ' + scopeLabel +
+          (issuedMin ? ' \u2014 issued ' + issuedMin : '');
+        html += '<option value="' + a.authId + '">' + label + '</option>';
+      });
+      sel.innerHTML = html;
+      if (status) {
+        status.textContent = active.length + ' active';
+        status.style.color = '#15803d';
+      }
+    })
+    .withFailureHandler(function() {
+      sel.innerHTML = '<option value="">Load failed \u2014 try Refresh</option>';
+      if (status) { status.textContent = 'Error'; status.style.color = '#b91c1c'; }
+    })
+    .getTEMAuthorisations(App.token, '');
+};
+
+// ── TEM Auth tab functions ────────────────────────────────────
+AdminPanel._loadTEMAuth = function() {
+  var elSel = document.getElementById('tem-auth-elec-sel');
+  var elecId = elSel ? elSel.value : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { document.getElementById('tem-auth-content').innerHTML = '<p style="padding:16px;color:red;">' + res.message + '</p>'; return; }
+      var elections = res.elections || [];
+
+      var selHtml = '<div style="margin-bottom:12px;">' +
+        '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:4px;">Election (optional — leave blank for system-level actions)</label>' +
+        '<select id="tem-auth-elec-sel" onchange="AdminPanel._loadTEMAuth()" style="font-size:.9rem;padding:8px;border:1px solid #d1d5db;border-radius:6px;width:100%;">' +
+        '<option value="">— System level (no specific election) —</option>' +
+        elections.map(function(e) {
+          return '<option value="' + e.id + '"' + (e.id === elecId ? ' selected' : '') + '>' + e.title + ' (' + e.status + ')</option>';
+        }).join('') +
+        '</select></div>';
+
+      var issueForm =
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-top:16px;">' +
+          '<div style="font-weight:600;font-size:.95rem;margin-bottom:12px;">Issue New AuthorisationID</div>' +
+          '<div style="margin-bottom:10px;">' +
+            '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:4px;">Scope</label>' +
+            '<select id="tem-scope" onchange="AdminPanel._toggleActionTypes()" style="font-size:.9rem;padding:8px;border:1px solid #d1d5db;border-radius:6px;width:100%;">' +
+              '<option value="specific_actions">Specific Actions</option>' +
+              '<option value="ALL_ACTIONS">ALL ACTIONS (single use blanket)</option>' +
+            '</select>' +
+          '</div>' +
+          '<div id="tem-actions-block" style="margin-bottom:10px;">' +
+            '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:6px;">Actions (select one or more)</label>' +
+            '<div style="border:1px solid #d1d5db;border-radius:6px;padding:10px;max-height:200px;overflow-y:auto;background:#f9fafb;">' +
+            _temActionCheckboxes() +
+            '</div>' +
+          '</div>' +
+          '<div style="margin-bottom:10px;">' +
+            '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:4px;">Notes (optional)</label>' +
+            '<input id="tem-notes" type="text" placeholder="e.g. Session with TEM on 25 Jun" style="font-size:.9rem;padding:8px;border:1px solid #d1d5db;border-radius:6px;width:100%;box-sizing:border-box;" />' +
+          '</div>' +
+          '<div style="margin-bottom:14px;">' +
+            '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:4px;">Expires at (optional — leave blank for no expiry)</label>' +
+            '<input id="tem-expires" type="datetime-local" style="font-size:.9rem;padding:8px;border:1px solid #d1d5db;border-radius:6px;width:100%;box-sizing:border-box;" />' +
+          '</div>' +
+          '<button onclick="AdminPanel._issueTEMAuth()" style="background:#1d4ed8;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:.9rem;cursor:pointer;width:100%;">Issue AuthorisationID</button>' +
+          '<div id="tem-issue-result" style="margin-top:10px;font-size:.9rem;"></div>' +
+        '</div>';
+
+      var html =
+        '<div style="padding:16px;">' +
+          '<div style="font-weight:700;font-size:1rem;margin-bottom:12px;">TEM Authorisations</div>' +
+          selHtml + issueForm +
+          '<div style="margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+              '<div style="font-weight:600;font-size:.95rem;">All Issued Authorisations</div>' +
+              '<button onclick="AdminPanel._loadTEMAuthTable()" ' +
+                'style="font-size:.82rem;padding:5px 10px;background:#f3f4f6;color:#374151;' +
+                'border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">↻ Refresh</button>' +
+            '</div>' +
+            '<div id="tem-auth-table"><div style="font-size:.85rem;color:#6b7280;">Loading…</div></div>' +
+          '</div>' +
+        '</div>';
+
+      var tc = document.getElementById('tem-auth-content');
+      if (tc) tc.innerHTML = html;
+
+      AdminPanel._loadTEMAuthTable();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('tem-auth-content').innerHTML = '<p style="padding:16px;color:red;">Error loading elections.</p>';
+    })
+    .getAllElections(App.token);
+};
+
+// Loads ALL authorisations (system + election) into tem-auth-table independently
+AdminPanel._loadTEMAuthTable = function() {
+  var tbl = document.getElementById('tem-auth-table');
+  if (!tbl) return;
+  tbl.innerHTML = '<div style="font-size:.85rem;color:#6b7280;">Loading…</div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var tbl2 = document.getElementById('tem-auth-table');
+      if (!tbl2) return;
+      if (!res || !res.success) {
+        tbl2.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Failed to load authorisations.</p>';
+        return;
+      }
+      var auths = res.authorisations || [];
+      if (auths.length === 0) {
+        tbl2.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">No authorisations issued yet.</p>';
+        return;
+      }
+      var now = new Date();
+      var rows = auths.map(function(a) {
+        var expired = a.expiresAt && new Date(a.expiresAt) < now;
+        var exhausted = (a.scope === 'ALL_ACTIONS' && a.usedCount >= 1) ||
+                        (a.scope === 'specific_actions' && a.usedCount >= a.actionTypes.length);
+        var statusBadge = a.revoked
+          ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Revoked</span>'
+          : expired
+            ? '<span style="background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Expired</span>'
+            : exhausted
+              ? '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Exhausted</span>'
+              : '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Active</span>';
+        var actions = a.scope === 'ALL_ACTIONS' ? 'ALL ACTIONS' : (a.actionTypes.join(', ') || '—');
+        var elecLabel = a.electionId || 'System level';
+        var revokeBtn = (!a.revoked && !expired && !exhausted)
+          ? '<button onclick="AdminPanel._revokeTEMAuth(\'' + a.authId + '\')" ' +
+              'style="background:#dc2626;color:#fff;border:none;padding:4px 10px;' +
+              'border-radius:4px;font-size:.8rem;cursor:pointer;min-height:32px;">Revoke</button>'
+          : '<span style="color:#9ca3af;font-size:.8rem;">—</span>';
+        return '<tr style="border-bottom:1px solid #f3f4f6;">' +
+          '<td style="padding:8px;font-size:.75rem;font-family:monospace;word-break:break-all;max-width:120px;">' + a.authId + '</td>' +
+          '<td style="padding:8px;font-size:.78rem;">' + elecLabel + '</td>' +
+          '<td style="padding:8px;font-size:.78rem;">' + (a.issuedAt ? a.issuedAt.replace('T',' ').substring(0,16) : '—') + '</td>' +
+          '<td style="padding:8px;font-size:.78rem;">' + a.scope + '</td>' +
+          '<td style="padding:8px;font-size:.78rem;max-width:180px;word-break:break-all;">' + actions + '</td>' +
+          '<td style="padding:8px;font-size:.78rem;">' + a.usedCount + '</td>' +
+          '<td style="padding:8px;">' + statusBadge + '</td>' +
+          '<td style="padding:8px;">' + revokeBtn + '</td>' +
+          '</tr>';
+      }).join('');
+
+      tbl2.innerHTML =
+        '<div style="overflow-x:auto;">' +
+          '<table style="width:100%;border-collapse:collapse;min-width:600px;">' +
+            '<thead><tr style="background:#f9fafb;font-size:.78rem;color:#374151;">' +
+              '<th style="padding:8px;text-align:left;">AuthID</th>' +
+              '<th style="padding:8px;text-align:left;">Scope / Election</th>' +
+              '<th style="padding:8px;text-align:left;">Issued At</th>' +
+              '<th style="padding:8px;text-align:left;">Scope Type</th>' +
+              '<th style="padding:8px;text-align:left;">Actions</th>' +
+              '<th style="padding:8px;text-align:left;">Used</th>' +
+              '<th style="padding:8px;text-align:left;">Status</th>' +
+              '<th style="padding:8px;text-align:left;">Revoke</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table>' +
+        '</div>';
+    })
+    .withFailureHandler(function() {
+      var tbl2 = document.getElementById('tem-auth-table');
+      if (tbl2) tbl2.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Error loading authorisations.</p>';
+    })
+    .getTEMAuthorisations(App.token, '');
+};
+
+AdminPanel._toggleActionTypes = function() {
+  var scope = document.getElementById('tem-scope');
+  var block = document.getElementById('tem-actions-block');
+  if (scope && block) {
+    block.style.display = scope.value === 'ALL_ACTIONS' ? 'none' : 'block';
+  }
+};
+
+function _temActionCheckboxes() {
+  var groups = {
+    '— SYSTEM LEVEL —': {
+      'Admin Management':    ['addAdmin','disableAdmin','enableAdmin'],
+      'Elections (new)':     ['createElection'],
+      'Sheet Protections':   ['applySheetProtections','removeSheetProtections'],
+      'Landing Page':        ['setLandingPageContent'],
+      'Handover':            ['lockECOfficers','recordVersionVerified','recordGithubTransferred']
+    },
+    '— ELECTION LEVEL —': {
+      'Election Management': ['updateElectionStatus','updateElectionSettings','deleteElection','setElectionSchedule','publishSchedule'],
+      'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','publishCandidates','triggerPhase2Extension'],
+      'Candidates':          ['deleteCandidate'],
+      'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft'],
+      'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','recordTallyCoSign','recordScrutineerConfirmation'],
+      'Complaints & Appeals':['updateComplaintStatus','updateAppealDecision','storeAppealRuling'],
+      'Documents':           ['storeDocument','deleteDocument'],
+      'Purge':               ['purgeTrialData']
+    }
+  };
+  var html = '';
+  Object.keys(groups).forEach(function(groupLabel) {
+    html += '<div style="font-size:.8rem;color:#1d4ed8;font-weight:700;margin:12px 0 6px;padding:4px 0;border-bottom:1px solid #e5e7eb;">' + groupLabel + '</div>';
+    var cats = groups[groupLabel];
+    Object.keys(cats).forEach(function(cat) {
+      html += '<div style="font-size:.75rem;color:#6b7280;font-weight:600;margin:8px 0 4px;">' + cat + '</div>';
+      cats[cat].forEach(function(a) {
+        html += '<label style="display:flex;align-items:center;gap:6px;font-size:.85rem;margin-bottom:4px;cursor:pointer;">' +
+          '<input type="checkbox" class="tem-action-cb" value="' + a + '" style="width:16px;height:16px;"> ' + a + '</label>';
+      });
+    });
+  });
+  return html;
+}
+
+AdminPanel._issueTEMAuth = function() {
+  var elecId  = (document.getElementById('tem-auth-elec-sel') || {}).value || '';
+  var scope   = (document.getElementById('tem-scope') || {}).value || 'specific_actions';
+  var notes   = (document.getElementById('tem-notes') || {}).value.trim() || '';
+  var expires = (document.getElementById('tem-expires') || {}).value || '';
+
+  // elecId is optional — blank means system-level authorisation
+
+  var actionTypes = [];
+  if (scope === 'specific_actions') {
+    document.querySelectorAll('.tem-action-cb:checked').forEach(function(cb) { actionTypes.push(cb.value); });
+    if (actionTypes.length === 0) { document.getElementById('tem-issue-result').innerHTML = '<span style="color:red;">Select at least one action.</span>'; return; }
+  }
+
+  var expiresIso = expires ? new Date(expires).toISOString() : '';
+
+  document.getElementById('tem-issue-result').innerHTML = '<span style="color:#6b7280;">Issuing…</span>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) {
+        document.getElementById('tem-issue-result').innerHTML = '<span style="color:red;">' + res.message + '</span>';
+        return;
+      }
+      var aid = res.authId;
+      document.getElementById('tem-issue-result').innerHTML =
+        '<div style="background:#dcfce7;border:1.5px solid #86efac;border-radius:6px;padding:14px;margin-top:8px;">' +
+          '<div style="font-weight:700;font-size:.9rem;color:#166534;margin-bottom:6px;">✓ AuthorisationID issued</div>' +
+          '<div style="font-family:monospace;font-size:1.05rem;color:#1d4ed8;background:#fff;' +
+            'border:1px solid #86efac;border-radius:4px;padding:8px 10px;margin-bottom:8px;' +
+            'word-break:break-all;letter-spacing:.03em;">' + aid + '</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">' +
+            '<button onclick="(function(){' +
+              'navigator.clipboard.writeText(\'' + aid + '\').then(function(){' +
+                'var b=document.getElementById(\'tem-copy-btn\');' +
+                'b.textContent=\'Copied!\';b.style.background=\'#166534\';' +
+                'setTimeout(function(){b.textContent=\'Copy AuthID\';b.style.background=\'#1d4ed8\';},2000);' +
+              '});' +
+            '})()" id="tem-copy-btn" ' +
+            'style="padding:8px 16px;background:#1d4ed8;color:#fff;border:none;border-radius:4px;' +
+              'font-size:.85rem;cursor:pointer;font-weight:600;">Copy AuthID</button>' +
+            '<span style="font-size:.8rem;color:#374151;">Communicate this ID to the TEM securely before they act.</span>' +
+          '</div>' +
+          '<div style="font-size:.78rem;color:#6b7280;">Scope: ' + res.scope +
+            (res.actionTypes && res.actionTypes.length ? ' — ' + res.actionTypes.join(', ') : '') +
+          '</div>' +
+        '</div>';
+      AdminPanel._loadTEMAuthTable();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('tem-issue-result').innerHTML = '<span style="color:red;">Error: ' + e.message + '</span>';
+    })
+    .recordROAuthorisation(App.token, elecId, scope, actionTypes, notes, expiresIso);
+};
+
+AdminPanel._revokeTEMAuth = function(authId) {
+  if (!confirm('Revoke AuthID ' + authId + '? This cannot be undone.')) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { alert(res.message); return; }
+      showToast('AuthorisationID revoked.');
+      AdminPanel._loadTEMAuthTable();
+    })
+    .withFailureHandler(function(e) { alert('Error: ' + e.message); })
+    .revokeROAuthorisation(App.token, authId);
+};
+
 </script>

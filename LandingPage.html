@@ -83,12 +83,12 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
 .btn-tutorial:hover{background:#d0e3f5;}
 
 /* ── VVA ── */
-.vva-body{padding:14px 16px;display:flex;gap:13px;align-items:flex-start;}
-.vva-icon{width:38px;height:38px;border-radius:7px;background:#e6f1fb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;color:#1a3a5c;}
-.vva-title{font-size:14px;font-weight:600;color:#1a3a5c;margin-bottom:3px;}
-.vva-sub{font-size:12px;color:#666;line-height:1.55;margin-bottom:6px;}
-.vva-link{font-size:13px;color:#1a3a5c;text-decoration:none;font-weight:600;}
-.vva-count{background:#f0f4f8;border-radius:6px;padding:8px 12px;font-size:12px;color:#555;margin-top:8px;display:flex;align-items:center;gap:8px;}
+.vva-body{padding:16px;}
+.vva-icon{display:none;}
+.vva-title{font-size:16px;font-weight:700;color:#1a3a5c;margin-bottom:6px;}
+.vva-sub{font-size:13px;color:#374151;line-height:1.6;margin-bottom:14px;}
+.vva-btn{display:block;width:100%;padding:14px 16px;background:#1a3a5c;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none;border-radius:6px;box-sizing:border-box;letter-spacing:.01em;}
+.vva-count{background:#f0f4f8;border-radius:6px;padding:8px 12px;font-size:12px;color:#555;margin-top:12px;display:flex;align-items:center;gap:8px;}
 .vva-count-num{font-size:16px;font-weight:700;color:#1a3a5c;}
 
 /* ── Trust ── */
@@ -151,24 +151,31 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
 
   <!-- VVA card -->
   <div id="vva-area" style="display:none;">
-    <div class="card">
-      <div class="card-head"><div class="card-head-t">✓ Voter Verification</div></div>
+    <div class="card" style="border:2px solid #1a3a5c;">
+      <div class="card-head" style="background:#1a3a5c;">
+        <div class="card-head-t" style="font-size:14px;">ACTION REQUIRED &mdash; Voter Verification</div>
+      </div>
       <div class="vva-body">
-        <div class="vva-icon">✓</div>
-        <div style="flex:1;">
-          <div class="vva-title">Verify your voter roll status</div>
-          <div class="vva-sub">Check if your details are on the voter roll before the cutoff date.</div>
-          <a id="vva-link" href="#" class="vva-link" target="_blank" rel="noopener">Open verification portal &#8599;</a>
-          <div id="vva-count-area" style="display:none;">
-            <div class="vva-count">
-              <span class="vva-count-num" id="vva-count-num">—</span>
-              <span>members have verified their email address</span>
-            </div>
+        <div class="vva-title">Are you on the voter roll?</div>
+        <div class="vva-sub">All Life Members must verify their email address on the voter roll before the cutoff date. Click below to check your details and confirm your registration.</div>
+        <a id="vva-link" href="#" class="vva-btn" target="_blank" rel="noopener">Open Voter Verification Portal &#8599;</a>
+        <div id="vva-count-area" style="display:none;">
+          <div class="vva-count">
+            <span class="vva-count-num" id="vva-count-num">&mdash;</span>
+            <span>members have verified their email address</span>
           </div>
         </div>
       </div>
     </div>
   </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Document links (SOP / TechSpec) -->
+  <div id="doc-links-area" style="display:none;"></div>
 
   <!-- Trust strip -->
   <div class="card">
@@ -233,6 +240,7 @@ function statusToPhase(status) {
   if (status === 'paused')           return 'Voting temporarily paused';
   if (status === 'closed')           return 'Voting closed';
   if (status === 'declared')         return 'Results declared';
+  if (status === 'draft') return 'Preparation in progress';
   return 'Election in progress';
 }
 
@@ -245,7 +253,8 @@ function statusMsg(status) {
     active:                  'Voting is open. Log in now to cast your vote.',
     paused:                  'Voting is temporarily paused. Please check back shortly.',
     closed:                  'Voting has closed. Results will be declared by the Returning Officer.',
-    declared:                'Results have been declared. Thank you to all who participated.'
+    declared:                'Results have been declared. Thank you to all who participated.',
+    draft:                   'The election is being set up. Details will be published in due course.'
   };
   return map[status] || 'Election in progress. Please check back for updates.';
 }
@@ -556,6 +565,27 @@ google.script.run
       var vvaLink = document.getElementById('vva-link');
       if (vvaLink) vvaLink.href = cm.vva_url.value;
       document.getElementById('vva-area').style.display = 'block';
+    }
+    // SOP and TechSpec document links
+    var docArea = document.getElementById('doc-links-area');
+    if (docArea) {
+      var sopUrl      = (cm.sop_url      && cm.sop_url.value)      ? cm.sop_url.value.trim()      : '';
+      var techspecUrl = (cm.techspec_url && cm.techspec_url.value)  ? cm.techspec_url.value.trim() : '';
+      if (sopUrl || techspecUrl) {
+        var dHtml = '<div class="card"><div class="card-head"><div class="card-head-t">Election Documents</div></div>' +
+          '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;">';
+        if (sopUrl) dHtml += '<a href="' + sopUrl + '" target="_blank" rel="noopener" ' +
+          'style="display:block;padding:11px 14px;background:#f8fafc;border:1.5px solid #1a3a5c;border-radius:5px;' +
+          'color:#1a3a5c;text-decoration:none;font-size:14px;font-weight:600;">' +
+          '📄 Standard Operating Procedure &#8599;</a>';
+        if (techspecUrl) dHtml += '<a href="' + techspecUrl + '" target="_blank" rel="noopener" ' +
+          'style="display:block;padding:11px 14px;background:#f8fafc;border:1.5px solid #1a3a5c;border-radius:5px;' +
+          'color:#1a3a5c;text-decoration:none;font-size:14px;font-weight:600;">' +
+          '📄 Technical Specification &#8599;</a>';
+        dHtml += '</div></div>';
+        docArea.innerHTML = dHtml;
+        docArea.style.display = 'block';
+      }
     }
   })
   .withFailureHandler(function() {})

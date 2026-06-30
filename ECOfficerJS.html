@@ -56,7 +56,7 @@ var ECOfficerPanel = (function() {
 
   function _comingSoon(label) {
     return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-      '<div style="font-size:2rem;margin-bottom:12px;">🏗️</div>' +
+      '<div style="font-size:2rem;margin-bottom:12px;">🏗</div>' +
       '<div style="font-size:1rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
         escHtml(label) + '</div>' +
       '<div style="font-size:0.85rem;">This tab is being built.</div>' +
@@ -459,7 +459,7 @@ var ECOfficerPanel = (function() {
         '<div class="panel-card-body">' +
           '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;' +
           'padding:10px 14px;font-size:.82rem;color:#1e40af;margin-bottom:14px;">' +
-            'ℹ️ The EC publishes a <strong>draft framework schedule</strong> before handover to the RO. ' +
+            'ℹ The EC publishes a <strong>draft framework schedule</strong> before handover to the RO. ' +
             'It will be labelled "Draft — subject to finalisation by the Returning Officer" on the Landing Page. ' +
             'After handover, the RO publishes the finalised schedule from the Admin Panel.' +
           '</div>' +
@@ -515,6 +515,23 @@ var ECOfficerPanel = (function() {
           'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
           'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save VVA Links</button>' +
         '</div>' +
+      '</div>' +
+
+      '<div class="panel-card" style="margin-bottom:24px;">' +
+        '<div class="panel-card-header">🔗 Election Documents</div>' +
+        '<div class="panel-card-body">' +
+          '<p style="font-size:.82rem;color:#6b7280;margin-bottom:14px;">' +
+            'Set the public URLs for the SOP and Technical Specification documents. ' +
+            'These will appear as links on the public Landing Page.' +
+          '</p>' +
+          _lpField('lp-sop-url',      'Election SOP Document URL',        'sop_url',      cm, 'url', 'https://drive.google.com/…') +
+          _lpField('lp-techspec-url',  'Technical Specification URL',      'techspec_url', cm, 'url', 'https://drive.google.com/…') +
+          '<div id="lp-docs-error" style="color:#c0392b;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<div id="lp-docs-ok"    style="color:#16a34a;font-size:.82rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="ECOfficerPanel._saveDocLinks()" ' +
+          'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">💾 Save Document Links</button>' +
+        '</div>' +
       '</div>'
     );
   }
@@ -561,9 +578,9 @@ var ECOfficerPanel = (function() {
           return;
         }
 
-        // Parse CSV into rows array — no header row in this format
+        // Parse CSV into rows array — skip header row (row 0)
         var rows = [];
-        for (var i = 0; i < lines.length; i++) {
+        for (var i = 1; i < lines.length; i++) {
           var cols = lines[i].split(',').map(function(c) { return c.trim(); });
           rows.push(cols);
         }
@@ -592,7 +609,7 @@ var ECOfficerPanel = (function() {
             btn.textContent = 'Upload Voter Roll Draft';
             btn.disabled = false;
           })
-          .uploadVoterRollDraft(App.token, rows);
+          .uploadVoterRollDraft(App.token, rows, '');
       };
       reader.readAsText(file);
     },
@@ -706,7 +723,7 @@ var ECOfficerPanel = (function() {
             }
           })
           .withFailureHandler(function() { pending--; failed++; })
-          .setLandingPageContent(App.token, f.key, val, f.type, f.label, true);
+          .setLandingPageContent(App.token, f.key, val, f.type, f.label, true, '');
       });
     },
 
@@ -769,7 +786,7 @@ var ECOfficerPanel = (function() {
         .withFailureHandler(function() {
           if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
         })
-        .setElectionSchedule(App.token, elecId, schedData);
+        .setElectionSchedule(App.token, elecId, schedData, '');
     },
 
     _publishSchedDraft: function() {
@@ -797,7 +814,7 @@ var ECOfficerPanel = (function() {
           .withFailureHandler(function() {
             if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
           })
-          .publishSchedule(App.token, elecId);
+          .publishSchedule(App.token, elecId, '');
       }, 1500);
     },
 
@@ -826,12 +843,45 @@ var ECOfficerPanel = (function() {
       google.script.run
         .withSuccessHandler(function() { done(true); })
         .withFailureHandler(function() { done(false); })
-        .setLandingPageContent(App.token, 'vva_url', vvaUrl, 'url', 'Voter Verification Portal', true);
+        .setLandingPageContent(App.token, 'vva_url', vvaUrl, 'url', 'Voter Verification Portal', true, '');
 
       google.script.run
         .withSuccessHandler(function() { done(true); })
         .withFailureHandler(function() { done(false); })
-        .setLandingPageContent(App.token, 'vva_json', vvaJson, 'url', 'VVA JSON Endpoint', false);
+        .setLandingPageContent(App.token, 'vva_json', vvaJson, 'url', 'VVA JSON Endpoint', false, '');
+    },
+
+    _saveDocLinks: function() {
+      var errEl = document.getElementById('lp-docs-error');
+      var okEl  = document.getElementById('lp-docs-ok');
+      if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+      if (okEl)  { okEl.style.display  = 'none'; okEl.innerHTML  = ''; }
+
+      var sopUrl      = (document.getElementById('lp-sop-url')      || {}).value || '';
+      var techspecUrl = (document.getElementById('lp-techspec-url')  || {}).value || '';
+      var pending = 2; var failed = 0;
+
+      function done(success) {
+        pending--;
+        if (!success) failed++;
+        if (pending === 0) {
+          if (failed === 0) {
+            if (okEl) { okEl.innerHTML = '✓ Document links saved.'; okEl.style.display = 'block'; }
+          } else {
+            if (errEl) { errEl.innerHTML = 'Save failed for ' + failed + ' item(s).'; errEl.style.display = 'block'; }
+          }
+        }
+      }
+
+      google.script.run
+        .withSuccessHandler(function() { done(true); })
+        .withFailureHandler(function() { done(false); })
+        .setLandingPageContent(App.token, 'sop_url', sopUrl, 'url', 'Election SOP', true, '');
+
+      google.script.run
+        .withSuccessHandler(function() { done(true); })
+        .withFailureHandler(function() { done(false); })
+        .setLandingPageContent(App.token, 'techspec_url', techspecUrl, 'url', 'Technical Specification', true, '');
     }
   };
 
