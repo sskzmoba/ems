@@ -147,7 +147,7 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
   <div id="results-btn-area" style="display:none;">
     <button class="btn-results" onclick="goResults()">🏆 View Declared Results</button>
   </div>
-  <a class="btn-tutorial" onclick="window.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works &nbsp;(Tutorial)</a>
+  <a class="btn-tutorial" onclick="window.top.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works &nbsp;(Tutorial)</a>
 
   <!-- VVA card -->
   <div id="vva-area" style="display:none;">
@@ -204,8 +204,8 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
 <script>
 var DEPLOY_URL = '<?= ScriptApp.getService().getUrl() ?>';
 
-function goVoterLogin() { window.location.href = DEPLOY_URL + '?action=login'; }
-function goResults()    { window.location.href = DEPLOY_URL + '?action=results'; }
+function goVoterLogin() { window.top.location.href = DEPLOY_URL + '?action=login'; }
+function goResults()    { window.top.location.href = DEPLOY_URL + '?action=results'; }
 
 // ── Date helpers ──────────────────────────────────────────────
 

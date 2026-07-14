@@ -193,9 +193,14 @@ html, body {
 #screen-loading p { color: #888; font-size: 1rem; }
 
 /* ── TOAST ────────────────────────────────────────────── */
+/* position:absolute + JS-computed top, not position:fixed — inside the
+   Apps Script sandboxed iframe, position:fixed anchors to the full
+   (often much taller) document height rather than the actually-visible
+   viewport, so on long/scrollable admin pages the toast could render
+   below the fold. Anchoring via scrollY + innerHeight in showToast()
+   keeps it visible wherever the user is on the page right now. */
 #toast {
-  position: fixed;
-  bottom: 24px;
+  position: absolute;
   left: 50%;
   transform: translateX(-50%) translateY(80px);
   background: #1a3a5c;
@@ -530,6 +535,14 @@ background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:cente
   var showToast = function(msg, isError, duration) {
     var el = document.getElementById('toast');
     el.textContent = msg;
+    // Anchor near the bottom of whatever's currently visible, not the
+    // bottom of the full (possibly much taller) document — see CSS
+    // comment above #toast for why position:fixed alone isn't reliable
+    // here. Re-computed every time so it's correct regardless of where
+    // the page happens to be scrolled to when this fires.
+    var margin = 24;
+    var approxHeight = 56;
+    el.style.top = (window.scrollY + window.innerHeight - approxHeight - margin) + 'px';
     el.className   = 'show' + (isError ? ' error' : '');
     clearTimeout(_toastTimer);
     _toastTimer = setTimeout(function() {

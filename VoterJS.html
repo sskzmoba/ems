@@ -22,6 +22,11 @@ var VoterPanel = (function() {
 
   var _currentTab  = '';
   var _election    = null;
+  // Session-scoped choice when more than one election is voter-visible at
+  // once (Session 51 amendment). Null until the voter picks, or until only
+  // one election is visible (auto-resolved, no picker shown).
+  var _selectedElectionId = null;
+  var _allElections = [];
   var _candidatesByPost = [];
   var _votedPosts  = [];
   var _receipts    = [];
@@ -70,7 +75,7 @@ var VoterPanel = (function() {
       var html = _renderTab(tabId);
       c.innerHTML = html;
     });
-    setMain('<div id="voter-content"></div>');
+    setMain('<div id="voter-content"></div>' + _eligibilityModalHtml());
     _currentTab = TABS[0].id;
     var c = document.getElementById('voter-content');
     if (c) c.innerHTML = _renderTab(TABS[0].id);
@@ -119,6 +124,15 @@ var VoterPanel = (function() {
           c.innerHTML = _errorCard(res && res.message ? res.message : 'Could not load election status.');
           return;
         }
+        _allElections = res.elections || [];
+        // More than one election is currently visible and the voter hasn't
+        // chosen yet — show the picker instead of guessing which one they
+        // want. Once chosen, _selectedElectionId sticks for the rest of the
+        // session (My Ballot, Nominations, Receipts, Complaints all follow it).
+        if (res.multiple && !_selectedElectionId) {
+          c.innerHTML = _electionPickerCard(_allElections);
+          return;
+        }
         _election = res.election;
         _voterBatch        = res.voterBatch || '';
         _orgSecyBatch      = res.election ? (res.election.orgSecyBatch      || '') : '';
@@ -130,7 +144,48 @@ var VoterPanel = (function() {
         var c = document.getElementById('voter-content');
         if (c) c.innerHTML = _errorCard('Connection error. Please try again.');
       })
-      .getElectionsForVoter(App.token);
+      .getElectionsForVoter(App.token, _selectedElectionId);
+  }
+
+  function _selectElection(id) {
+    _selectedElectionId = id;
+    var c = document.getElementById('voter-content');
+    if (c) c.innerHTML = _spinner('Loading election status\u2026');
+    _loadBallot();
+  }
+
+  function _electionPickerCard(elections) {
+    var statusLabel = {
+      nominations_open: 'Nominations Open', nominations_open_phase2: 'Nominations Open \u2014 Phase 2',
+      scrutiny: 'Under Scrutiny', candidates_published: 'Final Candidate List',
+      active: 'Voting in Progress', paused: 'Voting Paused',
+      closed: 'Voting Closed', declared: 'Results Declared'
+    };
+    var cards = elections.map(function(el) {
+      var label = statusLabel[el.status] || el.status;
+      var trialTag = el.isTrial
+        ? '<span style="font-size:.7rem;background:#fff3cd;color:#856404;padding:2px 8px;' +
+          'border-radius:10px;margin-left:6px;">TRIAL</span>' : '';
+      return (
+        '<button onclick="VoterPanel._selectElection(\'' + escHtml(el.id) + '\')" ' +
+        'style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;' +
+        'border-radius:8px;padding:14px 16px;margin-bottom:10px;cursor:pointer;min-height:44px;">' +
+          '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">' +
+            escHtml(el.title) + trialTag +
+          '</div>' +
+          '<div style="font-size:.8rem;color:#6b7280;">' + escHtml(label) + '</div>' +
+        '</button>'
+      );
+    }).join('');
+    return (
+      '<div style="padding:8px 4px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">More Than One Election</div>' +
+        '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">' +
+          'There is more than one election currently open. Please choose which one you want to view.' +
+        '</div>' +
+        cards +
+      '</div>'
+    );
   }
 
   function _renderBallotForStatus(c, status) {
@@ -266,7 +321,7 @@ var VoterPanel = (function() {
           (cd.photo ? '<img src=\"' + escHtml(cd.photo) + '\" style=\"width:48px;height:48px;object-fit:cover;border-radius:50%;border:2px solid #d1d5db;flex-shrink:0;margin-top:2px;\">' : '') +
           '<div style=\"flex:1;\">' +
             '<div style=\"font-size:.95rem;font-weight:600;color:#1f2937;\">' + escHtml(cd.name) + '</div>' +
-            '<div style=\"font-size:.8rem;color:#6b7280;\">Batch: ' + escHtml(cd.batch) + '</div>' +
+            '<div style=\"font-size:.8rem;color:#6b7280;\">Roll No: ' + escHtml(cd.roll) + ' | Batch: ' + escHtml(cd.batch) + '</div>' +
             (cd.bio ? '<div style=\"font-size:.82rem;color:#374151;margin-top:4px;line-height:1.4;\">' + escHtml(cd.bio) + '</div>' : '') +
           '</div>' +
         '</label>';
@@ -316,8 +371,14 @@ var VoterPanel = (function() {
     var label = selected === 'NOTA' ? 'None of the Above' :
                 selected === 'ABSTAIN' ? 'Abstain' :
                 _getCandidateName(postName, selected);
-    if (!confirm('Confirm your vote for "' + postName + '":\n\n' + label + '\n\nThis cannot be changed after submission.')) return;
+    _showConfirmModal(
+      'Confirm your vote for "' + postName + '":\n\n' + label + '\n\nThis cannot be changed after submission.',
+      function() { _doSubmitVote(postName, selected); },
+      'Confirm Vote'
+    );
+  }
 
+  function _doSubmitVote(postName, selected) {
     var btns = document.querySelectorAll('button');
     var btn = null;
     for (var b = 0; b < btns.length; b++) {
@@ -393,6 +454,10 @@ var VoterPanel = (function() {
         '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;">' + escHtml(title) + trialBadge + '</div>' +
       '</div>' +
       '<div style="font-size:.9rem;color:#374151;margin-bottom:16px;line-height:1.6;">' + body + deadline + '</div>' +
+      '<button onclick="VoterPanel._showEligibilityModal()" ' +
+      'style="width:100%;padding:12px;background:#eff6ff;color:#1d4ed8;border:1.5px solid #93c5fd;' +
+      'border-radius:6px;font-size:.87rem;font-weight:600;cursor:pointer;margin-bottom:10px;">' +
+      '\u2705 Check Eligibility Conditions</button>' +
       '<button onclick="VoterPanel.showNominationForm()" style="width:100%;padding:14px;background:#1a3a5c;' +
       'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
       '✍️ Nominate Myself</button>' +
@@ -558,13 +623,16 @@ var VoterPanel = (function() {
             return;
           }
           _election = res.election;
+          _voterBatch        = res.voterBatch || '';
+          _orgSecyBatch      = res.election ? (res.election.orgSecyBatch      || '') : '';
+          _orgSecyRestricted = res.election ? (res.election.orgSecyRestricted || false) : false;
           _loadNominationsBoardWithElection();
         })
         .withFailureHandler(function() {
           var c = document.getElementById('voter-content');
           if (c) c.innerHTML = _errorCard('Connection error.');
         })
-        .getElectionsForVoter(App.token);
+        .getElectionsForVoter(App.token, _selectedElectionId);
       return;
     }
     _loadNominationsBoardWithElection();
@@ -930,7 +998,7 @@ var VoterPanel = (function() {
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Candidate Roll Number</label>' +
           '<div style="display:flex;gap:8px;">' +
-            '<input type="text" id="p2-cand-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+            '<input type="text" id="p2-cand-roll" placeholder="e.g. 1234" inputmode="text" ' +
             'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
             '<button onclick="VoterPanel._lookupRollP2(\'cand\')" ' +
             'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
@@ -943,7 +1011,7 @@ var VoterPanel = (function() {
             'Seconder Roll Number <span style="font-weight:400;color:#9ca3af;">(optional \u2014 can be added later)</span>' +
           '</label>' +
           '<div style="display:flex;gap:8px;">' +
-            '<input type="text" id="p2-sec-roll" placeholder="e.g. SSK002" inputmode="text" ' +
+            '<input type="text" id="p2-sec-roll" placeholder="e.g. 5678" inputmode="text" ' +
             'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
             '<button onclick="VoterPanel._lookupRollP2(\'sec\')" ' +
             'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
@@ -952,7 +1020,7 @@ var VoterPanel = (function() {
         '</div>' +
 
         '<div style="margin-bottom:14px;">' +
-          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional \u2014 max 300 characters)</span></label>' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(required \u2014 minimum 30 characters)</span></label>' +
           '<textarea id="p2-bio" maxlength="1000" placeholder="Brief introduction for the nominations board\u2026" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
@@ -1014,6 +1082,7 @@ var VoterPanel = (function() {
 
     if (!post)     { _p2Error('Please select a post.'); return; }
     if (!candRoll) { _p2Error('Please enter the candidate\'s roll number.'); return; }
+    if (bio.length < 30) { _p2Error('A candidate biography is required, with a minimum of 30 characters.'); return; }
 
     if (!_election || !_election.id) { _p2Error('Election data missing. Please reload.'); return; }
 
@@ -1095,6 +1164,14 @@ var VoterPanel = (function() {
         'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
         'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">\u2190 Back</button>' +
       '</div>' +
+
+      '<div style="margin-bottom:14px;">' +
+        '<button onclick="VoterPanel._showEligibilityModal()" ' +
+        'style="width:100%;padding:13px;background:#eff6ff;color:#1d4ed8;' +
+        'border:1.5px solid #93c5fd;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+        '\u2705 Check Eligibility Conditions — Read Before Nominating</button>' +
+      '</div>' +
+
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
         '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:16px;">✍️ Nominate Myself</div>' +
 
@@ -1108,7 +1185,7 @@ var VoterPanel = (function() {
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Proposer Roll Number</label>' +
           '<div style="display:flex;gap:8px;">' +
-            '<input type="text" id="nom-prop-roll" placeholder="e.g. SSK001" inputmode="text" ' +
+            '<input type="text" id="nom-prop-roll" placeholder="e.g. 1234" inputmode="text" ' +
             'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
             '<button onclick="VoterPanel._lookupRoll(\'prop\')" ' +
             'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
@@ -1119,7 +1196,7 @@ var VoterPanel = (function() {
         '<div style="margin-bottom:14px;">' +
           '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Seconder Roll Number</label>' +
           '<div style="display:flex;gap:8px;">' +
-            '<input type="text" id="nom-sec-roll" placeholder="e.g. SSK002" inputmode="text" ' +
+            '<input type="text" id="nom-sec-roll" placeholder="e.g. 5678" inputmode="text" ' +
             'style="flex:1;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
             '<button onclick="VoterPanel._lookupRoll(\'sec\')" ' +
             'style="padding:12px 16px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.85rem;">Look up</button>' +
@@ -1128,7 +1205,7 @@ var VoterPanel = (function() {
         '</div>' +
 
         '<div style="margin-bottom:14px;">' +
-          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(optional \u2014 max 300 characters)</span></label>' +
+          '<label style="display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;">Bio <span style="font-weight:400;color:#9ca3af;">(required \u2014 minimum 30 characters)</span></label>' +
           '<textarea id="nom-bio" maxlength="1000" placeholder="Brief introduction for the nominations board\u2026" ' +
           'style="width:100%;padding:12px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
           'box-sizing:border-box;min-height:80px;font-family:Arial,sans-serif;resize:vertical;"></textarea>' +
@@ -1159,6 +1236,167 @@ var VoterPanel = (function() {
         'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
         'Submit Nomination</button>' +
       '</div>';
+  }
+
+  function _showEligibilityModal() {
+    var m = document.getElementById('elig-modal');
+    if (m) m.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function _closeEligibilityModal() {
+    var m = document.getElementById('elig-modal');
+    if (m) m.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  // ── Generic in-page confirm modal — replaces native confirm() ──────
+  // Native confirm()/alert() dialogs render with browser-added chrome
+  // (e.g. "script.google.com says") that can look technical or alarming,
+  // and behave inconsistently inside the Apps Script sandboxed iframe.
+  // This gives full control over appearance and reads as a normal part
+  // of the app instead. onConfirm fires only if the person taps Confirm;
+  // closing any other way (Cancel, backdrop tap) does nothing further.
+  function _showConfirmModal(message, onConfirm, confirmLabel, isDanger, onCancel) {
+    var existing = document.getElementById('confirm-modal-overlay');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'confirm-modal-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);' +
+      'z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+    var btnColor = isDanger ? '#dc2626' : '#1a3a5c';
+
+    overlay.innerHTML =
+      '<div style="background:#fff;border-radius:8px;max-width:400px;width:100%;padding:20px;' +
+      'box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:80vh;overflow-y:auto;">' +
+        '<div style="font-size:.92rem;color:#111;margin-bottom:20px;white-space:pre-line;line-height:1.5;">' +
+          escHtml(message) +
+        '</div>' +
+        '<div style="display:flex;gap:10px;">' +
+          '<button id="confirm-modal-cancel" style="flex:1;padding:12px;background:#e5e7eb;color:#374151;' +
+            'border:none;border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">Cancel</button>' +
+          '<button id="confirm-modal-ok" style="flex:1;padding:12px;background:' + btnColor + ';color:#fff;' +
+            'border:none;border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;min-height:44px;">' +
+            escHtml(confirmLabel || 'Confirm') +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    var cancel = function() { overlay.remove(); if (onCancel) onCancel(); };
+    overlay.onclick = function(e) { if (e.target === overlay) cancel(); };
+    document.body.appendChild(overlay);
+
+    document.getElementById('confirm-modal-cancel').onclick = cancel;
+    document.getElementById('confirm-modal-ok').onclick = function() { overlay.remove(); onConfirm(); };
+  }
+
+  function _eligibilityModalHtml() {
+    return (
+      '<div id="elig-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;' +
+      'overflow-y:auto;padding:20px 12px;">' +
+        '<div style="background:#fff;border-radius:8px;max-width:520px;margin:0 auto;padding:20px 16px;">' +
+          '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">' +
+            '\u2705 Who Can Stand for Which Post' +
+          '</div>' +
+          '<div style="font-size:.8rem;color:#6b7280;margin-bottom:16px;">' +
+            'A plain-language guide. Please read this before submitting your nomination.' +
+          '</div>' +
+
+          '<div style="max-height:60vh;overflow-y:auto;padding-right:4px;">' +
+
+            '<div style="background:#eff6ff;border-radius:6px;padding:12px 14px;margin-bottom:12px;">' +
+              '<div style="font-weight:700;color:#1e3a8a;font-size:.88rem;margin-bottom:4px;">Basic rule for everyone</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.5;">' +
+                'You must be a <strong>Life Member</strong> of SSKZM OBA. You can only stand for ' +
+                '<strong>one post</strong> at a time — if you want to change your mind, withdraw your ' +
+                'first nomination before submitting another.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-bottom:14px;">' +
+              '<div style="font-weight:700;color:#1a3a5c;font-size:.88rem;margin-bottom:6px;">President</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                'You need at least <strong>2 years, added together</strong>, of past service as President, ' +
+                'Vice President, General Secretary, Joint Secretary or Treasurer, at any time in the ' +
+                '<strong>last 15 years</strong>. ' +
+                '<br>If instead you have served as an <strong>Ex-officio</strong> member, service as Batch ' +
+                'Representative can also count toward this — ask the RO if this applies to you.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-bottom:14px;">' +
+              '<div style="font-weight:700;color:#1a3a5c;font-size:.88rem;margin-bottom:6px;">General Secretary</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                'You need at least <strong>1 year</strong> of EC service in <strong>any capacity</strong> ' +
+                '(including as Batch Representative or a co-opted member), at any time in the ' +
+                '<strong>last 15 years</strong>.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-bottom:14px;">' +
+              '<div style="font-weight:700;color:#1a3a5c;font-size:.88rem;margin-bottom:6px;">' +
+                'Vice President, Joint Secretary, Treasurer' +
+              '</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                'No extra experience needed — any Life Member can stand, subject only to the tenure limits below.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-bottom:14px;">' +
+              '<div style="font-weight:700;color:#1a3a5c;font-size:.88rem;margin-bottom:6px;">Organising Secretary</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                'This post is usually reserved for members of the batch organising the next reunion. ' +
+                'If nobody from that batch comes forward in the first week, it opens to all Life Members. ' +
+                'Nobody may hold this post for more than <strong>5 years</strong> in a row.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-bottom:14px;">' +
+              '<div style="font-weight:700;color:#1a3a5c;font-size:.88rem;margin-bottom:6px;">Batch Representative</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                'You must belong to the specific 5-year batch group for that post — you, your proposer, and ' +
+                'your seconder must all be from the same batch group. The 5-year and 6-year tenure limits ' +
+                'below do <strong>not</strong> apply to Batch Representative.' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="background:#fef3c7;border-radius:6px;padding:12px 14px;margin-bottom:6px;">' +
+              '<div style="font-weight:700;color:#92400e;font-size:.88rem;margin-bottom:6px;">' +
+                'Tenure limits — applies to all posts above except Batch Representative' +
+              '</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;margin-bottom:8px;">' +
+                '<strong>Same post, 5 years in a row:</strong> if you have held the exact same post for ' +
+                '5 consecutive years, you cannot stand for that same post again until you have had a break ' +
+                'from it.' +
+              '</div>' +
+              '<div style="font-size:.85rem;color:#374151;line-height:1.6;">' +
+                '<strong>Any post, 6 years in a row:</strong> if you have held any EC post (other than Batch ' +
+                'Representative) for 6 consecutive years, you cannot stand for <strong>any</strong> post until ' +
+                'you have been off the EC for at least 2 full years. A single one-year gap does not count as ' +
+                'a break.' +
+                '<br><br>' +
+                '<strong>Important:</strong> service as a <strong>co-opted member</strong> counts toward this ' +
+                '6-year count, just like any elected post. It is <strong>not</strong> excluded — only Batch ' +
+                'Representative service is excluded from this count.' +
+              '</div>' +
+            '</div>' +
+
+          '</div>' +
+
+          '<div style="font-size:.76rem;color:#9ca3af;margin:12px 0 14px;line-height:1.5;">' +
+            'This is a plain-language summary for your guidance only. The Returning Officer verifies actual ' +
+            'eligibility against the official Bylaws during scrutiny. If you are unsure whether you qualify, ' +
+            'please contact the Returning Officer before submitting your nomination.' +
+          '</div>' +
+
+          '<button onclick="VoterPanel._closeEligibilityModal()" ' +
+          'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">Close</button>' +
+        '</div>' +
+      '</div>'
+    );
   }
 
   function _lookupRoll(role) {
@@ -1209,6 +1447,7 @@ var VoterPanel = (function() {
     if (!post) { _showNomError('Please select a post.'); return; }
     if (!prop) { _showNomError('Please enter the proposer\'s roll number.'); return; }
     if (!sec)  { _showNomError('Please enter the seconder\'s roll number.'); return; }
+    if (bio.length < 30) { _showNomError('A candidate biography is required, with a minimum of 30 characters.'); return; }
     if (!declEl.checked) { _showNomError('Please tick the declaration checkbox before submitting.'); return; }
 
     if (errEl) errEl.style.display = 'none';
@@ -1272,7 +1511,36 @@ var VoterPanel = (function() {
         })
         .submitNomination(App.token, _election.id, post, prop, sec, bio);
     }
-    _doSubmit();
+
+    // Advisory eligibility check — based on available EC service records.
+    // This NEVER blocks submission; it only warns and asks for confirmation.
+    // Final eligibility is always determined by the RO at scrutiny.
+    google.script.run
+      .withSuccessHandler(function(eligRes) {
+        if (eligRes && eligRes.success && eligRes.eligible === false) {
+          var reasonsText = (eligRes.reasons || []).join('\n\n');
+          var warnMsg =
+            'Based on records available, you may not currently meet the eligibility ' +
+            'criteria for "' + post + '":\n\n' + reasonsText +
+            '\n\nThis is an advisory check only \u2014 it does not decide the outcome. ' +
+            'The Returning Officer will make the final determination at scrutiny. ' +
+            'Do you still want to proceed with this nomination? You may be rejected at the scrutiny stage.';
+          _showConfirmModal(
+            warnMsg,
+            function() { _doSubmit(); },
+            'Proceed Anyway',
+            false,
+            function() { if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; } }
+          );
+          return;
+        }
+        _doSubmit();
+      })
+      .withFailureHandler(function() {
+        // Advisory check itself failed to run — do not block submission on that basis
+        _doSubmit();
+      })
+      .checkEligibilityAutomatic(App.token, App.identity, post, _election.id);
   }
 
   function _showNomError(msg) {
@@ -1297,6 +1565,9 @@ var VoterPanel = (function() {
       .withSuccessHandler(function(res) {
         if (res && res.success && res.election) {
           _election = res.election;
+          _voterBatch        = res.voterBatch || '';
+          _orgSecyBatch      = res.election.orgSecyBatch      || '';
+          _orgSecyRestricted = res.election.orgSecyRestricted || false;
           _loadMyNominations();
         } else {
           var c2 = document.getElementById('voter-content');
@@ -1307,7 +1578,7 @@ var VoterPanel = (function() {
         var c2 = document.getElementById('voter-content');
         if (c2) c2.innerHTML = _errorCard('Connection error.');
       })
-      .getElectionsForVoter(App.token);
+      .getElectionsForVoter(App.token, _selectedElectionId);
   }
 
   function _loadMyNominations() {
@@ -1550,18 +1821,24 @@ var VoterPanel = (function() {
   }
 
   function _confirmWithdraw(nomId, postName) {
-    if (!confirm('Withdraw your nomination for "' + postName + '"?\n\nThis cannot be undone.')) return;
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res || !res.success) {
-          showToast((res && res.message) || 'Withdrawal failed.', true);
-          return;
-        }
-        showToast('Nomination withdrawn.');
-        _loadMyNominations();
-      })
-      .withFailureHandler(function() { showToast('Connection error.', true); })
-      .withdrawNomination(App.token, nomId);
+    _showConfirmModal(
+      'Withdraw your nomination for "' + postName + '"?\n\nThis cannot be undone.',
+      function() {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (!res || !res.success) {
+              showToast((res && res.message) || 'Withdrawal failed.', true);
+              return;
+            }
+            showToast('Nomination withdrawn.');
+            _loadMyNominations();
+          })
+          .withFailureHandler(function() { showToast('Connection error.', true); })
+          .withdrawNomination(App.token, nomId);
+      },
+      'Withdraw Nomination',
+      true
+    );
   }
   function _lookupRollAddSec(nomId) {
     var rollEl = document.getElementById('sec-roll-' + nomId);
@@ -1665,7 +1942,7 @@ var VoterPanel = (function() {
         '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">📋 File a New Complaint</div>' +
         '<div style="margin-bottom:10px;">' +
           '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against \u2014 Roll No. (optional)</label>' +
-          '<input type="text" id="cmp-against-roll" placeholder="e.g. SSK001" inputmode="text" maxlength="20" ' +
+          '<input type="text" id="cmp-against-roll" placeholder="e.g. 1234" inputmode="text" maxlength="20" ' +
             'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
@@ -1792,7 +2069,10 @@ var VoterPanel = (function() {
     _submitComplaint: _submitComplaint,
     _showObjModal: _showObjModal,
     _closeObjModal: _closeObjModal,
-    _submitObjection: _submitObjection
+    _submitObjection: _submitObjection,
+    _showEligibilityModal: _showEligibilityModal,
+    _closeEligibilityModal: _closeEligibilityModal,
+    _selectElection: _selectElection
   };
 
 })();

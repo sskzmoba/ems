@@ -5,6 +5,42 @@
 // ============================================================
 var AdminPanel = (function() {
 
+  // ── PreSec Checklist how-to reference content (per item code) ──
+  var PRESEC_HOWTO = {
+    A1: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward — they do not need main-sheet access themselves.', steps: ['This must be done on the actual main system sheet, not the Scrutineer Mirror — the Mirror doesn’t include OTPs at all, so it can’t be used for this.','RO grants TEM direct access to the main sheet under TEM’s own personal Google account (separate from the Mirror they may already have), for this session only.','Protection itself is applied by the system in one step: RO/TEM clicks "Apply Sheet Protections" in the admin panel, which protects all sheets and hides OTPs automatically.','On screen-share, TEM opens the main spreadsheet using their own login (not the elections account) and looks along the row of sheet tabs at the bottom.','Confirm the OTPs tab is not there at all.','Mark this item done, then have both Scrutineers tap ★ Confirm from their own login.'], note: 'OTPs tab confirmed hidden on screen-share 14 Jul, both Scrutineers present.' },
+    A2: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward — they do not need main-sheet access themselves.', steps: ['This must be done on the main system sheet, not the Mirror — Votes is deliberately excluded from the Mirror, so there is nothing to test there.','Basic Google Sheets background: protecting a sheet is normally done via Data → Protect sheets and ranges → select the sheet → set who can edit. The system’s "Apply Sheet Protections" button does this automatically.','On screen-share, TEM opens the Votes tab on the main sheet using their own login.','TEM clicks any cell and tries to type something.','Confirm a message appears saying the range is protected and cannot be edited.','Mark this item done, then have both Scrutineers tap ★ Confirm.'], note: 'Attempted edit on Votes tab blocked as expected, shown live 14 Jul.' },
+    A3: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward.', steps: ['This must be done on the main sheet, not the Mirror. VotedLog does exist in the Mirror, but only as a live formula import — attempting to edit it there would show a formula error, not a genuine protection block, and would prove nothing.','Same procedure as A2, applied to the VotedLog tab on the main sheet.','Confirm the edit is blocked.','Mark done, both Scrutineers confirm.'], note: 'VotedLog tab edit attempt blocked as expected, shown live 14 Jul.' },
+    A4: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward.', steps: ['This only applies after the voter roll is certified (item D1) — do D1 first.','Do this on the main sheet, not the Mirror, for the same reason as A3.','Same procedure as A2, applied to the Voters tab.','Confirm the edit is blocked.','Mark done, both Scrutineers confirm.'], note: 'Voters tab confirmed read-only post-certification, shown live 14 Jul.' },
+    A5: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward.', steps: ['This must be done on the main sheet — Admins is deliberately excluded from the Mirror entirely (it holds admin credentials), so there is nothing to test there.','Same procedure as A2, applied to the Admins tab.','Confirm the edit is blocked — all changes to Admins must go through the admin panel, never by typing directly in the sheet.','Mark done, both Scrutineers confirm.'], note: 'Admins tab confirmed protected against direct edit, shown live 14 Jul.' },
+    A6: { who: 'TEM demonstrates this, not RO. Scrutineers watch on the call and confirm afterward.', steps: ['Do this on the main sheet, not the Mirror — AdminLog in the Mirror is a live formula import, so an edit attempt there would show a formula error, not a genuine protection block.','On the main sheet, open AdminLog and try editing an existing row (not adding a new one at the bottom).','Confirm the edit is blocked. Only the system itself can add new rows at the bottom; nobody can change a row once it’s there.','Mark done, both Scrutineers confirm.','Once all of A1–A6 are done, RO removes TEM’s direct main-sheet access — it was only needed for this session.'], note: 'AdminLog edit-existing-row attempt blocked as expected, shown live 14 Jul.' },
+    B1: { who: 'RO or TEM does this — it’s just reading a number, not a permission test.', steps: ['In the Apps Script editor: click Deploy (top right) → Manage deployments.','On screen-share, read out the version number shown next to the active deployment.','Mark this item done, writing the version number in the note.','Both Scrutineers confirm.'], note: 'Deployed version identified as Version 14, shown live on screen-share 14 Jul.' },
+    B2: { who: 'RO or TEM does this — a comparison, not a permission test.', steps: ['Open github.com/sskzmoba/ems in a browser and note the latest commit shown on the main branch.','Compare it to the code actually in the deployed Apps Script project (run "clasp pull" locally and compare, or check by eye).','Confirm they match.','Mark done with the commit reference in the note, both Scrutineers confirm.'], note: 'Deployed version matches GitHub commit a1b2c3d on main, verified 14 Jul.' },
+    B3: { who: 'RO self-confirms.', steps: ['Just before opening voting, check Deploy → Manage deployments once more.','Confirm the version number is unchanged since B1.','Mark this item done.'], note: 'Confirmed no redeployment since B1 — same version still active.' },
+    C1: { who: 'RO or TEM.', steps: ['Log into elections.sskzmoba@gmail.com in a browser.','Go to myaccount.google.com → Security.','Confirm "2-Step Verification" shows ON, and that the phone number listed is the OBA official number, not a personal one.','Do this on screen during the same call where the password is handed over.','Mark done.'], note: 'Confirmed 2SV active on OBA official number, shown on screen 14 Jul.' },
+    C2: { who: 'RO/TEM sends it; whoever holds sskzmobakazak@gmail.com (e.g. GS) confirms it arrived.', steps: ['In Google Account → Security, confirm the recovery email field shows sskzmobakazak@gmail.com.','Send a test email to that address from the elections account.','Ask whoever has access to sskzmobakazak@gmail.com to check it arrived.','Mark done, naming who confirmed receipt.'], note: 'Test email sent 14 Jul; receipt confirmed by GS on sskzmobakazak@gmail.com.' },
+    C3: { who: 'RO or TEM.', steps: ['In the elections account, go to Google Account → Security → Recent security activity.','Also check the bottom-right corner of Gmail’s inbox — "Last account activity" → Details, for a more detailed device/location log.','Check every entry is someone expected (RO, TEM, Deputy RO, or the outgoing EC before handover).','Mark done, writing the date range you checked in the note, since the system doesn’t track when this was last reviewed.'], note: 'Reviewed activity from last handover to 14 Jul; no unrecognised access found.' },
+    C4: { who: 'RO only, with at least two Scrutineers watching.', steps: ['At handover, log into elections.sskzmoba@gmail.com → Google Account → Security → Password, and set a new password.','Do this live, with at least two Scrutineers present on the call.','Do not share the new password with anyone from the outgoing EC.','Mark done, naming the Scrutineers present and the date/time.'], note: 'Password changed by RO 14 Jul, witnessed by Scrutineer 1 and Scrutineer 2.' },
+    D1: { who: 'RO or TEM.', steps: ['Make sure the objection window on the Roll Draft tab has closed and every objection has been resolved.','Click Certify on the Roll Draft tab. This cannot be undone — no changes are possible after this.','Confirm the row count shown matches what was expected.','Mark done, writing the final row count in the note.'], note: 'Voter roll certified 14 Jul, 3,014 rows, matches signed count.' },
+    D2: { who: 'RO.', steps: ['Open the Candidates tab in the admin panel.','Go through every post and check none are left blank or pending.','Mark done once every post has a clear status.'], note: 'All posts confirmed resolved — candidates, uncontested, or declared vacant as applicable.' },
+    D3: { who: 'RO.', steps: ['Check each of the four mandatory posts has at least one accepted candidate.','If any is vacant, upload the General Body resolution using the document uploader before trying to open voting — the system blocks voting otherwise.','Mark done once resolved.'], note: 'All four mandatory posts confirmed filled — no GB resolution required.' },
+    D4: { who: 'RO or TEM.', steps: ['Open the election’s settings screen.','Check the Organising Secretary batch-restriction setting is what was actually intended for this election.','Mark done.'], note: 'OrgSecyRestricted setting confirmed correct for this election.' },
+    E1: { who: 'RO or TEM.', steps: ['Do not test-vote on the real election directly — there is no safe way to remove it afterward.','Instead create a separate scratch election, ticking both "Is Trial" and "Is Internal Test".','Move it through its stages to Active and cast one or more test votes there.','Afterward, use "Purge Trial Data" on the scratch election, typing the confirmation phrase.','Mark this item done on the real election, naming the scratch election ID used and confirming it was purged.'], note: 'Tested via scratch election ELEC-XXXXXXXX; purged 14 Jul 14:32.' },
+    E2: { who: 'RO or TEM.', steps: ['Log out and try logging back in with a real roll number and email from the certified roll.','Confirm the OTP email arrives quickly and the code works.','Mark done.'], note: 'Test OTP requested 14 Jul, received within 30 seconds, login successful.' },
+    E3: { who: 'RO or TEM.', steps: ['Log in, then leave the page open without doing anything for the session timeout period.','Confirm the system asks you to log in again afterward, rather than staying open.','Mark done.'], note: 'Session confirmed to expire and require re-login after idle period, tested 14 Jul.' },
+    E4: { who: 'RO or TEM.', steps: ['On the same scratch election from E1, add at least two Batch Representative candidates from different batches, and turn on an Organising Secretary batch restriction.','Cast test votes as voters from at least two different batches.','Confirm each voter only sees their own batch’s Batch Rep post, and Org Secy only appears for the right batch.','Mark done, naming which batches were tested.'], note: 'Tested with Batch 1996-2000 and 2001-2005 voters; filtering confirmed correct on both.' },
+    E5: { who: 'RO or TEM.', steps: ['Using the same E1 test vote, confirm a receipt email arrives with a token.','Confirm the token works on the public results page once that scratch election is declared.','Mark done.'], note: 'Receipt token received and verified on results page for scratch election test.' },
+    E6: { who: 'RO or TEM.', steps: ['This is always true by design once nominations close — nobody can bypass it, no test strictly required.','If you want to double check, try submitting a nomination on a scratch election that’s already past this stage and confirm it’s rejected.','Mark done.'], note: 'Confirmed structurally blocked — verified via scratch election, no override path exists.' },
+    F1: { who: 'RO or TEM.', steps: ['Open the PreSec Checklist tab and click "Run Pre-Vote Backup" — one click exports all five sheets (F1–F5) at once.','Run this again right before actually opening voting if it was run earlier just for testing.'], note: '(Auto-recorded by Run Pre-Vote Backup — no separate note needed.)' },
+    F2: { who: 'RO or TEM.', steps: ['Covered by the same "Run Pre-Vote Backup" click as F1.'], note: '(Auto-recorded by Run Pre-Vote Backup — no separate note needed.)' },
+    F3: { who: 'RO or TEM.', steps: ['Covered by the same "Run Pre-Vote Backup" click as F1.'], note: '(Auto-recorded by Run Pre-Vote Backup — no separate note needed.)' },
+    F4: { who: 'RO or TEM.', steps: ['Covered by the same "Run Pre-Vote Backup" click as F1.'], note: '(Auto-recorded by Run Pre-Vote Backup — no separate note needed.)' },
+    F5: { who: 'RO or TEM.', steps: ['Covered by the same "Run Pre-Vote Backup" click as F1.','Since AdminLog keeps growing, run the backup again right before voting opens so this export is current.'], note: '(Auto-recorded by Run Pre-Vote Backup — no separate note needed.)' },
+    G1: { who: 'RO.', steps: ['The system doesn’t send this automatically yet — check with the development stream whether that’s been built.','Until then, send the candidate list manually via WhatsApp and/or email, including both election links (elections.sskzmoba.org and the tinyurl mobile link).','Mark done once sent.'], note: 'Candidate list sent via WhatsApp and email broadcast, 14 Jul.' },
+    G2: { who: 'RO.', steps: ['Send a notice announcing the voting dates, how to log in (OTP-based, using roll number and email on the certified roll), and RO contact details for help.','Send via WhatsApp and/or email, including both election links.','Mark done once sent.'], note: 'Voting window notice sent 14 Jul with login instructions and RO contact.' },
+    G3: { who: 'RO or TEM.', steps: ['Confirm every accredited Observer has an account with the Observer role.','Confirm each one can log in and see the live participation dashboard.','Mark done, noting how many Observers were confirmed.'], note: '3 accredited Observers confirmed with working dashboard access, 14 Jul.' },
+    G4: { who: 'RO or TEM.', steps: ['Confirm each Scrutineer has been given View-only access to the relevant Google Sheet (Share button → add their email → set to Viewer).','Ask each Scrutineer to confirm they can actually open it from their own Google account.','Mark done once every Scrutineer has confirmed.'], note: 'Read-only access confirmed working for both Scrutineers, 14 Jul.' },
+  };
+
   // IST timestamp formatter — converts any ISO/Date string to IST display
   // Returns e.g. "28 Jun 2026, 11:32 PM IST"
   function fmtIST(isoStr) {
@@ -399,13 +435,16 @@ function _loadElections(role) {
             var trialTag = el.isTrial
               ? '<span class="status-badge badge-trial" style="margin-left:6px;">Trial</span>'
               : '';
+            var internalTestTag = el.isInternalTest
+              ? '<span class="status-badge" style="margin-left:6px;background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;">Internal Test</span>'
+              : '';
 
             html += '<div class="panel-card" style="margin-bottom:12px;">' +
               '<div class="panel-card-body" style="padding:14px 16px;">' +
 
               // Title row
               '<div style="font-weight:600;color:#1a3a5c;font-size:.95rem;margin-bottom:6px;">' +
-                escHtml(el.title) + trialTag +
+                escHtml(el.title) + trialTag + internalTestTag +
               '</div>' +
 
               // Status + mode row
@@ -458,6 +497,8 @@ function _loadElections(role) {
       var role = (App.role || '').toUpperCase();
       var content = document.getElementById('admin-content');
       if (!content) return;
+      AdminPanel._trial = false;
+      AdminPanel._internalTest = false;
       content.innerHTML =
         '<div style="margin-bottom:12px;">' +
           '<button class="btn btn-outline" onclick="AdminPanel.switchTab(\'elections\')" ' +
@@ -503,6 +544,23 @@ function _loadElections(role) {
               '</button>' +
             '</div>' +
 
+            '<label>Internal Test Election? <span style="font-weight:400;color:#9ca3af;font-size:.82rem;">' +
+              '(scratch elections only — never shown on the public results page or the voter multi-election picker)</span></label>' +
+            '<div style="display:flex;gap:12px;margin-bottom:24px;">' +
+              '<button id="internaltest-btn-no" ' +
+                'onclick="AdminPanel._setInternalTest(false)" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #1a3a5c;background:#1a3a5c;color:#fff;cursor:pointer;">' +
+                'No' +
+              '</button>' +
+              '<button id="internaltest-btn-yes" ' +
+                'onclick="AdminPanel._setInternalTest(true)" ' +
+                'style="flex:1;padding:12px;font-size:1rem;border-radius:4px;' +
+                'border:2px solid #ccc;background:#fff;color:#333;cursor:pointer;">' +
+                'Yes' +
+              '</button>' +
+            '</div>' +
+
             '<button class="btn btn-primary" ' +
               'onclick="AdminPanel._submitCreateElection()" ' +
               'style="width:100%;padding:14px;font-size:1rem;">' +
@@ -519,6 +577,7 @@ function _loadElections(role) {
 
     _mode: 'electronic',
     _trial: false,
+    _internalTest: false,
 
     _setMode: function(val) {
       AdminPanel._mode = val;
@@ -537,6 +596,19 @@ function _loadElections(role) {
       AdminPanel._trial = val;
       var yes = document.getElementById('trial-btn-yes');
       var no  = document.getElementById('trial-btn-no');
+      if (val) {
+        yes.style.background = '#1a3a5c'; yes.style.color = '#fff'; yes.style.borderColor = '#1a3a5c';
+        no.style.background  = '#fff';    no.style.color  = '#333'; no.style.borderColor  = '#ccc';
+      } else {
+        no.style.background  = '#1a3a5c'; no.style.color  = '#fff'; no.style.borderColor  = '#1a3a5c';
+        yes.style.background = '#fff';    yes.style.color = '#333'; yes.style.borderColor = '#ccc';
+      }
+    },
+
+    _setInternalTest: function(val) {
+      AdminPanel._internalTest = val;
+      var yes = document.getElementById('internaltest-btn-yes');
+      var no  = document.getElementById('internaltest-btn-no');
       if (val) {
         yes.style.background = '#1a3a5c'; yes.style.color = '#fff'; yes.style.borderColor = '#1a3a5c';
         no.style.background  = '#fff';    no.style.color  = '#333'; no.style.borderColor  = '#ccc';
@@ -577,7 +649,8 @@ function _loadElections(role) {
         .createElection(App.token, {
           title:   title,
           mode:    AdminPanel._mode,
-         isTrial: AdminPanel._trial
+         isTrial: AdminPanel._trial,
+         isInternalTest: AdminPanel._internalTest
         }, getTEMAuthId()); 
     },
 
@@ -635,6 +708,9 @@ _renderManageScreen: function(el) {
   var trialTag = el.isTrial
     ? '<span class="status-badge badge-trial" style="margin-left:6px;">Trial</span>'
     : '';
+  var internalTestTag = el.isInternalTest
+    ? '<span class="status-badge" style="margin-left:6px;background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;">Internal Test</span>'
+    : '';
 
   // Next status label for advance button
   var nextStatusMap = {
@@ -664,7 +740,7 @@ _renderManageScreen: function(el) {
     '<div class="panel-card" style="margin-bottom:12px;">' +
       '<div class="panel-card-body" style="padding:14px 16px;">' +
         '<div style="font-weight:700;color:#1a3a5c;font-size:1rem;margin-bottom:8px;">' +
-          escHtml(el.title) + trialTag +
+          escHtml(el.title) + trialTag + internalTestTag +
         '</div>' +
         '<div>' +
           '<span class="status-badge ' + badge + '">' + escHtml(statusLabel) + '</span>' +
@@ -701,6 +777,41 @@ _renderManageScreen: function(el) {
               'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
               '☰ Pre-Election Security Checklist (Appendix H)' +
             '</button>'
+          : '') +
+          // Resend candidate publication emails — recovery button, independent
+          // of the one-time auto-fire when status advances to candidates_published.
+          // Visible any time from candidates_published onward, since the RO may
+          // not notice a failed send until later.
+          (['candidates_published','active','paused','closed','declared'].indexOf(el.status) !== -1 ?
+            '<button onclick="AdminPanel._resendCandidatePublication(\'' + escHtml(el.id) + '\')" ' +
+              'id="btn-resend-cand-pub" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '✉ Resend Candidate Publication Emails' +
+            '</button>' +
+            '<div id="resend-cand-pub-result" style="margin-bottom:8px;"></div>'
+          : '') +
+          // Candidate list published notice — mass email to all voters,
+          // separate from the individual candidate confirmation emails.
+          (['candidates_published','active','paused','closed','declared'].indexOf(el.status) !== -1 ?
+            '<button onclick="AdminPanel._sendCandidateListPublishedNotice(\'' + escHtml(el.id) + '\')" ' +
+              'id="btn-cand-list-notice" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '✉ Send Candidate List Published Notice to All Members' +
+            '</button>' +
+            '<div id="cand-list-notice-result" style="margin-bottom:8px;"></div>'
+          : '') +
+          // Results declared notice — mass email to all voters, announcing
+          // results are out (SOP Appendix A "V-7").
+          (el.status === 'declared' ?
+            '<button onclick="AdminPanel._sendResultsDeclaredNotice(\'' + escHtml(el.id) + '\')" ' +
+              'id="btn-results-notice" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '✉ Send Results Declared Notice to All Members' +
+            '</button>' +
+            '<div id="results-notice-result" style="margin-bottom:8px;"></div>'
           : '') +
           // Nomination call email button when nominations are open
           (el.status === 'nominations_open' || el.status === 'nominations_open_phase2' ?
@@ -969,6 +1080,96 @@ _advanceStatusMsg: function(status) {
   return msgs[status] || 'Advance election to next stage.';
 },
 
+_resendCandidatePublication: function(id) {
+  if (!confirm('Resend the candidate publication email to every accepted candidate for this election?\n\nThis sends to all accepted candidates again, including any who already received it successfully.')) return;
+  var btn = document.getElementById('btn-resend-cand-pub');
+  var resDiv = document.getElementById('resend-cand-pub-result');
+  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+  if (resDiv) resDiv.innerHTML = '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
+      if (!resDiv) return;
+      if (res && res.success) {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+          '</div>';
+      } else {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+          escHtml((res && res.message) || 'Failed to send.') +
+          '</div>';
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
+      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+    })
+    .publishCandidates(App.token, id, getTEMAuthId());
+},
+
+_sendCandidateListPublishedNotice: function(id) {
+  if (!confirm('Send the candidate list published notice to every voter on the roll?')) return;
+  var btn = document.getElementById('btn-cand-list-notice');
+  var resDiv = document.getElementById('cand-list-notice-result');
+  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+  if (resDiv) resDiv.innerHTML = '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
+      if (!resDiv) return;
+      if (res && res.success) {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+          '</div>';
+      } else {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+          escHtml((res && res.message) || 'Failed to send.') +
+          '</div>';
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
+      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+    })
+    .sendCandidateListPublishedNotice(App.token, id, getTEMAuthId());
+},
+
+_sendResultsDeclaredNotice: function(id) {
+  if (!confirm('Send the results declared notice to every voter on the roll?')) return;
+  var btn = document.getElementById('btn-results-notice');
+  var resDiv = document.getElementById('results-notice-result');
+  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+  if (resDiv) resDiv.innerHTML = '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
+      if (!resDiv) return;
+      if (res && res.success) {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+          '</div>';
+      } else {
+        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+          escHtml((res && res.message) || 'Failed to send.') +
+          '</div>';
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
+      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+    })
+    .sendResultsDeclaredNotice(App.token, id, getTEMAuthId());
+},
+
 _advanceStatus: function(id, nextStatus, overrideNote) {
   var btn = document.getElementById('btn-advance-status');
   var errEl = document.getElementById('advance-status-error');
@@ -1100,6 +1301,39 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
               '✓ Checklist complete — Retry Activation' +
             '</button>' +
           '</div>';
+      } else if (res && res.requiresNoScrutineerGBResolution) {
+        if (btn) { btn.textContent = '▶ Declare Results'; btn.disabled = false; }
+        var noScrutPanel = document.getElementById('no-scrutineer-gb-panel');
+        if (!noScrutPanel) {
+          noScrutPanel = document.createElement('div');
+          noScrutPanel.id = 'no-scrutineer-gb-panel';
+          var errParent4 = errEl ? errEl.parentNode : null;
+          if (errParent4) errParent4.insertBefore(noScrutPanel, errEl);
+        }
+        noScrutPanel.innerHTML =
+          '<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:6px;' +
+          'padding:14px;margin-top:10px;">' +
+            '<div style="font-weight:700;color:#991b1b;font-size:.9rem;margin-bottom:8px;">' +
+              '⚠ No Active Scrutineers to Co-Sign' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+              'Results cannot be declared without Scrutineer co-sign, unless a General Body ' +
+              'resolution is uploaded authorising declaration to proceed without it.' +
+            '</div>' +
+            AdminPanel._renderDocUploader({
+              electionId:    id,
+              category:      'gb_resolution_no_scrutineer',
+              categoryLabel: 'Upload GB Resolution (no-Scrutineer waiver)',
+              containerId:   'no-scrutineer-gb-panel'
+            }) +
+            '<div style="margin-top:12px;">' +
+              '<button onclick="AdminPanel._advanceStatus(\'' + escHtml(id) + '\',\'declared\')"' +
+              ' style="width:100%;padding:12px;background:#059669;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+              '✓ Resolution uploaded — Retry Declaration' +
+              '</button>' +
+            '</div>' +
+          '</div>';
       } else {
         if (errEl) {
           errEl.textContent = (res && res.message) || 'Failed to update status.';
@@ -1137,6 +1371,11 @@ _openPresecChecklist: function(electionId) {
                     E:'System Functionality Testing', F:'Backup', G:'Communications' };
       var html =
         '<div style="padding:4px 0 16px;">' +
+          '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;' +
+          'padding:8px 12px;margin-bottom:12px;font-size:.85rem;color:#92400e;font-weight:600;">' +
+            'Showing checklist for: ' + escHtml(res.electionTitle) +
+            ' [' + escHtml(res.electionStatus.replace(/_/g, ' ')) + ']' +
+          '</div>' +
           '<div style="font-size:1.05rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">' +
             '☰ Pre-Election Security Verification Checklist' +
           '</div>' +
@@ -1187,15 +1426,40 @@ _openPresecChecklist: function(electionId) {
               '<div style="flex:1;">' +
                 '<div style="font-size:.85rem;color:#111;margin-bottom:6px;">' +
                   escHtml(item.label) +
+                  (PRESEC_HOWTO[item.code] ?
+                    ' <a href="#" onclick="AdminPanel._showHowTo(\'' + escHtml(item.code) + '\');return false;" ' +
+                    'style="font-size:.76rem;color:#1d4ed8;text-decoration:none;white-space:nowrap;">ⓘ How to</a>'
+                  : '') +
                 '</div>' +
                 (!done ?
                   (App.role === 'SCRUTINEER'
                     ? '<div style="font-size:.78rem;color:#6b7280;">Awaiting RO/TEM action</div>'
-                    : '<button onclick="AdminPanel._recordPresecItem(\'' + escHtml(electionId) + '\',\'' + escHtml(item.code) + '\')" style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;font-size:.8rem;cursor:pointer;">Mark Done</button>')
+                    :
+                      '<button id="btn-markdone-' + escHtml(item.code) + '" ' +
+                        'onclick="AdminPanel._showMarkDoneForm(\'' + escHtml(item.code) + '\')" ' +
+                        'style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;font-size:.8rem;cursor:pointer;">Mark Done</button>' +
+                      '<div id="markdone-form-' + escHtml(item.code) + '" style="display:none;margin-top:8px;">' +
+                        '<textarea id="markdone-notes-' + escHtml(item.code) + '" rows="2" ' +
+                          'placeholder="What did you verify? (at least 10 characters — this is required before the item can be marked done)" ' +
+                          'style="width:100%;padding:8px;font-size:.82rem;border:1px solid #d1d5db;' +
+                          'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:6px;"></textarea>' +
+                        '<div id="markdone-err-' + escHtml(item.code) + '" ' +
+                          'style="color:#c0392b;font-size:.78rem;margin-bottom:6px;display:none;"></div>' +
+                        '<button onclick="AdminPanel._confirmMarkDone(\'' + escHtml(electionId) + '\',\'' + escHtml(item.code) + '\')" ' +
+                          'style="padding:6px 14px;background:#059669;color:#fff;border:none;border-radius:4px;' +
+                          'font-size:.8rem;cursor:pointer;margin-right:6px;">Confirm</button>' +
+                        '<button onclick="AdminPanel._hideMarkDoneForm(\'' + escHtml(item.code) + '\')" ' +
+                          'style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:4px;' +
+                          'font-size:.8rem;cursor:pointer;">Cancel</button>' +
+                      '</div>')
                 :
                   '<div style="font-size:.78rem;color:#059669;margin-bottom:4px;">' +
                     '✓ Done — ' + escHtml(item.completedBy) + ' (' + escHtml(item.completedRole) + ')' +
                   '</div>' +
+                  (item.notes ?
+                    '<div style="font-size:.76rem;color:#6b7280;font-style:italic;margin-bottom:6px;">' +
+                      '"' + escHtml(item.notes) + '"' +
+                    '</div>' : '') +
                   (item.star ?
                     '<div style="font-size:.78rem;color:' + (sc1done ? '#059669' : '#6b7280') + ';">' +
                       (sc1done ? '★ Scrutineer 1: ' + escHtml(item.sc1By) : '★ Awaiting Scrutineer 1 confirmation') +
@@ -1209,6 +1473,28 @@ _openPresecChecklist: function(electionId) {
                       'style="padding:6px 14px;background:#059669;color:#fff;border:none;' +
                       'border-radius:4px;font-size:.8rem;cursor:pointer;margin-top:4px;">★ Confirm</button>'
                     : '')
+                  : '') +
+                  (App.role !== 'SCRUTINEER' ?
+                    '<button onclick="AdminPanel._showResetForm(\'' + escHtml(item.code) + '\')" ' +
+                      'style="padding:4px 10px;background:#fff;color:#b91c1c;border:1px solid #fca5a5;' +
+                      'border-radius:4px;font-size:.74rem;cursor:pointer;margin-top:6px;">Reset this item</button>' +
+                    '<div id="reset-form-' + escHtml(item.code) + '" style="display:none;margin-top:8px;">' +
+                      '<div style="font-size:.76rem;color:#991b1b;margin-bottom:6px;">' +
+                        (item.star ? 'Resetting will also clear both Scrutineer confirmations on this item.' : '') +
+                      '</div>' +
+                      '<textarea id="reset-reason-' + escHtml(item.code) + '" rows="2" ' +
+                        'placeholder="Why does this need to be reset? (at least 10 characters)" ' +
+                        'style="width:100%;padding:8px;font-size:.82rem;border:1px solid #d1d5db;' +
+                        'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:6px;"></textarea>' +
+                      '<div id="reset-err-' + escHtml(item.code) + '" ' +
+                        'style="color:#c0392b;font-size:.78rem;margin-bottom:6px;display:none;"></div>' +
+                      '<button onclick="AdminPanel._confirmReset(\'' + escHtml(electionId) + '\',\'' + escHtml(item.code) + '\')" ' +
+                        'style="padding:6px 14px;background:#dc2626;color:#fff;border:none;border-radius:4px;' +
+                        'font-size:.8rem;cursor:pointer;margin-right:6px;">Confirm Reset</button>' +
+                      '<button onclick="AdminPanel._hideResetForm(\'' + escHtml(item.code) + '\')" ' +
+                        'style="padding:6px 14px;background:#e5e7eb;color:#374151;border:none;border-radius:4px;' +
+                        'font-size:.8rem;cursor:pointer;">Cancel</button>' +
+                    '</div>'
                   : '')
                 ) +
               '</div>' +
@@ -1265,17 +1551,111 @@ _runPreVoteBackup: function(electionId) {
     .createPreVoteBackup(App.token, electionId, getTEMAuthId());
 },
 
-_recordPresecItem: function(electionId, itemCode) {
+_showHowTo: function(itemCode) {
+  var d = PRESEC_HOWTO[itemCode];
+  if (!d) return;
+  var existing = document.getElementById('howto-modal-overlay');
+  if (existing) existing.remove();
+
+  var stepsHtml = d.steps.map(function(s, i) {
+    return '<li style="margin-bottom:8px;">' + escHtml(s) + '</li>';
+  }).join('');
+
+  var overlay = document.createElement('div');
+  overlay.id = 'howto-modal-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);' +
+    'z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.onclick = function(e) { if (e.target === overlay) AdminPanel._closeHowTo(); };
+
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:8px;max-width:480px;width:100%;max-height:85vh;' +
+    'overflow-y:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;">' + escHtml(itemCode) + ' \u2014 How To</div>' +
+        '<button onclick="AdminPanel._closeHowTo()" style="background:none;border:none;font-size:1.3rem;' +
+          'color:#9ca3af;cursor:pointer;line-height:1;padding:0 4px;">\u00d7</button>' +
+      '</div>' +
+      '<div style="font-size:.82rem;color:#374151;margin-bottom:14px;">' +
+        '<strong>Who does this:</strong> ' + escHtml(d.who) +
+      '</div>' +
+      '<div style="font-size:.85rem;font-weight:700;color:#1a3a5c;margin-bottom:6px;">Steps:</div>' +
+      '<ol style="font-size:.85rem;color:#111;padding-left:20px;margin:0 0 14px;">' + stepsHtml + '</ol>' +
+      '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;">' +
+        '<div style="font-size:.76rem;font-weight:700;color:#6b7280;margin-bottom:2px;">EXAMPLE NOTE</div>' +
+        '<div style="font-size:.82rem;color:#374151;font-style:italic;">' + escHtml(d.note) + '</div>' +
+      '</div>' +
+      '<button onclick="AdminPanel._closeHowTo()" style="width:100%;margin-top:14px;padding:10px;' +
+        'background:#1a3a5c;color:#fff;border:none;border-radius:4px;font-size:.85rem;cursor:pointer;">Close</button>' +
+    '</div>';
+  document.body.appendChild(overlay);
+},
+_closeHowTo: function() {
+  var o = document.getElementById('howto-modal-overlay');
+  if (o) o.remove();
+},
+_showMarkDoneForm: function(itemCode) {
+  var f = document.getElementById('markdone-form-' + itemCode);
+  if (f) f.style.display = 'block';
+  var b = document.getElementById('btn-markdone-' + itemCode);
+  if (b) b.style.display = 'none';
+},
+_hideMarkDoneForm: function(itemCode) {
+  var f = document.getElementById('markdone-form-' + itemCode);
+  if (f) f.style.display = 'none';
+  var b = document.getElementById('btn-markdone-' + itemCode);
+  if (b) b.style.display = 'inline-block';
+},
+_confirmMarkDone: function(electionId, itemCode) {
+  var notesEl = document.getElementById('markdone-notes-' + itemCode);
+  var errEl   = document.getElementById('markdone-err-' + itemCode);
+  var notes = notesEl ? notesEl.value.trim() : '';
+  if (notes.length < 10) {
+    if (errEl) { errEl.textContent = 'Please enter at least 10 characters describing what you verified.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) {
         AdminPanel._openPresecChecklist(electionId);
       } else {
-        showToast((res && res.message) || 'Failed to record item.');
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed to record item.'; errEl.style.display = 'block'; }
       }
     })
-    .withFailureHandler(function() { showToast('Error recording item.'); })
-    .recordChecklistItem(App.token, electionId, itemCode, '');
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    })
+    .recordChecklistItem(App.token, electionId, itemCode, notes, getTEMAuthId());
+},
+_showResetForm: function(itemCode) {
+  var f = document.getElementById('reset-form-' + itemCode);
+  if (f) f.style.display = 'block';
+},
+_hideResetForm: function(itemCode) {
+  var f = document.getElementById('reset-form-' + itemCode);
+  if (f) f.style.display = 'none';
+},
+_confirmReset: function(electionId, itemCode) {
+  var reasonEl = document.getElementById('reset-reason-' + itemCode);
+  var errEl    = document.getElementById('reset-err-' + itemCode);
+  var reason = reasonEl ? reasonEl.value.trim() : '';
+  if (reason.length < 10) {
+    if (errEl) { errEl.textContent = 'Please enter a reason (at least 10 characters).'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        AdminPanel._openPresecChecklist(electionId);
+      } else {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed to reset item.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    })
+    .resetChecklistItem(App.token, electionId, itemCode, reason, getTEMAuthId());
 },
 _confirmPresecItemSC: function(electionId, itemCode) {
   google.script.run
@@ -1520,7 +1900,7 @@ showAddAdmin: function() {
       '<div class="panel-card-body">' +
 
         '<label for="new-admin-id">Admin ID (= Roll Number for alumni)</label>' +
-        '<input type="text" id="new-admin-id" placeholder="e.g. SSK1234" ' +
+        '<input type="text" id="new-admin-id" placeholder="e.g. 1234" ' +
           'style="margin-bottom:14px;" inputmode="text" autocomplete="off" />' +
 
         '<label for="new-admin-name">Full Name</label>' +
@@ -1551,7 +1931,7 @@ showAddAdmin: function() {
 
         '<label for="new-admin-roll">Roll Number <span style="font-weight:400;color:#6b7280;">' +
           '(leave blank for external)</span></label>' +
-        '<input type="text" id="new-admin-roll" placeholder="e.g. SSK1234" ' +
+        '<input type="text" id="new-admin-roll" placeholder="e.g. 1234" ' +
           'style="margin-bottom:20px;" inputmode="text" autocomplete="off" />' +
 
         '<div style="display:flex;gap:10px;">' +
@@ -1638,7 +2018,7 @@ _doResendScrutineerLink: function(adminId) {
     .withFailureHandler(function() {
       if (box) box.innerHTML = '<p style="font-size:.85rem;color:#b91c1c;">Error: Could not resend link.</p>';
     })
-    .sendScrutineerAcceptanceLink(App.token, adminId);
+    .sendScrutineerAcceptanceLink(App.token, adminId, getTEMAuthId());
 },
 
 _confirmDisable: function(adminId, adminName) {
@@ -2058,7 +2438,7 @@ _renderNominationsShell: function(elections) {
       '</div>' +
       '<div id="mn-sec-name" style="font-size:.8rem;color:#059669;min-height:16px;margin-bottom:12px;"></div>' +
 
-      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Bio <span style="font-weight:400;color:#6b7280;">(optional, max 300 chars)</span></label>' +
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Bio <span style="font-weight:400;color:#6b7280;">(required, minimum 30 characters, max 300)</span></label>' +
       '<textarea id="mn-bio" rows="3" maxlength="300" placeholder="Brief bio or statement" ' +
       'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;border-radius:4px;' +
       'box-sizing:border-box;resize:vertical;margin-bottom:14px;"></textarea>' +
@@ -2082,7 +2462,58 @@ _renderNominationsShell: function(elections) {
     '</div>'
     : '';
 
-  c.innerHTML = selHtml + manualBtn + '<div id="nom-list-area">' +
+  var extOpen = selElec && (selElec.status === 'nominations_open_phase2' || selElec.status === 'scrutiny');
+  var extBtn = (isRO && extOpen) ?
+    '<button onclick="AdminPanel._toggleP2ExtForm()" ' +
+    'style="width:100%;padding:12px;margin-bottom:12px;background:#fff;color:#92400e;' +
+    'border:1.5px solid #f59e0b;border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">' +
+    '⏱ Trigger Phase 2 Extension</button>' +
+    '<div id="p2ext-panel" style="display:none;background:#fffbeb;border:1.5px solid #f59e0b;' +
+    'border-radius:6px;padding:16px;margin-bottom:14px;">' +
+      '<div style="font-weight:600;color:#92400e;margin-bottom:6px;font-size:.95rem;">' +
+        'Trigger Phase 2 Extension (SOP 4.9)' +
+      '</div>' +
+      '<div style="font-size:.8rem;color:#6b7280;margin-bottom:12px;line-height:1.5;">' +
+        (selElec.status === 'scrutiny'
+          ? 'This will reopen nominations election-wide — status returns to Phase 2 Nominations Open. ' +
+            'Applies to ALL posts, not just a specific vacant one.'
+          : 'This will extend the current Phase 2 nomination deadline.') +
+        ' A reason is required and will be recorded to AdminLog and emailed to all members.' +
+      '</div>' +
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Extension length (2–7 days)</label>' +
+      '<input type="number" id="p2ext-days" min="2" max="7" value="7" ' +
+      'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;' +
+      'box-sizing:border-box;margin-bottom:12px;" />' +
+      '<label style="font-size:.82rem;font-weight:600;color:#374151;">Reason (required)</label>' +
+      '<textarea id="p2ext-reason" rows="3" ' +
+      'placeholder="State the specific reason — e.g. mandatory post nominees found ineligible at scrutiny…" ' +
+      'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #f59e0b;' +
+      'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;' +
+        'color:#374151;margin-bottom:12px;cursor:pointer;" ' +
+        'title="This mails every member on the roll (' +
+        '3,100+ on the live roll). Unchecked, no email goes out — you will need to ' +
+        'communicate the extension to members yourself.">' +
+        '<input type="checkbox" id="p2ext-notify"' +
+        (selElec.isTrial ? '' : ' checked') +
+        ' style="width:15px;height:15px;margin:0;" />' +
+        'Email all members about this extension' +
+        (selElec.isTrial ? ' (unchecked by default — trial)' : '') +
+      '</label>' +
+      '<div id="p2ext-err" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button onclick="AdminPanel._toggleP2ExtForm()" ' +
+        'style="flex:1;padding:12px;font-size:.88rem;background:#fff;color:#374151;' +
+        'border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Cancel</button>' +
+        '<button onclick="AdminPanel._confirmP2Ext(\'' + escHtml(selElec.id) + '\')" ' +
+        'id="btn-p2ext-confirm" ' +
+        'style="flex:1;padding:12px;font-size:.88rem;background:#92400e;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;font-weight:600;">Confirm Extension</button>' +
+      '</div>' +
+    '</div>'
+    : '';
+
+  c.innerHTML = selHtml + manualBtn + extBtn + '<div id="nom-list-area">' +
     '<div style="text-align:center;padding:24px;color:#6b7280;">' +
     '<div class="spinner"></div></div></div>';
 },
@@ -2330,6 +2761,7 @@ _submitManualNom: function() {
   if (!candRoll.trim()) { _mnErr('Candidate roll number is required.'); return; }
   if (!post)            { _mnErr('Please select a post.'); return; }
   if (!propRoll.trim()) { _mnErr('Proposer roll number is required.'); return; }
+  if (bio.trim().length < 30) { _mnErr('A candidate biography is required, with a minimum of 30 characters.'); return; }
 
   function _mnErr(msg) {
     if (errEl) { errEl.innerHTML = msg; errEl.style.display = 'block'; }
@@ -2384,6 +2816,10 @@ _loadNominationsList: function(elecId) {
 
 _renderNominationsList: function(noms) {
   var role = (App.role || '').toUpperCase();
+  var curElec = (AdminPanel._nominationsElections || []).filter(function(e) {
+    return e.id === AdminPanel._nominationsSelectedElec;
+  })[0];
+  var defaultSendEmail = !(curElec && curElec.isTrial);
 
   if (noms.length === 0) {
     return '<div class="panel-card"><div class="panel-card-body" ' +
@@ -2493,7 +2929,16 @@ _renderNominationsList: function(noms) {
 
           // Action buttons — RO_ADMIN only
           (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
-            ? '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+            ? '<label style="display:flex;align-items:center;gap:6px;font-size:.78rem;' +
+                'color:#6b7280;margin-bottom:8px;cursor:pointer;" ' +
+                'title="Controls the Resend buttons below. When unchecked, no email is sent — ' +
+                'the confirmation link is shown instead for you to share manually.">' +
+                '<input type="checkbox" id="resend-email-' + escHtml(n.id) + '"' +
+                (defaultSendEmail ? ' checked' : '') +
+                ' style="width:15px;height:15px;margin:0;" />' +
+                'Send email' + (curElec && curElec.isTrial ? ' (unchecked by default — trial)' : '') +
+              '</label>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
 
                 // Resend consent (Phase 2 only, consent not yet given)
                 (n.phase2 && n.consentStatus !== 'accepted'
@@ -2545,16 +2990,19 @@ _renderNominationsList: function(noms) {
 },
 
 _resendConfirm: function(nomId, role) {
+  var cb = document.getElementById('resend-email-' + nomId);
+  var sendEmail = cb ? cb.checked : true;
+
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) {
-        showToast('Email resent to ' + role + '.');
+        showToast(res.message || ('Email resent to ' + role + '.'));
       } else {
         showToast((res && res.message) || 'Resend failed.');
       }
     })
     .withFailureHandler(function() { showToast('Error — resend failed.'); })
-    .resendConfirmationEmail(App.token, nomId, role);
+    .resendConfirmationEmail(App.token, nomId, role, sendEmail, getTEMAuthId());
 },
 
 _confirmWithdraw: function(nomId, candName) {
@@ -2589,6 +3037,55 @@ _doWithdraw: function(nomId) {
     })
     .withFailureHandler(function() { showToast('Error — withdraw failed.'); })
     .withdrawNomination(App.token, nomId);
+},
+
+_toggleP2ExtForm: function() {
+  var f = document.getElementById('p2ext-panel');
+  if (!f) return;
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display === 'block') {
+    var d = document.getElementById('p2ext-days'); if (d) d.value = 7;
+    var r = document.getElementById('p2ext-reason'); if (r) r.value = '';
+    var e = document.getElementById('p2ext-err'); if (e) { e.textContent = ''; e.style.display = 'none'; }
+  }
+},
+
+_confirmP2Ext: function(elecId) {
+  var daysEl   = document.getElementById('p2ext-days');
+  var reasonEl = document.getElementById('p2ext-reason');
+  var notifyEl = document.getElementById('p2ext-notify');
+  var errEl    = document.getElementById('p2ext-err');
+  var btn      = document.getElementById('btn-p2ext-confirm');
+  var days     = daysEl ? parseInt(daysEl.value, 10) : 0;
+  var reason   = reasonEl ? reasonEl.value.trim() : '';
+  var notify   = notifyEl ? notifyEl.checked : false;
+
+  if (!days || days < 2 || days > 7) {
+    if (errEl) { errEl.textContent = 'Extension length must be between 2 and 7 days.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!reason) {
+    if (errEl) { errEl.textContent = 'A reason is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirm Extension'; }
+      if (res && res.success) {
+        showToast(res.message || 'Phase 2 extension triggered.');
+        AdminPanel._loadNominations();
+      } else {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Extension failed.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirm Extension'; }
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .triggerPhase2Extension(App.token, elecId, days, reason, notify, getTEMAuthId());
 },
 
 // ── SETTINGS TAB ─────────────────────────────────────────────
@@ -3142,6 +3639,34 @@ _doWithdraw: function(nomId) {
     }
 
     html +=
+      '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;margin-bottom:14px;">' +
+        '<div style="font-size:.88rem;font-weight:600;color:#1e40af;margin-bottom:6px;">' +
+          '\u26a1 Conduct Draw In-System' +
+        '</div>' +
+        '<div style="font-size:.8rem;color:#374151;margin-bottom:10px;">' +
+          'A simple random draw, done on this device and witnessed live by the Scrutineers. ' +
+          'The result is logged automatically \u2014 no need to fill in method/outcome by hand. ' +
+          'Prefer a physical draw (coin, chits)? Use the manual form below instead \u2014 both are SOP-compliant.' +
+        '</div>' +
+        '<input id="idol-post" placeholder="Post name" style="width:100%;padding:9px;font-size:.85rem;' +
+        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<textarea id="idol-candidates" rows="2" placeholder="Tied candidate names, one per line" ' +
+        'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
+        'box-sizing:border-box;margin-bottom:6px;resize:vertical;"></textarea>' +
+        '<div id="idol-err" style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
+        '<button id="btn-idol" onclick="AdminPanel._conductDrawOfLots(\'' + escHtml(elecId) + '\')" ' +
+        'style="width:100%;padding:11px;font-size:.88rem;background:#1e40af;color:#fff;' +
+        'border:none;border-radius:4px;cursor:pointer;font-weight:600;">\u26a1 Draw Now</button>' +
+        '<div id="idol-result" style="margin-top:10px;"></div>' +
+      '</div>' +
+      '<div style="margin-bottom:14px;">' +
+        '<button onclick="AdminPanel._loadDrawOfLotsRecords(\'' + escHtml(elecId) + '\')" ' +
+        'style="width:100%;padding:9px;font-size:.82rem;background:#fff;color:#1a3a5c;' +
+        'border:1px solid #1a3a5c;border-radius:4px;cursor:pointer;">\ud83d\udd04 Load Draw History for This Election</button>' +
+        '<div id="idol-list"></div>' +
+      '</div>';
+
+    html +=
       '<div style="margin-bottom:8px;">' +
         '<input id="dol-post" placeholder="Post name" style="width:100%;padding:9px;font-size:.85rem;' +
         'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
@@ -3198,6 +3723,121 @@ _doWithdraw: function(nomId) {
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
       .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), getTEMAuthId());
+  },
+
+  _conductDrawOfLots: function(elecId) {
+    var post      = (document.getElementById('idol-post')       || {}).value || '';
+    var candText  = (document.getElementById('idol-candidates') || {}).value || '';
+    var errEl     = document.getElementById('idol-err');
+    var resDiv    = document.getElementById('idol-result');
+    var btn       = document.getElementById('btn-idol');
+
+    var candidates = candText.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+
+    if (!post.trim()) {
+      if (errEl) { errEl.textContent = 'Post name is required.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (candidates.length < 2) {
+      if (errEl) { errEl.textContent = 'Enter at least two tied candidates, one per line.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (resDiv) resDiv.innerHTML = '';
+    if (btn) { btn.textContent = 'Drawing\u2026'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
+        if (!res || !res.success) {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Draw failed.'; errEl.style.display = 'block'; }
+          return;
+        }
+        if (resDiv) {
+          resDiv.innerHTML =
+            '<div style="padding:14px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:6px;">' +
+              '<div style="font-size:.8rem;color:#065f46;margin-bottom:4px;">WINNER OF DRAW \u2014 ' + escHtml(res.post) + '</div>' +
+              '<div style="font-size:1.1rem;font-weight:700;color:#065f46;">' + escHtml(res.winner) + '</div>' +
+              '<div style="font-size:.76rem;color:#6b7280;margin-top:6px;">' +
+                'Drawn from: ' + escHtml(res.tiedCandidates.join(', ')) + '<br>' +
+                'Draw ID: ' + escHtml(res.drawId) +
+              '</div>' +
+              '<div style="font-size:.78rem;color:#374151;margin-top:8px;">' +
+                'Both Scrutineers must confirm they witnessed this \u2014 click "Load Draw History" below and use their own logins.' +
+              '</div>' +
+            '</div>';
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+      })
+      .conductDrawOfLots(App.token, elecId, post.trim(), candidates, getTEMAuthId());
+  },
+
+  _loadDrawOfLotsRecords: function(elecId) {
+    var listEl = document.getElementById('idol-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="text-align:center;padding:12px;color:#6b7280;font-size:.82rem;">Loading\u2026</div>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          listEl.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">' +
+            escHtml((res && res.message) || 'Failed to load.') + '</div>';
+          return;
+        }
+        var draws = res.draws || [];
+        if (draws.length === 0) {
+          listEl.innerHTML = '<div style="font-size:.82rem;color:#9ca3af;padding:8px 0;">No in-system draws recorded for this election.</div>';
+          return;
+        }
+        listEl.innerHTML = draws.map(function(d) {
+          var sc1 = d.confirmedBy[0];
+          var sc2 = d.confirmedBy[1];
+          var iAlreadyConfirmed = App.role === 'SCRUTINEER' && d.confirmedBy.indexOf(App.identity) !== -1;
+          var canConfirm = App.role === 'SCRUTINEER' && !iAlreadyConfirmed && d.confirmedBy.length < 2;
+          return (
+            '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin-top:8px;">' +
+              '<div style="font-size:.85rem;font-weight:600;color:#1a3a5c;">' + escHtml(d.post) + '</div>' +
+              '<div style="font-size:.8rem;color:#059669;margin:4px 0;">Winner: ' + escHtml(d.winner) + '</div>' +
+              '<div style="font-size:.74rem;color:#9ca3af;">' +
+                'Tied: ' + escHtml((d.tiedCandidates || []).join(', ')) + ' \u2014 ' +
+                'by ' + escHtml(d.conductedBy) + ' at ' + escHtml((d.conductedAt || '').replace('T',' ').substring(0,16)) +
+              '</div>' +
+              '<div style="font-size:.78rem;margin-top:6px;color:' + (sc1 ? '#059669' : '#6b7280') + ';">' +
+                (sc1 ? '\u2713 Witnessed by ' + escHtml(sc1) : 'Awaiting first Scrutineer confirmation') +
+              '</div>' +
+              '<div style="font-size:.78rem;color:' + (sc2 ? '#059669' : '#6b7280') + ';">' +
+                (sc2 ? '\u2713 Witnessed by ' + escHtml(sc2) : 'Awaiting second Scrutineer confirmation') +
+              '</div>' +
+              (canConfirm ?
+                '<button onclick="AdminPanel._confirmDrawOfLotsScrutineer(\'' + escHtml(elecId) + '\',\'' + escHtml(d.drawId) + '\')" ' +
+                'style="margin-top:8px;padding:8px 14px;background:#059669;color:#fff;border:none;' +
+                'border-radius:4px;font-size:.82rem;cursor:pointer;">\u2605 Confirm I Witnessed This</button>'
+              : '') +
+            '</div>'
+          );
+        }).join('');
+      })
+      .withFailureHandler(function() {
+        listEl.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error.</div>';
+      })
+      .getDrawOfLotsRecords(App.token, elecId);
+  },
+
+  _confirmDrawOfLotsScrutineer: function(elecId, drawId) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Confirmed as Scrutineer ' + res.slot + '.');
+          AdminPanel._loadDrawOfLotsRecords(elecId);
+        } else {
+          showToast((res && res.message) || 'Failed to confirm.', true);
+        }
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .confirmDrawOfLotsScrutineer(App.token, elecId, drawId);
   },
 
   _renderElectionRecordCompileBlock: function(elecId, status) {
@@ -3761,26 +4401,46 @@ _loadVotedLogData: function(elecId) {
     // Co-sign panel — only for closed/declared
     var st = res.elecStatus;
     if (st === 'closed' || st === 'declared') {
+      var cosigns = res.scrutineerCosigns || [];
+      var cosignStatusList = cosigns.length === 0
+        ? '<div style="font-size:.83rem;color:#991b1b;">No active Scrutineers on record for this election.</div>'
+        : cosigns.map(function(sc) {
+            return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+              'padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:.85rem;">' +
+                '<span>' + escHtml(sc.name) + ' (' + escHtml(sc.adminId) + ')</span>' +
+                (sc.cosigned
+                  ? '<span style="color:#059669;font-weight:600;">✓ Co-signed</span>'
+                  : '<span style="color:#b45309;font-weight:600;">Outstanding</span>') +
+              '</div>';
+          }).join('');
+
       html +=
         '<div class="panel-card" style="margin-bottom:16px;border:1.5px solid #1a3a5c;">' +
           '<div class="panel-card-header">Tally Co-Sign</div>' +
           '<div class="panel-card-body">' +
-            '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
-              'Enter your confirmation statement and co-sign the tally. ' +
-              'This is recorded permanently in the audit log.' +
+            '<div style="font-size:.85rem;color:#555;margin-bottom:10px;">' +
+              'All active Scrutineers must co-sign before results can be declared (SOP 2A.8).' +
             '</div>' +
-            '<textarea id="tally-cosign-text" rows="2" ' +
-              'placeholder="e.g. I have verified the tally and confirm it is correct." ' +
-              'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
-              'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:10px;"></textarea>' +
-            '<div id="tally-cosign-err" ' +
-              'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
-            '<button onclick="AdminPanel._submitTallyCoSign(\'' +
-              escHtml(res.electionId) + '\')" id="btn-tally-cosign" ' +
-              'style="width:100%;padding:13px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
-              'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
-              'Co-sign Tally' +
-            '</button>' +
+            '<div style="margin-bottom:14px;">' + cosignStatusList + '</div>' +
+            (App.role === 'SCRUTINEER' ?
+              '<textarea id="tally-cosign-text" rows="2" ' +
+                'placeholder="e.g. I have verified the tally and confirm it is correct." ' +
+                'style="width:100%;padding:10px;font-size:.88rem;border:1px solid #d1d5db;' +
+                'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:10px;"></textarea>' +
+              '<div id="tally-cosign-err" ' +
+                'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+              '<button onclick="AdminPanel._submitTallyCoSign(\'' +
+                escHtml(res.electionId) + '\')" id="btn-tally-cosign" ' +
+                'style="width:100%;padding:13px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+                'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
+                'Co-sign Tally' +
+              '</button>'
+            :
+              '<div style="font-size:.8rem;color:#9ca3af;font-style:italic;">' +
+                'Co-signing is reserved for Scrutineers — an independent check on the tally, ' +
+                'separate from RO/TEM. Only Scrutineers can co-sign here.' +
+              '</div>'
+            ) +
           '</div>' +
         '</div>';
     }
@@ -4216,6 +4876,7 @@ _openScrutinyDetail: function(nomId) {
           escHtml((res && res.message) || 'Failed to load scrutiny data.') + '</div>';
         return;
       }
+      res.nomination.ecReferral = res.ecReferral || null;
       AdminPanel._renderScrutinyDetail(res.nomination, res.checklist);
     })
     .withFailureHandler(function() {
@@ -4244,7 +4905,7 @@ _renderScrutinyDetail: function(nom, checklist) {
 
   var CHECKLIST_ITEMS = [
     { key: 'post_eligibility',  label: 'Post eligibility satisfied (EC service, batch, or other post-specific criteria)' },
-    { key: 'tenure_bar',        label: 'Consecutive tenure bar clear (6-year rule; N/A for Batch Representative nominations)' },
+    { key: 'tenure_bar',        label: 'Tenure bar clear \u2014 T2: 6-yr consecutive rule, any EC post except Batch Rep; T1: 5-yr same-post rule, all posts. See notes for which bar (if any) applies.' },
     { key: 'one_post',          label: 'One-post rule — no other nomination by this candidate currently accepted' },
     { key: 'proposer',          label: 'Proposer confirmation received' },
     { key: 'seconder',          label: 'Seconder confirmation received' },
@@ -4379,6 +5040,68 @@ _renderScrutinyDetail: function(nom, checklist) {
 
   html += '</div></div>';
 
+  // ── EC Referral panel — bylaw Clause (g): RO may seek clarification
+  // from the Executive Committee on matters of institutional record.
+  if (nom.ecReferral) {
+    var er = nom.ecReferral;
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;border:1.5px solid ' +
+        (er.status === 'responded' ? '#166534' : '#92400e') + ';">' +
+        '<div class="panel-card-header">EC Referral \u2014 ' +
+          (er.status === 'responded' ? 'Response Received' : 'Awaiting Response') +
+        '</div>' +
+        '<div class="panel-card-body" style="font-size:.85rem;">' +
+          '<div style="margin-bottom:8px;"><span style="color:#888;">Regarding:</span> ' +
+            escHtml(er.checkItem) + '</div>' +
+          '<div style="margin-bottom:8px;"><span style="color:#888;">Sent:</span> ' +
+            escHtml(er.sentAt) + '</div>' +
+          '<div style="padding:8px 10px;background:#f9fafb;border-left:3px solid #1a3a5c;margin-bottom:10px;">' +
+            escHtml(er.text) + '</div>' +
+          (er.status === 'responded'
+            ? '<div style="margin-bottom:4px;"><span style="color:#888;">EC Response (' +
+                escHtml(er.respondedAt) + '):</span></div>' +
+              '<div style="padding:8px 10px;background:#f0fdf4;border-left:3px solid #166534;">' +
+                escHtml(er.response) + '</div>'
+            : '<div style="color:#92400e;font-weight:600;">No response yet.</div>') +
+        '</div>' +
+      '</div>';
+  }
+
+  if (isEditable && !nom.ecReferral) {
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Refer to Executive Committee</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.82rem;color:#6b7280;margin-bottom:10px;">' +
+            'Use this to seek clarification from the Executive Committee on a matter of ' +
+            'institutional record (bylaw Clause g). The designated EC contact for this election ' +
+            'will receive an email with a secure response link, and their reply will appear here.' +
+          '</div>' +
+          '<label style="display:block;font-size:.83rem;font-weight:600;color:#374151;margin-bottom:4px;">Regarding</label>' +
+          '<select id="ecref-checkitem-' + escHtml(nom.id) + '" ' +
+            'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;margin-bottom:10px;">' +
+            '<option value="post_eligibility">Post eligibility</option>' +
+            '<option value="tenure_bar">Tenure bar</option>' +
+            '<option value="one_post">One-post rule</option>' +
+            '<option value="proposer">Proposer confirmation</option>' +
+            '<option value="seconder">Seconder confirmation</option>' +
+            '<option value="consent">Candidate consent</option>' +
+            '<option value="general">General / other matter</option>' +
+          '</select>' +
+          '<label style="display:block;font-size:.83rem;font-weight:600;color:#374151;margin-bottom:4px;">Referral Text</label>' +
+          '<textarea id="ecref-text-' + escHtml(nom.id) + '" rows="3" ' +
+            'placeholder="Describe the matter of institutional record you are referring to the EC\u2026" ' +
+            'style="width:100%;padding:10px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
+            'box-sizing:border-box;resize:vertical;margin-bottom:8px;"></textarea>' +
+          '<div id="ecref-err-' + escHtml(nom.id) + '" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="AdminPanel._sendECReferral(\'' + escHtml(nom.id) + '\')" ' +
+            'id="btn-ecref-' + escHtml(nom.id) + '" ' +
+            'style="width:100%;padding:12px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
+            'border:none;border-radius:4px;cursor:pointer;font-weight:600;">Send Referral to EC</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   // Manual RO nominations: show doc uploader on scrutiny page
   // Needed when docs couldn't be uploaded at nomination stage (e.g. election already advanced)
   if (nom.entryMethod === 'manual_ro') {
@@ -4477,7 +5200,42 @@ _setCheckResult: function(nomId, checkItem, result) {
       if (!res || !res.success) showToast((res && res.message) || 'Save failed.');
     })
     .withFailureHandler(function() { showToast('Error saving checklist item.'); })
-    .saveScrutinyItem(App.token, nomId, checkItem, result, notes);
+    .saveScrutinyItem(App.token, nomId, checkItem, result, notes, getTEMAuthId());
+},
+
+_sendECReferral: function(nomId) {
+  var selEl  = document.getElementById('ecref-checkitem-' + nomId);
+  var textEl = document.getElementById('ecref-text-' + nomId);
+  var errEl  = document.getElementById('ecref-err-' + nomId);
+  var btn    = document.getElementById('btn-ecref-' + nomId);
+  if (!selEl || !textEl) return;
+
+  var checkItem = selEl.value;
+  var text      = textEl.value.trim();
+
+  if (errEl) errEl.style.display = 'none';
+  if (text.length < 5) {
+    if (errEl) { errEl.textContent = 'Please enter at least 5 characters describing the referral.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending\u2026'; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed to send referral.'; errEl.style.display = 'block'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Send Referral to EC'; }
+        return;
+      }
+      showToast('Referral sent to the Executive Committee.');
+      AdminPanel._openScrutinyDetail(nomId);
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Connection error \u2014 please try again.'; errEl.style.display = 'block'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Send Referral to EC'; }
+    })
+    .sendECReferral(App.token, nomId, text, checkItem, getTEMAuthId());
 },
 
 _saveCheckItemNotes: function(nomId, checkItem) {
@@ -4487,7 +5245,7 @@ _saveCheckItemNotes: function(nomId, checkItem) {
   google.script.run
     .withSuccessHandler(function() {})
     .withFailureHandler(function() {})
-    .saveScrutinyItem(App.token, nomId, checkItem, currentResult, notesEl.value.trim());
+    .saveScrutinyItem(App.token, nomId, checkItem, currentResult, notesEl.value.trim(), getTEMAuthId());
 },
 
 _acceptNom: function(nomId) {
@@ -5435,7 +6193,7 @@ _sendObjSummary: function() {
       AdminPanel._loadAppeals();
     })
     .withFailureHandler(function(e) { showToast('Error: ' + e.message, true); })
-    .sendConsolidatedObjectionSummary(SharedState.token, electionId);
+    .sendConsolidatedObjectionSummary(SharedState.token, electionId, getTEMAuthId());
 },
 
 _doPurgeTrial: function(electionId) {
@@ -5831,7 +6589,7 @@ _certifyRoll: function() {
       AdminPanel._loadVoterRollDraft('all', '');
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .certifyVoterRoll(App.token, '', getTEMAuthId());
+    .certifyVoterRoll(App.token, AdminPanel._currentElectionId || '', getTEMAuthId());
 },
 
 _sendVoterRollNotice: function() {
@@ -6245,7 +7003,11 @@ AdminPanel._refreshTEMAuthBar = function() {
         if (a.revoked) return false;
         if (a.expiresAt && new Date(a.expiresAt) < now) return false;
         if (a.scope === 'ALL_ACTIONS' && a.usedCount >= 1) return false;
-        if (a.scope === 'specific_actions' && a.usedCount >= a.actionTypes.length) return false;
+        if (a.scope === 'specific_actions') {
+          var consumed = a.consumedActions || {};
+          var remaining = a.actionTypes.filter(function(t) { return !consumed[t]; });
+          if (remaining.length === 0) return false;
+        }
         return true;
       });
 
@@ -6262,9 +7024,15 @@ AdminPanel._refreshTEMAuthBar = function() {
           var diff = Math.round((now - new Date(a.issuedAt)) / 60000);
           issuedMin = diff < 60 ? diff + 'm ago' : Math.round(diff/60) + 'h ago';
         }
-        var scopeLabel = a.scope === 'ALL_ACTIONS'
-          ? 'ALL ACTIONS (single-use)'
-          : a.actionTypes.join(', ');
+        var scopeLabel;
+        if (a.scope === 'ALL_ACTIONS') {
+          scopeLabel = 'ALL ACTIONS (single-use)';
+        } else {
+          var consumedL  = a.consumedActions || {};
+          var remainingL = a.actionTypes.filter(function(t) { return !consumedL[t]; });
+          scopeLabel = remainingL.join(', ') +
+            (remainingL.length < a.actionTypes.length ? ' (' + (a.actionTypes.length - remainingL.length) + ' already used)' : '');
+        }
         var label = a.authId.slice(-8) + ' \u2014 ' + scopeLabel +
           (issuedMin ? ' \u2014 issued ' + issuedMin : '');
         html += '<option value="' + a.authId + '">' + label + '</option>';
@@ -6377,8 +7145,12 @@ AdminPanel._loadTEMAuthTable = function() {
       var now = new Date();
       var rows = auths.map(function(a) {
         var expired = a.expiresAt && new Date(a.expiresAt) < now;
+        var consumedT  = a.consumedActions || {};
+        var remainingT = a.scope === 'specific_actions'
+          ? a.actionTypes.filter(function(t) { return !consumedT[t]; })
+          : [];
         var exhausted = (a.scope === 'ALL_ACTIONS' && a.usedCount >= 1) ||
-                        (a.scope === 'specific_actions' && a.usedCount >= a.actionTypes.length);
+                        (a.scope === 'specific_actions' && remainingT.length === 0);
         var statusBadge = a.revoked
           ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Revoked</span>'
           : expired
@@ -6386,7 +7158,11 @@ AdminPanel._loadTEMAuthTable = function() {
             : exhausted
               ? '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Exhausted</span>'
               : '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600;">Active</span>';
-        var actions = a.scope === 'ALL_ACTIONS' ? 'ALL ACTIONS' : (a.actionTypes.join(', ') || '—');
+        var actions = a.scope === 'ALL_ACTIONS'
+          ? 'ALL ACTIONS'
+          : (a.actionTypes.map(function(t) {
+              return consumedT[t] ? '<s style="color:#9ca3af;">' + t + '</s>' : t;
+            }).join(', ') || '—');
         var elecLabel = a.electionId || 'System level';
         var revokeBtn = (!a.revoked && !expired && !exhausted)
           ? '<button onclick="AdminPanel._revokeTEMAuth(\'' + a.authId + '\')" ' +
@@ -6440,7 +7216,7 @@ AdminPanel._toggleActionTypes = function() {
 function _temActionCheckboxes() {
   var groups = {
     '— SYSTEM LEVEL —': {
-      'Admin Management':    ['addAdmin','disableAdmin','enableAdmin'],
+      'Admin Management':    ['addAdmin','disableAdmin','enableAdmin','sendScrutineerAcceptanceLink'],
       'Elections (new)':     ['createElection'],
       'Sheet Protections':   ['applySheetProtections','removeSheetProtections'],
       'Landing Page':        ['setLandingPageContent'],
@@ -6448,15 +7224,17 @@ function _temActionCheckboxes() {
     },
     '— ELECTION LEVEL —': {
       'Election Management': ['updateElectionStatus','updateElectionSettings','deleteElection','setElectionSchedule','publishSchedule'],
-      'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','publishCandidates','triggerPhase2Extension'],
+      'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','publishCandidates','triggerPhase2Extension','resendConfirmationEmail'],
       'Candidates':          ['deleteCandidate'],
-      'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft'],
-      'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','recordTallyCoSign','recordScrutineerConfirmation','recordDrawOfLots'],
-      'Complaints & Appeals':['updateComplaintStatus','updateAppealDecision','storeAppealRuling'],
+      'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft','updateVoterDraftRow'],
+      'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','saveScrutinyItem','recordScrutineerConfirmation','recordDrawOfLots','conductDrawOfLots'],
+      'Complaints & Appeals':['updateComplaintStatus','updateAppealDecision','storeAppealRuling','sendConsolidatedObjectionSummary'],
       'Documents':           ['storeDocument','deleteDocument'],
       'Election Record':     ['generateElectionRecordPDF'],
       'Backup':              ['createPreVoteBackup'],
-      'Purge':               ['purgeTrialData']
+      'Purge':               ['purgeTrialData'],
+      'PreSec Checklist':    ['recordChecklistItem','resetChecklistItem'],
+      'Communications':      ['sendNominationCall','sendVoterRollPublicationNotice','sendCandidateListPublishedNotice','sendResultsDeclaredNotice']
     }
   };
   var html = '';
