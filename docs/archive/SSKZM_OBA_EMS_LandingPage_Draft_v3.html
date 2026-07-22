@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSKZM OBA — Election Management System</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --nv:#0c2340;--nvM:#185fa5;--nvL:#e6f1fb;
+  --cr:#8b0000;--crL:#fcebeb;
+  --go:#b8922a;--goL:#faeeda;
+  --pa:#faf7f2;--p2:#f3ede2;
+  --i1:#1a1a1a;--i2:#444;--i3:#777;--i4:#aaa;
+  --bd:#e8e0d0;
+  --gr:#085041;--grL:#e1f5ee;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"DM Sans",sans-serif;background:var(--pa);color:var(--i1);font-size:18px;line-height:1.7;}
+h1,h2,h3,h4{font-family:"Cormorant Garamond",serif;}
+
+/* TOP MASTHEAD */
+.mast{background:var(--nv);border-bottom:3px solid var(--go);padding:0;}
+.mast-inner{display:flex;align-items:center;gap:14px;padding:11px 24px;}
+.logo-ring{width:46px;height:46px;border-radius:50%;background:rgba(184,146,42,.15);border:2px solid var(--go);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+.logo-ring img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.logo-initials{font-family:"Cormorant Garamond",serif;font-size:14px;font-weight:700;color:var(--go);}
+.mast-text{flex:1;}
+.mast-name{font-family:"Cormorant Garamond",serif;font-size:18px;font-weight:700;color:#fff;line-height:1.2;}
+.mast-sub{font-size:13px;color:rgba(255,255,255,.45);letter-spacing:.6px;text-transform:uppercase;margin-top:1px;}
+.mast-btn-wrap{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.mast-btn{background:var(--go);color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;font-family:"DM Sans",sans-serif;white-space:nowrap;letter-spacing:.3px;}
+.mast-btn:hover{background:#9a7620;}
+.mast-btn-sub{font-size:9px;color:rgba(255,255,255,.4);letter-spacing:.3px;}
+
+/* TICKER */
+.ticker{background:var(--nvM);padding:5px 24px;display:flex;align-items:center;gap:10px;}
+.ticker-lbl{background:var(--go);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;white-space:nowrap;text-transform:uppercase;}
+.ticker-txt{color:rgba(255,255,255,.75);font-size:11px;flex:1;}
+
+/* HERO */
+.hero{background:linear-gradient(135deg,var(--nv) 0%,#0a3a6a 60%,#0c2340 100%);padding:38px 24px 32px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(184,146,42,.03) 0,rgba(184,146,42,.03) 1px,transparent 1px,transparent 40px);}
+.hero-inner{position:relative;max-width:780px;margin:0 auto;}
+.hero-eyebrow{color:var(--go);font-size:10px;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.hero-eyebrow::before{content:'';display:inline-block;width:20px;height:1px;background:var(--go);}
+.hero-title{font-family:"Cormorant Garamond",serif;font-size:32px;font-weight:700;color:#fff;line-height:1.25;margin-bottom:12px;}
+.hero-title em{color:var(--go);font-style:normal;}
+.hero-para{color:rgba(255,255,255,.72);font-size:15px;line-height:1.85;max-width:620px;margin-bottom:6px;}
+.hero-para a{color:var(--go);text-decoration:none;}
+.hero-para a:hover{text-decoration:underline;}
+.hero-rule{width:40px;height:2px;background:var(--go);margin:18px 0;}
+.hero-stats{display:flex;gap:10px;flex-wrap:wrap;}
+.hstat{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-left:3px solid var(--go);padding:9px 14px;min-width:130px;}
+.hstat.r{border-left-color:var(--cr);}
+.hstat.b{border-left-color:var(--nvM);}
+.hstat-n{font-family:"Cormorant Garamond",serif;font-size:22px;font-weight:700;color:#fff;line-height:1;}
+.hstat-l{color:rgba(255,255,255,.45);font-size:10px;margin-top:2px;}
+
+/* PHASE BANNER */
+.phase-band{background:#fff;border-bottom:1px solid var(--bd);padding:0 24px;overflow-x:auto;}
+.phase-inner{max-width:780px;margin:0 auto;display:flex;align-items:stretch;gap:0;}
+.phase-item{display:flex;align-items:center;gap:7px;padding:11px 14px;font-size:11px;color:var(--i3);border-bottom:2px solid transparent;cursor:default;white-space:nowrap;}
+.phase-item.active{color:var(--cr);border-bottom-color:var(--cr);font-weight:600;}
+.phase-item.active .phase-dot{background:var(--cr);}
+.phase-dot{width:7px;height:7px;border-radius:50%;background:var(--bd);flex-shrink:0;}
+.phase-chevron{color:var(--bd);font-size:10px;align-self:center;padding:0 2px;}
+
+/* MAIN LAYOUT */
+.wrap{max-width:780px;margin:0 auto;padding:20px 24px;}
+
+/* SECTION HEADER */
+.sec-ey{font-size:10px;font-weight:600;color:var(--cr);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;}
+.sec-h{font-family:"Cormorant Garamond",serif;font-size:20px;font-weight:700;color:var(--nv);margin-bottom:3px;}
+.sec-rule{width:28px;height:2px;background:var(--cr);margin-bottom:14px;}
+
+/* STATUS CARD */
+.status-card{background:#fff;border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.status-head{background:var(--nv);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;}
+.status-head-t{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:#fff;}
+.status-badge{background:rgba(184,146,42,.2);border:1px solid var(--go);color:var(--go);font-size:9px;padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:.5px;}
+.status-body{padding:14px 16px;}
+.status-row{display:flex;gap:8px;flex-wrap:wrap;}
+.skey{flex:1;min-width:140px;background:var(--pa);border:1px solid var(--bd);border-radius:5px;padding:9px 12px;}
+.skey-l{font-size:10px;color:var(--i3);margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px;}
+.skey-v{font-size:12px;font-weight:500;color:var(--nv);}
+.skey-v.tba{color:var(--i4);font-style:italic;font-weight:400;}
+.skey-v.open{color:var(--gr);font-weight:600;}
+.status-notice{margin-top:12px;background:var(--goL);border-left:3px solid var(--go);padding:9px 12px;border-radius:0 5px 5px 0;}
+.status-notice p{font-size:11px;color:#633806;line-height:1.7;}
+
+/* VOTER ROLL SECTION */
+.vr-card{background:#fff;border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.vr-head{background:var(--p2);padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;}
+.vr-head-t{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--nv);}
+.vr-status-pill{background:var(--goL);border:1px solid var(--go);color:#633806;font-size:9px;padding:3px 10px;border-radius:20px;font-weight:600;}
+.vr-body{padding:14px 16px;}
+.search-row{display:flex;gap:8px;margin-bottom:12px;}
+.search-inp{flex:1;border:1.5px solid var(--bd);border-radius:5px;padding:8px 12px;font-size:12px;font-family:"DM Sans",sans-serif;background:#fff;color:var(--i1);outline:none;}
+.search-inp:focus{border-color:var(--nvM);}
+.search-btn{background:var(--nv);color:#fff;border:none;padding:8px 16px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;font-family:"DM Sans",sans-serif;white-space:nowrap;}
+.search-btn:hover{background:#0a3a6a;}
+.vr-result{display:none;margin-top:10px;}
+.vr-found{background:var(--grL);border:1px solid #9fe1cb;border-radius:6px;padding:10px 13px;}
+.vr-found-name{font-size:14px;font-weight:600;color:var(--gr);font-family:"Cormorant Garamond",serif;margin-bottom:2px;}
+.vr-found-meta{font-size:11px;color:#0f6e56;}
+.vr-found-action{margin-top:7px;font-size:11px;color:var(--i2);line-height:1.6;}
+.vr-warn{background:#fff8e1;border:1px solid #f0c040;border-radius:6px;padding:10px 13px;}
+.vr-warn-t{font-size:13px;font-weight:600;color:#7a5200;font-family:"Cormorant Garamond",serif;margin-bottom:3px;}
+.vr-warn-d{font-size:11px;color:#7a5200;line-height:1.6;}
+.vr-notfound{background:var(--crL);border:1px solid #f7c1c1;border-radius:6px;padding:10px 13px;}
+.vr-notfound-t{font-size:13px;font-weight:600;color:#791f1f;font-family:"Cormorant Garamond",serif;margin-bottom:3px;}
+.vr-notfound-d{font-size:11px;color:#791f1f;line-height:1.6;}
+.vr-guide{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;}
+.vr-guide-item{background:var(--pa);border:1px solid var(--bd);border-radius:5px;padding:8px 10px;font-size:10px;color:var(--i2);line-height:1.5;}
+.vr-guide-item b{display:block;color:var(--nv);font-size:11px;margin-bottom:2px;}
+
+/* DRAFT DOCUMENTS */
+.docs-banner{background:var(--nv);border:2px solid var(--go);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.docs-banner-head{background:var(--go);padding:11px 18px;display:flex;align-items:center;gap:10px;}
+.docs-banner-icon{font-size:18px;}
+.docs-banner-ht{font-family:"Cormorant Garamond",serif;font-size:17px;font-weight:700;color:#fff;}
+.docs-banner-sub{font-size:10px;color:rgba(255,255,255,.75);margin-top:1px;letter-spacing:.3px;}
+.docs-banner-body{padding:16px 18px;}
+.docs-banner-intro{font-size:12px;color:rgba(255,255,255,.8);line-height:1.75;margin-bottom:14px;}
+.docs-link-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.docs-link-btn{background:rgba(255,255,255,.1);border:1.5px solid rgba(184,146,42,.6);border-radius:6px;padding:10px 16px;display:flex;align-items:center;gap:10px;flex:1;min-width:200px;text-decoration:none;transition:background .2s;}
+.docs-link-btn:hover{background:rgba(184,146,42,.15);}
+.docs-link-icon{font-size:20px;flex-shrink:0;}
+.docs-link-title{font-size:12px;font-weight:600;color:#fff;line-height:1.3;}
+.docs-link-desc{font-size:10px;color:rgba(255,255,255,.55);margin-top:2px;}
+.docs-feedback{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:12px 14px;}
+.docs-feedback-t{font-size:12px;font-weight:600;color:var(--go);margin-bottom:4px;}
+.docs-feedback-d{font-size:11px;color:rgba(255,255,255,.7);line-height:1.7;}
+.docs-feedback-d a{color:var(--go);font-weight:600;text-decoration:none;}
+.docs-feedback-d a:hover{text-decoration:underline;}
+
+/* NOTICES */
+.notices-card{background:#fff;border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.notices-head{background:var(--p2);padding:11px 16px;border-bottom:1px solid var(--bd);}
+.notices-head-t{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--nv);}
+.notice-item{display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--bd);}
+.notice-item:last-child{border-bottom:none;}
+.notice-date{font-size:10px;color:var(--i4);white-space:nowrap;min-width:72px;padding-top:2px;}
+.notice-body{}
+.notice-tag{display:inline-block;font-size:9px;padding:1px 7px;border-radius:8px;font-weight:600;margin-bottom:3px;}
+.nt-ann{background:var(--nvL);color:#0c447c;}
+.nt-imp{background:var(--crL);color:#791f1f;}
+.nt-upd{background:var(--goL);color:#633806;}
+.notice-title{font-size:12px;font-weight:500;color:var(--i1);line-height:1.4;}
+.notice-desc{font-size:11px;color:var(--i3);margin-top:2px;line-height:1.5;}
+
+/* TRANSPARENCY */
+.trans-card{background:#fff;border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.trans-head{background:var(--nv);padding:11px 16px;}
+.trans-head-t{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:#fff;}
+.trans-head-s{font-size:10px;color:rgba(255,255,255,.4);margin-top:1px;}
+.trans-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bd);}
+.trans-item{background:#fff;padding:13px 16px;display:flex;align-items:flex-start;gap:10px;}
+.trans-icon{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;}
+.ti-nv{background:var(--nvL);}
+.ti-go{background:var(--goL);}
+.ti-gr{background:var(--grL);}
+.ti-cr{background:var(--crL);}
+.trans-t{font-size:12px;font-weight:500;color:var(--nv);margin-bottom:2px;}
+.trans-d{font-size:10px;color:var(--i3);line-height:1.5;}
+.trans-lk{font-size:10px;margin-top:4px;display:block;font-style:italic;}
+.trans-lk.pending{color:var(--i4);cursor:default;}
+.trans-lk.soon{color:#9a7620;cursor:default;}
+
+/* PROTECT */
+.protect-card{background:var(--nv);border-radius:8px;padding:16px 18px;margin-bottom:20px;}
+.protect-label{color:var(--go);font-size:10px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;}
+.protect-title{font-family:"Cormorant Garamond",serif;font-size:18px;font-weight:700;color:#fff;margin-bottom:12px;}
+.protect-items{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.pitem{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:9px 11px;display:flex;gap:8px;align-items:flex-start;}
+.pitem-dot{width:6px;height:6px;border-radius:50%;background:var(--go);flex-shrink:0;margin-top:4px;}
+.pitem-t{font-size:11px;color:rgba(255,255,255,.8);line-height:1.5;}
+
+/* FOOTER */
+.footer{background:var(--nv);border-top:2px solid var(--go);padding:16px 24px;margin-top:8px;}
+.footer-inner{max-width:780px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.footer-l{color:rgba(255,255,255,.35);font-size:10px;line-height:1.6;}
+.footer-links{display:flex;gap:14px;}
+.footer-lk{color:rgba(255,255,255,.4);font-size:10px;cursor:pointer;}
+.footer-lk:hover{color:var(--go);}
+
+/* PROCESS STEPS */
+.steps-card{background:#fff;border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.steps-head{background:var(--p2);padding:11px 16px;border-bottom:1px solid var(--bd);}
+.steps-head-t{font-family:"Cormorant Garamond",serif;font-size:16px;font-weight:700;color:var(--nv);}
+.steps-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bd);}
+.step-item{background:#fff;padding:13px 16px;display:flex;gap:11px;align-items:flex-start;}
+.step-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;margin-top:1px;}
+.step-num.active{background:var(--cr);color:#fff;}
+.step-num.upcoming{background:var(--p2);color:var(--i3);border:1px solid var(--bd);}
+.step-t{font-size:12px;font-weight:600;color:var(--nv);margin-bottom:3px;}
+.step-d{font-size:10px;color:var(--i3);line-height:1.55;}
+.step-pill{display:inline-block;font-size:9px;padding:1px 8px;border-radius:10px;font-weight:600;margin-top:4px;}
+.sp-active{background:var(--crL);color:#791f1f;}
+.sp-upcoming{background:var(--goL);color:#7a5200;}
+
+/* ── MOBILE-FIRST RESPONSIVE ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+
+  /* Base font */
+  body { font-size: 15px; }
+
+  /* MASTHEAD */
+  .mast-inner { flex-wrap: wrap; padding: 10px 14px; gap: 10px; overflow: hidden; }
+  .mast-text  { flex: 1 1 60%; min-width: 0; }
+  .mast-name  { font-size: 14px; white-space: normal; }
+  .mast-sub   { font-size: 10px; }
+  .mast-btn-wrap { width: 100%; flex-direction: row; justify-content: flex-start;
+                   align-items: center; gap: 10px; }
+  .mast-btn   { font-size: 12px; padding: 8px 18px; white-space: normal; }
+  .mast-btn-sub { font-size: 10px; }
+
+  /* TICKER */
+  .ticker { padding: 5px 14px; }
+  .ticker-txt { font-size: 12px; }
+
+  /* HERO */
+  .hero { padding: 26px 14px 22px; }
+  .hero-title { font-size: 22px; }
+  .hero-para  { font-size: 13px; line-height: 1.75; }
+  .hstat      { min-width: 100px; }
+  .hstat-n    { font-size: 20px; }
+  .hstat-l    { font-size: 11px; }
+
+  /* PHASE BANNER — contained horizontal scroll, page does not overflow */
+  .phase-band  { padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .phase-inner { width: max-content; max-width: none; padding: 0 14px; }
+  .phase-item  { font-size: 11px; padding: 10px 8px; }
+
+  /* MAIN LAYOUT */
+  .wrap { padding: 16px 14px; }
+
+  /* SECTION HEADERS */
+  .sec-ey { font-size: 11px; }
+  .sec-h  { font-size: 19px; }
+
+  /* STATUS CARD */
+  .skey       { min-width: 120px; }
+  .skey-l     { font-size: 11px; }
+  .skey-v     { font-size: 13px; }
+  .status-notice p { font-size: 13px; line-height: 1.75; }
+
+  /* VOTER ROLL */
+  .vr-head   { padding: 10px 14px; }
+  .vr-head-t { font-size: 15px; }
+  .vr-body   { padding: 12px 14px; }
+  .search-inp { font-size: 14px; padding: 9px 12px; }
+  .search-btn { font-size: 12px; padding: 9px 14px; }
+
+  /* Voter roll result text */
+  .vr-found-name { font-size: 15px; }
+  .vr-found-meta { font-size: 12px; }
+  .vr-found-action { font-size: 12px; }
+  .vr-warn-t, .vr-notfound-t { font-size: 14px; }
+  .vr-warn-d, .vr-notfound-d { font-size: 12px; }
+
+  /* Guide grid — 2-col → 1-col */
+  .vr-guide { grid-template-columns: 1fr; }
+  .vr-guide-item { font-size: 12px; }
+  .vr-guide-item b { font-size: 13px; }
+
+  /* NOTICES */
+  .notice-item  { padding: 11px 14px; gap: 8px; }
+  .notice-date  { font-size: 11px; min-width: 60px; }
+  .notice-title { font-size: 13px; }
+  .notice-desc  { font-size: 12px; }
+
+  /* TRANSPARENCY GRID — 2-col → 1-col */
+  .trans-grid { grid-template-columns: 1fr; }
+  .trans-head { padding: 10px 14px; }
+  .trans-head-t { font-size: 15px; }
+  .trans-item { padding: 12px 14px; }
+  .trans-t    { font-size: 13px; }
+  .trans-d    { font-size: 12px; }
+  .trans-lk   { font-size: 11px; }
+
+  /* PROTECT — 2-col → 1-col */
+  .protect-items { grid-template-columns: 1fr; }
+  .protect-card  { padding: 14px 14px; }
+  .protect-title { font-size: 17px; }
+  .pitem-t       { font-size: 13px; line-height: 1.55; }
+
+  /* FOOTER */
+  .footer       { padding: 14px 14px; }
+  .footer-inner { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .footer-l     { font-size: 11px; }
+  .footer-links { flex-wrap: wrap; gap: 10px; }
+  .footer-lk    { font-size: 11px; }
+
+  /* DRAFT DOCS */
+  .docs-link-row { flex-direction: column; }
+  .docs-link-btn { min-width: unset; }
+  .docs-banner-intro { font-size: 13px; }
+  .docs-feedback-d { font-size: 12px; }
+
+  /* PROCESS STEPS — 2-col → 1-col */
+  .steps-grid{grid-template-columns:1fr;}
+  .step-t{font-size:13px;}
+  .step-d{font-size:12px;}
+}
+</style>
+<!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-SGTPR0Y2VT"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-SGTPR0Y2VT');
+    </script>
+  </head>
+<body>
+
+<!-- ── MASTHEAD ─────────────────────────────────────────────── -->
+<div class="mast">
+  <div class="mast-inner">
+    <div class="logo-ring">
+  <span class="logo-initials">OBA</span>
+</div>
+    <div class="mast-text">
+      <div class="mast-name">SSKZM Old Boys Association</div>
+      <div class="mast-sub">Sainik School Kazhakootam · Thiruvananthapuram</div>
+    </div>
+    </div>
+</div>
+
+<!-- ── TICKER ─────────────────────────────────────────────────── -->
+<div class="ticker">
+  <span class="ticker-lbl">Notice</span>
+  <span class="ticker-txt">Draft SOP &amp; proposed Bylaw Clause open for member feedback until 9 June 2026 — read the document and send your suggestions to sskzmobakazak@gmail.com · Voter roll preparation continues — Life Members please verify your details below</span>
+</div>
+
+<!-- ── HERO ───────────────────────────────────────────────────── -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Election Management System</div>
+    <div class="hero-title">Welcome to the <em>Election Management System</em><br>of Sainik School Kazhakootam Old Boys' Association</div>
+
+    <div class="hero-para">
+      The Sub-Committee constituted by the Executive Committee to draft the election methodology has completed its work and submitted its report. The Executive Committee has reviewed the draft and is now placing it before all members for suggestions and feedback. The draft <strong style="color:rgba(255,255,255,.9);">Standard Operating Procedure</strong> and the <strong style="color:rgba(255,255,255,.9);">proposed Bylaw Clause</strong> laying down detailed procedure for the conduct of elections have been combined into a single document, available below. Members are encouraged to read the document and send their comments to <strong style="color:var(--go);">sskzmobakazak@gmail.com</strong> by <strong style="color:var(--go);">9 June 2026</strong>.
+    </div>
+    <div class="hero-para">
+      Voter roll preparation continues in parallel. Members should note that the contact details held on the OBA website and the certified voter roll are separate records — the voter roll is drawn from data exported at a fixed point in time for election purposes, and any updates required for voting eligibility must be carried out through the verification process and facilities that will be communicated from time to time as part of the election procedure. Life Members are in the meantime requested to ensure a current, functioning email address is on record with the Association, as email-based authentication is essential for voting access.
+    </div>
+    
+    <div class="hero-rule"></div>
+    <div style="margin-bottom:18px;">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <a href="https://drive.google.com/file/d/1Wrp7rVgMPYqxmQTuWdR1JL3TNw8QmZ_4/view?usp=sharing" target="_blank" style="background:var(--go);color:#fff;border:none;padding:11px 28px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.3px;text-decoration:none;display:inline-block;">📄 Documents →</a>
+        <button onclick="document.getElementById('vr-section').scrollIntoView({behavior:'smooth'})" style="background:rgba(255,255,255,.15);color:#fff;border:1.5px solid rgba(255,255,255,.7);padding:10px 22px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;letter-spacing:.3px;">Verify Login →</button>
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:6px;">Documents open for feedback until 9 Jun 2026 · Verify login confirms your email is registered</div>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><div class="hstat-n">6,300+</div><div class="hstat-l">Alumni on roll</div></div>
+      <div class="hstat r"><div class="hstat-n">21</div><div class="hstat-l">EC posts</div></div>
+      <div class="hstat b"><div class="hstat-n">2026–27</div><div class="hstat-l">Election cycle</div></div>
+      <div class="hstat"><div class="hstat-n">100%</div><div class="hstat-l">Open source code</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PHASE BANNER ───────────────────────────────────────────── -->
+<div class="phase-band">
+  <div class="phase-inner">
+    <div class="phase-item"><span class="phase-dot"></span>Voter Roll Preparation</div>
+    <span class="phase-chevron">›</span>
+    <div class="phase-item active"><span class="phase-dot"></span>SOP &amp; Procedural Finalisation</div>
+    <span class="phase-chevron">›</span>
+    <div class="phase-item"><span class="phase-dot"></span>RO Appointment</div>
+    <span class="phase-chevron">›</span>
+    <div class="phase-item"><span class="phase-dot"></span>Nominations</div>
+    <span class="phase-chevron">›</span>
+    <div class="phase-item"><span class="phase-dot"></span>Voting</div>
+    <span class="phase-chevron">›</span>
+    <div class="phase-item"><span class="phase-dot"></span>Results &amp; AGM</div>
+  </div>
+</div>
+<!-- ── PROCESS STEPS ──────────────────────────────────────────── -->
+<div class="wrap" style="padding-bottom:0;padding-top:18px;">
+  <div style="margin-bottom:6px;">
+    <div class="sec-ey">The Road Ahead</div>
+    <div class="sec-h">How We Are Getting There</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="steps-card">
+    <div class="steps-head">
+      <div class="steps-head-t">Institutional Steps — E-Voting 2026–27</div>
+    </div>
+    <div class="steps-grid">
+
+      <div class="step-item">
+        <div class="step-num active">1</div>
+        <div>
+          <div class="step-t">Voter Roll Preparation</div>
+          <div class="step-d">All registered Life Members are being added to the voter roll. Members are requested to verify their inclusion and ensure a current, functioning email address is on record with the Association.</div>
+          <span class="step-pill sp-active">Underway</span>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num" style="background:var(--gr);color:#fff;">2</div>
+        <div>
+          <div class="step-t">Sub-Committee Drafts Methodology</div>
+          <div class="step-d">A Sub-Committee comprising senior alumni across batches and borders prepared the draft Standard Operating Procedure and the draft Bylaw Clause laying down detailed procedure for the conduct of elections. Report submitted to EC.</div>
+          <span class="step-pill" style="background:var(--grL);color:#085041;">Complete</span>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num active">3</div>
+        <div>
+          <div class="step-t">EC Review &amp; Member Consultation</div>
+          <div class="step-d">The Executive Committee has reviewed the draft and is now circulating it to all members for suggestions and feedback. The documents are available below. Send your feedback to sskzmobakazak@gmail.com.</div>
+          <span class="step-pill sp-active">Underway</span>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-num upcoming">4</div>
+        <div>
+          <div class="step-t">Special General Body Meeting &amp; Trial Election</div>
+          <div class="step-d">The finalised methodology — incorporating member inputs — will be presented for formal approval at a Special General Body Meeting, at which a trial election will also be demonstrated.</div>
+          <span class="step-pill sp-upcoming">Upcoming</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<div class="wrap">
+
+  <!-- ── DRAFT DOCUMENTS ────────────────────────────────────── -->
+  <div style="margin-bottom:6px;margin-top:18px;">
+    <div class="sec-ey">Step 3 — Member Consultation</div>
+    <div class="sec-h">Draft Documents Open for Feedback</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="docs-banner">
+    <div class="docs-banner-head">
+      <span class="docs-banner-icon">📄</span>
+      <div>
+        <div class="docs-banner-ht">Draft Documents — Now Open for Member Review</div>
+        <div class="docs-banner-sub">Feedback open until 9 June 2026 · Read · Comment · Send your inputs</div>
+      </div>
+    </div>
+    <div class="docs-banner-body">
+      <div class="docs-banner-intro">
+        The Sub-Committee has submitted its report to the Executive Committee. The draft Standard Operating Procedure and the proposed Bylaw Clause have been combined into a single document and are now being shared with all members for suggestions and feedback. All inputs received by <strong style="color:#fff;">9 June 2026</strong> will be considered before the documents are finalised for presentation at the Special General Body Meeting.
+      </div>
+      <div class="docs-link-row">
+        <a href="https://drive.google.com/file/d/1Wrp7rVgMPYqxmQTuWdR1JL3TNw8QmZ_4/view?usp=sharing" class="docs-link-btn" target="_blank" style="max-width:380px;">
+          <span class="docs-link-icon">📄</span>
+          <div>
+            <div class="docs-link-title">Read the Documents →</div>
+            <div class="docs-link-desc">Draft SOP &amp; proposed Bylaw Clause — combined document</div>
+          </div>
+        </a>
+      </div>
+      <div class="docs-feedback">
+        <div class="docs-feedback-t">📬 Send your feedback — deadline 9 June 2026</div>
+        <div class="docs-feedback-d">
+          Read the document and email your suggestions and comments to <a href="mailto:sskzmobakazak@gmail.com">sskzmobakazak@gmail.com</a>. Please include your name, batch, and roll number. All feedback received by <strong style="color:#fff;">9 June 2026</strong> will be considered by the Executive Committee before the documents are finalised.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ELECTION STATUS ─────────────────────────────────────── -->
+  <div style="margin-bottom:6px;margin-top:2px;">
+    <div class="sec-ey">Current Status</div>
+    <div class="sec-h">Election 2026–27</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="status-card">
+    <div class="status-head">
+      <span class="status-head-t">SSKZM OBA Executive Committee Election 2026–27</span>
+      <span class="status-badge">VOTER ROLL PREPARATION</span>
+    </div>
+    <div class="status-body">
+      <div class="status-row">
+        <div class="skey">
+          <div class="skey-l">Voter Roll Preparation</div>
+          <div class="skey-v open">Open</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Voter Roll Verification</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Voter Roll Cut Off</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Objection Window Closes</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Nomination Window</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Voting Open</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+        <div class="skey">
+          <div class="skey-l">Voting Closes, Results &amp; AGM Day</div>
+          <div class="skey-v tba">To be announced in due course</div>
+        </div>
+      </div>
+      <div class="status-notice">
+        <p>The voter roll is being prepared. All Life Members are requested to verify their inclusion using the search below and to ensure the Association holds their current primary email address. The voter roll cutoff date will be announced in due course. Members not yet enrolled as Life Members should complete their membership before the cutoff date to be eligible to vote. For information on how to take membership, please visit — <a href="https://sskzmoba.org/Home/membership_fees" target="_blank" style="color:#7a5200;font-weight:600;">https://sskzmoba.org/Home/membership_fees</a></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── VOTER ROLL SEARCH ───────────────────────────────────── -->
+  <div id="vr-section" style="margin-bottom:6px;">
+    <div class="sec-ey">Voter Roll</div>
+    <div class="sec-h">Check Your Inclusion</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="vr-card">
+    <div class="vr-head">
+      <span class="vr-head-t">Voter Roll — 2026–27 Election</span>
+      <span class="vr-status-pill">UNDER PREPARATION</span>
+    </div>
+    <div class="vr-body">
+      <div class="search-row" style="flex-direction:column;">
+  <input class="search-inp" id="vr-inp" placeholder="Your Roll Number"
+         autocomplete="off" autocorrect="off" autocapitalize="off"
+         onkeydown="if(event.key==='Enter')vrSearch()">
+  <input class="search-inp" id="vr-email" type="email" placeholder="Primary Email registered with OBA"
+         autocomplete="email"
+         onkeydown="if(event.key==='Enter')vrSearch()"
+         style="margin-top:8px;">
+  <button class="search-btn" onclick="vrSearch()">Check My Access →</button>
+</div>
+      <div class="vr-result" id="vr-result"></div>
+      <div class="vr-guide">
+        <div class="vr-guide-item"><b>✓ Found &amp; can log in</b>You are on the roll and your primary email is correct. No action needed.</div>
+        <div class="vr-guide-item"><b>✓ Found, cannot log in</b>Your name is on the roll but your primary email needs updating. Contact the General Secretary.</div>
+        <div class="vr-guide-item"><b>✗ Not found — Life Member</b>Submit your membership proof to the General Secretary before the cutoff date, which will be announced in due course.</div>
+        <div class="vr-guide-item"><b>✗ Not yet a member</b>Complete Life Membership enrolment and contact the General Secretary before the cutoff date, which will be announced in due course.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EC NOTICES ─────────────────────────────────────────── -->
+  <div style="margin-bottom:6px;">
+    <div class="sec-ey">From the Executive Committee</div>
+    <div class="sec-h">Official Notices</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="notices-card">
+    <div class="notices-head"><div class="notices-head-t">EC Notices &amp; Updates</div></div>
+
+    <div class="notice-item">
+      <div class="notice-date">29 May 2026</div>
+      <div class="notice-body">
+        <span class="notice-tag nt-imp">Important</span>
+        <div class="notice-title">Draft SOP and Bylaw Clause circulated to all members for feedback</div>
+        <div class="notice-desc">The Sub-Committee has submitted its report. The Executive Committee has reviewed the draft Standard Operating Procedure and proposed Bylaw Clause and is now placing both — combined in a single document — before all members for suggestions and feedback. Members are invited to read the document and write to sskzmobakazak@gmail.com with their inputs by 9 June 2026.</div>
+      </div>
+    </div>
+
+    <div class="notice-item">
+      <div class="notice-date">22 May 2026</div>
+      <div class="notice-body">
+        <span class="notice-tag nt-upd">Update</span>
+        <div class="notice-title">Sub-Committee submits draft SOP and Bylaw Clause to EC</div>
+        <div class="notice-desc">The Sub-Committee constituted to draft the election methodology submitted its report to the Executive Committee, comprising the draft Standard Operating Procedure and the proposed Bylaw Clause laying down detailed procedure for the conduct of elections.</div>
+      </div>
+    </div>
+
+    <div class="notice-item">
+      <div class="notice-date">18 Apr 2026</div>
+      <div class="notice-body">
+        <span class="notice-tag nt-imp">Important</span>
+        <div class="notice-title">Decision to constitute sub-committee to draft SOP and conduct trial. Election Management System prototype approved.</div>
+        <div class="notice-desc">The Executive Committee decided to constitute a sub-committee to finalise the Standard Operating Procedure and conduct a trial of the Election Management System. The prototype system was approved for sub-committee review.</div>
+      </div>
+    </div>
+
+    <div class="notice-item">
+      <div class="notice-date">14 Feb 2026</div>
+      <div class="notice-body">
+        <span class="notice-tag nt-upd">Update</span>
+        <div class="notice-title">E-voting avenues sought</div>
+        <div class="notice-desc">The Executive Committee explored avenues for conducting elections electronically, in line with the AGM's decision to delink elections from Reunion Day and to pursue more efficient and participatory means of conduct.</div>
+      </div>
+    </div>
+
+    <div class="notice-item">
+      <div class="notice-date">19 Jul 2025</div>
+      <div class="notice-body">
+        <span class="notice-tag nt-ann">Announcement</span>
+        <div class="notice-title">AGM decides to delink conduct of AGM and elections from Reunion Day</div>
+        <div class="notice-desc">The Annual General Body Meeting resolved to delink the conduct of the AGM and elections from Reunion Day and to explore more efficient and participatory avenues for conducting them.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── TRANSPARENCY ───────────────────────────────────────── -->
+  <div style="margin-bottom:6px;">
+    <div class="sec-ey">Open &amp; Auditable</div>
+    <div class="sec-h">Transparency</div>
+    <div class="sec-rule"></div>
+  </div>
+  <div class="trans-card">
+    <div class="trans-head">
+      <div class="trans-head-t">Key documents and the system codebase will be published for member review ahead of the election.</div>
+    </div>
+    <div class="trans-grid">
+
+      <div class="trans-item">
+        <div class="trans-icon ti-nv">📄</div>
+        <div>
+          <div class="trans-t">Draft SOP &amp; Proposed Bylaw Clause</div>
+          <div class="trans-d">Combined document — draft Standard Operating Procedure and proposed Bylaw Clause laying down detailed procedure for the conduct of elections.</div>
+          <span class="trans-lk" style="color:var(--gr);font-style:normal;font-weight:600;">Now available for member review — see above ↑</span>
+        </div>
+      </div>
+
+      <div class="trans-item">
+        <div class="trans-icon ti-gr">💻</div>
+        <div>
+          <div class="trans-t">Source Code — GitHub</div>
+          <div class="trans-d">The complete codebase will be published openly before the first live election. Any member may review or nominate a representative to audit it.</div>
+          <span class="trans-lk soon">Repository will be made public before the first live election</span>
+        </div>
+      </div>
+
+      <div class="trans-item">
+        <div class="trans-icon ti-cr">✅</div>
+        <div>
+          <div class="trans-t">Independent Code Audit</div>
+          <div class="trans-d">An independent audit by a technically competent person with no connection to any candidate will be commissioned and the report published before the voting window opens.</div>
+          <span class="trans-lk pending">Independent audit will be commissioned and published before the voting window opens</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── HOW YOUR VOTE IS PROTECTED ────────────────────────── -->
+  <div class="protect-card">
+    <div class="protect-label">Trust Architecture</div>
+    <div class="protect-title">How your vote is protected</div>
+    <div class="protect-items">
+      <div class="pitem"><div class="pitem-dot"></div><div class="pitem-t"><strong style="color:#fff;">Structural anonymity</strong> — the system is designed so that no one can link your vote to your identity, not even the Returning Officer.</div></div>
+      <div class="pitem"><div class="pitem-dot"></div><div class="pitem-t"><strong style="color:#fff;">RO independence</strong> — from the day the Returning Officer is appointed, the EC has zero access to the election system.</div></div>
+      <div class="pitem"><div class="pitem-dot"></div><div class="pitem-t"><strong style="color:#fff;">Receipt token</strong> — every vote generates an anonymous receipt token so you can verify your vote was recorded after results are declared.</div></div>
+      <div class="pitem"><div class="pitem-dot"></div><div class="pitem-t"><strong style="color:#fff;">Data stays with OBA</strong> — all election data resides in the Association's own Google account. No vendor holds your data.</div></div>
+    </div>
+  </div>
+
+</div><!-- end .wrap -->
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<div class="footer">
+  <div class="footer-inner">
+    <div class="footer-l">
+      SSKZM Old Boys Association · Election Management System · 2026–27<br>
+      Powered by Google Apps Script · All data held on OBA's own Google account
+    </div>
+    <div class="footer-links">
+      <span class="footer-lk">GitHub</span>
+      <a href="mailto:sskzmobakazak@gmail.com" style="color:rgba(255,255,255,.4);font-size:10px;text-decoration:none;" class="footer-lk">Contact GS</a>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── DEMO voter roll search ─────────────────────────────────────────── */
+/* In GAS version, this calls google.script.run.searchVoterRoll(query)  */
+
+function vrSearch() {
+  var roll  = document.getElementById('vr-inp').value.trim();
+  var email = document.getElementById('vr-email').value.trim();
+  var res   = document.getElementById('vr-result');
+
+  if (!roll || !email) {
+    res.style.display = 'block';
+    res.innerHTML = '<div class="vr-warn"><div class="vr-warn-t">Please enter both your Roll Number and email address.</div></div>';
+    return;
+  }
+
+  res.style.display = 'block';
+  res.innerHTML = '<div style="padding:12px;color:#666;font-size:12px;">Checking…</div>';
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.status === 'departed') {
+        res.innerHTML = '<div style="text-align:center;padding:14px 0;">'
+          + '<div style="font-size:24px;margin-bottom:8px;">🕊️</div>'
+          + '<div style="font-family:\'Cormorant Garamond\',serif;font-size:16px;font-weight:700;color:#0c2340;margin-bottom:6px;">In Memoriam</div>'
+          + '<div style="font-size:12px;color:#555;line-height:1.8;">This Roll Number belongs to a departed alumnus.<br>We remember them with respect and gratitude.</div>'
+          + '</div>';
+        return;
+      }
+      if (r.status === 'not_found') {
+        res.innerHTML = '<div class="vr-notfound">'
+          + '<div class="vr-notfound-t">Roll Number not found in alumni register</div>'
+          + '<div class="vr-notfound-d">If you believe this is an error, please contact '
+          + 'the General Secretary at <strong>sskzmobakazak@gmail.com</strong> '
+          + 'with your Roll Number, name, and batch.</div></div>';
+        return;
+      }
+      if (r.status === 'error') {
+        res.innerHTML = '<div class="vr-warn"><div class="vr-warn-t">⚠ ' + (r.message || 'System error. Please try again.') + '</div></div>';
+        return;
+      }
+      // status === 'found'
+      var lifeTag  = r.lifeMember
+        ? '<span style="background:#e1f5ee;color:#085041;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Confirmed Life Member</span>'
+        : '<span style="background:#faeeda;color:#7a5200;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Not yet enrolled as Life Member</span>';
+      var emailTag = r.emailMatch
+        ? '<span style="background:#e1f5ee;color:#085041;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Correctly held on record</span>'
+        : (r.hasEmail
+            ? '<span style="background:#fcebeb;color:#8b0000;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Does not match our records</span>'
+            : '<span style="background:#fcebeb;color:#8b0000;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">No email on record</span>');
+
+      var note = '';
+      if (r.lifeMember && r.emailMatch) {
+        note = '<div style="background:#e1f5ee;border-radius:5px;padding:10px 12px;font-size:11px;color:#085041;margin-top:12px;line-height:1.7;">✓ Your details are in order. You will be eligible to vote when the election opens.</div>';
+      } else if (r.lifeMember && !r.emailMatch) {
+        note = '<div style="background:#faeeda;border-radius:5px;padding:10px 12px;font-size:11px;color:#7a5200;margin-top:12px;line-height:1.7;">Your Life Membership is confirmed but your email does not match. Your voting eligibility is at risk — contact the General Secretary to correct your email before the voter roll cutoff date.</div>';
+      } else if (!r.lifeMember && r.emailMatch) {
+        note = '<div style="background:#faeeda;border-radius:5px;padding:10px 12px;font-size:11px;color:#7a5200;margin-top:12px;line-height:1.7;">Your email is correctly held but you are not yet enrolled as a Life Member. You will not be eligible to vote. Please complete your Life Membership before the voter roll cutoff date.</div>';
+      } else {
+        note = '<div style="background:#fcebeb;border-radius:5px;padding:10px 12px;font-size:11px;color:#8b0000;margin-top:12px;line-height:1.7;">Neither your Life Membership nor your email address is in order. Please contact the General Secretary.</div>';
+      }
+
+      res.innerHTML = '<div class="vr-found">'
+        + '<div class="vr-found-name">' + (r.name || 'Alumni Record Found') + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid #e8f5ee;">'
+        + '<span style="color:#555;font-weight:500;">Life Membership</span>' + lifeTag + '</div>'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 0;">'
+        + '<span style="color:#555;font-weight:500;">Email Address 1</span>' + emailTag + '</div>'
+        + '</div>' + note + '</div>';
+    })
+    .withFailureHandler(function() {
+      res.innerHTML = '<div class="vr-warn"><div class="vr-warn-t">⚠ Connection error. Please try again.</div></div>';
+    })
+    .checkAlumniAccess(roll, email);
+}
+</script>
+
+</body>
+</html>
