@@ -338,14 +338,12 @@ var AdminPanel = (function() {
     }
     
     if (tabId === 'presec') {
-      var presecElecId = AdminPanel._currentElectionId || AdminPanel._scrutinySelectedElec || '';
-      if (!presecElecId) {
-        return '<div style="padding:16px;color:#b91c1c;font-size:.9rem;">No election selected. Go to Elections tab first.</div>';
-      }
-      setTimeout(function() { AdminPanel._openPresecChecklist(presecElecId); }, 0);
-      return '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
+      setTimeout(function() { AdminPanel._loadPresecTab(); }, 0);
+      return '<div id="presec-content">' +
+        '<div style="text-align:center;padding:32px 16px;color:#6b7280;">' +
         '<div class="spinner"></div>' +
-        '<div style="font-size:.85rem;margin-top:12px;">Loading checklist\u2026</div></div>';
+        '<div style="font-size:.85rem;margin-top:12px;">Loading elections\u2026</div>' +
+        '</div></div>';
     }
 
     if (tabId === 'voter_roll_draft') {
@@ -1352,8 +1350,56 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
     .updateElectionStatus(App.token, id, nextStatus, overrideNote || '', getTEMAuthId());
 },
 
+_presecSelectedElec: '',
+
+_loadPresecTab: function() {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var c = document.getElementById('presec-content');
+      if (!c) return;
+      if (!res || !res.success || !res.elections || res.elections.length === 0) {
+        c.innerHTML = '<div style="padding:16px;color:#b91c1c;font-size:.9rem;">No elections found.</div>';
+        return;
+      }
+      var elections = res.elections;
+      var prefill = AdminPanel._currentElectionId;
+      var valid = elections.some(function(e) { return e.id === prefill; });
+      AdminPanel._presecSelectedElec = valid ? prefill : elections[0].id;
+
+      var selHtml = '<div style="margin-bottom:14px;">' +
+        '<label style="font-size:.83rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Election</label>' +
+        '<select id="presec-elec-sel" onchange="AdminPanel._onPresecElecChange()" ' +
+        'style="width:100%;padding:9px 10px;border:1px solid #ccc;border-radius:4px;font-size:.88rem;">' +
+        elections.map(function(e) {
+          return '<option value="' + escHtml(e.id) + '"' +
+            (e.id === AdminPanel._presecSelectedElec ? ' selected' : '') + '>' +
+            escHtml(e.title) + ' (' + escHtml(e.status) + ')</option>';
+        }).join('') +
+        '</select></div>';
+
+      c.innerHTML = selHtml +
+        '<div id="presec-checklist-mount">' +
+          '<div style="text-align:center;padding:24px;color:#6b7280;"><div class="spinner"></div></div>' +
+        '</div>';
+
+      AdminPanel._openPresecChecklist(AdminPanel._presecSelectedElec);
+    })
+    .withFailureHandler(function() {
+      var c = document.getElementById('presec-content');
+      if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_onPresecElecChange: function() {
+  var sel = document.getElementById('presec-elec-sel');
+  if (!sel) return;
+  AdminPanel._presecSelectedElec = sel.value;
+  AdminPanel._openPresecChecklist(sel.value);
+},
+
 _openPresecChecklist: function(electionId) {
-  var body = document.getElementById('admin-content');
+  var body = document.getElementById('presec-checklist-mount') || document.getElementById('admin-content');
   if (!body) return;
   body.innerHTML = '<div style=\"text-align:center;padding:32px 16px;color:#6b7280;\">' +
     '<div class=\"spinner\"></div>' +
