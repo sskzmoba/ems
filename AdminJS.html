@@ -3527,7 +3527,7 @@ _confirmP2Ext: function(elecId) {
   _renderHandoverChecklist: function(res, elecId) {
     var items   = res.items;
     var role    = res.role;
-    var isRO    = (role === 'RO_ADMIN' || role === 'TEM');
+    var isRO    = (role === 'RO_ADMIN' || role === 'DEPUTY_RO' || role === 'TEM');
     var isScrut = (role === 'SCRUTINEER');
 
     var ITEMS = [

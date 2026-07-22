@@ -7622,7 +7622,7 @@ function getHandoverChecklist(token, electionId) {
 function lockECOfficers(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'lockECOfficers');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -7651,7 +7651,7 @@ function lockECOfficers(token, authId) {
 function applySheetProtections(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'applySheetProtections');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -7915,7 +7915,7 @@ function getSystemStatus(token) {
 function recordVersionVerified(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'recordVersionVerified');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -7930,7 +7930,7 @@ function recordVersionVerified(token, authId) {
 function recordGithubTransferred(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'recordGithubTransferred');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
