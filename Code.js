@@ -5203,7 +5203,7 @@ function initSystemBSheets() {
 function getAdminList(token) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
 
   var rows = sheetData(SHEETS.ADMINS);
   var admins = rows.map(function(r) {
@@ -7882,7 +7882,7 @@ function getPartScrutineerConfirmationStatus(electionId, part) {
 function getSystemStatus(token) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  var allowed = ['RO_ADMIN','TEM'];
+  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM'];
   if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
 
   // Last AdminLog entry
