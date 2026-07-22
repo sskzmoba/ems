@@ -5021,7 +5021,7 @@ function initSystemBSheets() {
     'Voters': [
       'RollNo','Name','Surname','Batch','Email',
       'PhoneCC','Phone','Phone2CC','Phone2',
-      'LifeMember','EmailVerified'
+      'LifeMember','EmailVerified','Reserved1','Reserved2','VerificationCategory'
     ],
     'Elections': [
       'ID','Title','Description','Status','StartDate','EndDate',
@@ -5029,7 +5029,8 @@ function initSystemBSheets() {
       'OrgSecyRestricted','ResultVisibility','NomDeadline','ECContact',
       'NomPhase','NomExtCount','NomExtDeadline','MinRequiredPosts',
       'Mode','TrialElection','BypassFloors',
-      'VDay','VoteClose','DeclareDay','SGMDate','CertifiedAt','SeatConfig'
+      'VDay','VoteClose','DeclareDay','SGMDate','CertifiedAt','SeatConfig',
+      'CandPubAt','VotesHash','InternalTest'
     ],
     'Candidates': [
       'ID','ElectionID','PostName','PostOrder','CandName',
@@ -5123,8 +5124,8 @@ function initSystemBSheets() {
     'TEMAuth': [
       'AuthID','ElectionID','IssuedBy','IssuedAt',
       'Scope','ActionTypes','ExpiresAt','UsedAt',
-      'UsedCount','Revoked','RevokedAt','Notes'
-    ],   // 12 cols ✓
+      'UsedCount','Revoked','RevokedAt','Notes','ConsumedActions'
+    ],   // 13 cols ✓
     'ROPanelLog': [
       'PanelLogID','ElectionID','PanelIteration','RollNo','Name',
       'Batch','PublishedAt','ObjectionFiled','ObjectionText','ObjectionFiledBy',
