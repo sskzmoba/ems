@@ -1870,8 +1870,11 @@ _renderAdminsList: function(admins) {
     DEPUTY_RO:  'Deputy RO',
     TEM:        'Tech Election Manager',
     SCRUTINEER: 'Scrutineer',
-    OBSERVER:   'Observer'
+    OBSERVER:   'Observer',
+    EC_OFFICER: 'EC Officer'
   };
+  var isRO = (App.role === 'RO_ADMIN' || App.role === 'DEPUTY_RO' || App.role === 'TEM');
+  var ecActiveCount = admins.filter(function(a) { return a.role === 'EC_OFFICER' && a.status !== 'DISABLED'; }).length;
 
   var html =
     '<div style="margin-bottom:16px;">' +
@@ -1894,6 +1897,28 @@ _renderAdminsList: function(admins) {
             'Record: No TEM Appointed for This Election' +
           '</button>' +
           '<div id="no-tem-result" style="display:none;margin-top:10px;font-size:.85rem;color:#16a34a;"></div>' +
+        '</div>' +
+      '</div>'
+    : '') +
+    // EC Officer lockout — RO/DEPUTY_RO/TEM only
+    (isRO ?
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">EC Officer Lockout</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+            (ecActiveCount > 0 ?
+              ecActiveCount + ' EC Officer account' + (ecActiveCount === 1 ? '' : 's') + ' still active. ' +
+              'Nominations cannot open until all EC Officer accounts are disabled.'
+            :
+              'No active EC Officer accounts.') +
+          '</div>' +
+          (ecActiveCount > 0 ?
+            '<button onclick="AdminPanel._lockECOfficers()" ' +
+              'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;">' +
+              'Lock all EC Accounts' +
+            '</button>'
+          : '') +
         '</div>' +
       '</div>'
     : '');
@@ -2293,6 +2318,22 @@ _recordNoTEM: function() {
     })
     .withFailureHandler(function() { showToast('Error recording declaration.', true); })
     .recordNoTEMDeclaration(App.token, electionId);
+},
+
+_lockECOfficers: function() {
+  if (!confirm('Lock all EC Officer accounts now?\n\nThis will disable all EC_OFFICER logins immediately. This action is logged to the audit record.')) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('EC Officer accounts locked (' + res.count + ' accounts disabled).');
+        AdminPanel._loadAdmins();
+      } else {
+        showToast((res && res.message) || 'Lock failed.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — please try again.'); })
+    .lockECOfficers(App.token, getTEMAuthId());
 },
 
 // ── VOTERS TAB ───────────────────────────────────────────────
@@ -4176,22 +4217,6 @@ _confirmP2Ext: function(elecId) {
         if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error. Please try again.</div>';
       })
       .generateElectionRecordPDF(App.token, elecId, getTEMAuthId());
-  },
-
-  _lockECOfficers: function() {
-    if (!confirm('Lock all EC Officer accounts now?\n\nThis will disable all EC_OFFICER logins immediately. This action is logged to the audit record.')) return;
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('EC Officer accounts locked (' + res.count + ' accounts disabled).');
-          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
-        } else {
-          showToast((res && res.message) || 'Lock failed.');
-        }
-      })
-      .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .lockECOfficers(App.token, getTEMAuthId());
   },
 
 // ── TALLY TAB ────────────────────────────────────────────────
