@@ -7575,52 +7575,6 @@ function recordTallyCoSign(token, electionId, confirmation, authId) {
 
 // ============================================================
 
-function getHandoverChecklist(token, electionId) {
-  var sess = getSession(token);
-  if (!sess) return { success: false, message: 'Session expired.' };
-  var allowed = ['RO_ADMIN','DEPUTY_RO','TEM','SCRUTINEER'];
-  if (allowed.indexOf(sess.role) === -1) return { success: false, message: 'Access denied.' };
-
-  var logSh   = getSheet(SHEETS.ADMIN_LOG);
-  var logData = logSh.getDataRange().getValues();
-
-  var items = {
-    ec_locked:            { done: false, at: '', by: '' },
-    voter_roll_certified: { done: false, at: '', by: '' },
-    sheet_protections:    { done: false, at: '', by: '' },
-    version_verified:     { done: false, at: '', by: '' },
-    github_transferred:   { done: false, at: '', by: '' }
-  };
-
-  for (var i = 1; i < logData.length; i++) {
-    var action  = logData[i][COL.ALOG_ACTION_TYPE].toString();
-    var at      = logData[i][COL.ALOG_TIMESTAMP].toString();
-    var by      = logData[i][COL.ALOG_ADMIN_ID].toString();
-    var desc    = logData[i][COL.ALOG_DESCRIPTION].toString();
-
-    if (action === 'ec_officers_locked') {
-      items.ec_locked = { done: true, at: at, by: by };
-    }
-    if (action === 'voter_roll_certified' &&
-        desc.indexOf('for election ' + electionId) !== -1) {
-      items.voter_roll_certified = { done: true, at: at, by: by };
-    }
-    if (action === 'sheet_protections_applied') {
-      items.sheet_protections = { done: true, at: at, by: by };
-    }
-    if (action === 'version_verified') {
-      items.version_verified = { done: true, at: at, by: by };
-    }
-    if (action === 'github_org_transferred') {
-      items.github_transferred = { done: true, at: at, by: by };
-    }
-  }
-
-  return { success: true, items: items, role: sess.role };
-}
-
-// ============================================================
-
 function lockECOfficers(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };

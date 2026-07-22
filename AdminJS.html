@@ -3656,7 +3656,7 @@ _confirmP2Ext: function(elecId) {
         var defaultElecId = keepSelection ? AdminPanel._handoverSelectedElec : res.elections[0].id;
         AdminPanel._handoverSelectedElec = defaultElecId;
         AdminPanel._renderHandoverShell(res.elections);
-        AdminPanel._loadHandoverChecklist(defaultElecId);
+        AdminPanel._renderHandoverBody(defaultElecId);
       })
       .withFailureHandler(function() {
         var c2 = document.getElementById('handover-content');
@@ -3704,153 +3704,13 @@ _confirmP2Ext: function(elecId) {
     AdminPanel._handoverSelectedElec = sel.value;
     var selEl = AdminPanel._handoverElections.filter(function(e) { return e.id === sel.value; })[0];
     AdminPanel._handoverSelectedElecStatus = selEl ? selEl.status : '';
-    AdminPanel._loadHandoverChecklist(sel.value);
+    AdminPanel._renderHandoverBody(sel.value);
   },
 
-  _loadHandoverChecklist: function(elecId) {
+  _renderHandoverBody: function(elecId) {
     var area = document.getElementById('handover-checklist-area');
     if (!area) return;
-    area.innerHTML =
-      '<div style="text-align:center;padding:24px;color:#6b7280;">' +
-      '<div class="spinner"></div></div>';
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        var area2 = document.getElementById('handover-checklist-area');
-        if (!area2) return;
-        if (!res || !res.success) {
-          area2.innerHTML =
-            '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
-            escHtml((res && res.message) || 'Failed to load checklist.') + '</div>';
-          return;
-        }
-        area2.innerHTML = AdminPanel._renderHandoverChecklist(res, elecId);
-      })
-      .withFailureHandler(function() {
-        var area2 = document.getElementById('handover-checklist-area');
-        if (area2) area2.innerHTML =
-          '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading checklist.</div>';
-      })
-      .getHandoverChecklist(App.token, elecId);
-  },
-
-  _renderHandoverChecklist: function(res, elecId) {
-    var items   = res.items;
-    var role    = res.role;
-    var isRO    = (role === 'RO_ADMIN' || role === 'DEPUTY_RO' || role === 'TEM');
-
-    var ITEMS = [
-      {
-        key:     'ec_locked',
-        label:   'EC Officer accounts locked',
-        desc:    'All EC_OFFICER accounts must be disabled before handover is complete.',
-        roBtn:   true,
-        btnLabel:'Lock EC Accounts',
-        btnFn:   'AdminPanel._lockECOfficers()'
-      },
-      {
-        key:     'voter_roll_certified',
-        label:   'Voter roll certified',
-        desc:    'The voter roll has been certified and uploaded by the RO.',
-        roBtn:   false
-      },
-      {
-        key:     'sheet_protections',
-        label:   'Sheet protections applied',
-        desc:    'Critical sheets are protected against manual editing.',
-        roBtn:   true,
-        btnLabel:'Apply Sheet Protections',
-        btnFn:   'AdminPanel._applySheetProtections()'
-      },
-      {
-        key:     'version_verified',
-        label:   'Version verified',
-        desc:    'Deployed script version matches GitHub commit.',
-        roBtn:   false
-      },
-      {
-        key:     'github_transferred',
-        label:   'GitHub organisation ownership transferred to RO',
-        desc:    'RO has been added as owner of sskzmoba organisation and outgoing custodian removed. No further code pushes possible by EC or developer.',
-        roBtn:   true,
-        btnLabel:'Confirm GitHub Transfer',
-        btnFn:   'AdminPanel._confirmGithubTransferred()'
-      }
-    ];
-
-    var doneCount = 0;
-    ITEMS.forEach(function(item) {
-      if (items[item.key] && items[item.key].done) doneCount++;
-    });
-
-    var allDone = (doneCount === ITEMS.length);
-
-    var html =
-      '<div class="panel-card" style="margin-bottom:14px;">' +
-        '<div class="panel-card-body" style="padding:14px 16px;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-            '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;">Handover Checklist</div>' +
-            '<div style="font-size:.85rem;font-weight:600;color:' +
-              (allDone ? '#166534' : '#92400e') + ';">' +
-              doneCount + ' / ' + ITEMS.length + ' complete' +
-            '</div>' +
-          '</div>' +
-          (allDone ?
-            '<div style="margin-top:10px;padding:10px;background:#dcfce7;border-radius:4px;' +
-            'font-size:.85rem;color:#166534;font-weight:600;">✓ All handover items complete.</div>'
-          : '') +
-        '</div>' +
-      '</div>';
-
-    ITEMS.forEach(function(item) {
-      var state = items[item.key] || { done: false, at: '', by: '' };
-      var isDone = state.done;
-
-      html +=
-        '<div class="panel-card" style="margin-bottom:10px;' +
-          (isDone ? 'border-left:4px solid #166534;' : 'border-left:4px solid #e5e7eb;') + '">' +
-          '<div class="panel-card-body" style="padding:14px 16px;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
-              'gap:8px;margin-bottom:4px;">' +
-              '<div style="font-weight:600;color:#1a3a5c;font-size:.9rem;">' +
-                (isDone ? '✓ ' : '○ ') + escHtml(item.label) +
-              '</div>' +
-              '<span style="font-size:.75rem;padding:2px 8px;border-radius:10px;white-space:nowrap;' +
-                'font-weight:600;background:' + (isDone ? '#dcfce7' : '#fef9c3') + ';' +
-                'color:' + (isDone ? '#166534' : '#92400e') + ';">' +
-                (isDone ? 'Done' : 'Pending') +
-              '</span>' +
-            '</div>' +
-            '<div style="font-size:.82rem;color:#6b7280;margin-bottom:8px;">' +
-              escHtml(item.desc) +
-            '</div>' +
-            (isDone ?
-              '<div style="font-size:.78rem;color:#6b7280;">' +
-                'Completed ' + escHtml(fmtIST(state.at)) +
-                (state.by ? ' by ' + escHtml(state.by) : '') +
-              '</div>'
-            :
-              // Action buttons
-              (item.roBtn && isRO ?
-                '<button onclick="' + item.btnFn + '" ' +
-                  'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
-                  'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
-                  escHtml(item.btnLabel) +
-                '</button>'
-              : '') +
-              (!item.roBtn ?
-                '<div style="font-size:.82rem;color:#9ca3af;font-style:italic;">' +
-                  'This item is confirmed automatically from system records.' +
-                '</div>'
-              : '')
-            ) +
-          '</div>' +
-        '</div>';
-    });
-
-    html += AdminPanel._renderElectionRecordSection(elecId, AdminPanel._handoverSelectedElecStatus);
-
-    return html;
+    area.innerHTML = AdminPanel._renderElectionRecordSection(elecId, AdminPanel._handoverSelectedElecStatus);
   },
 
 // ── DRAW OF LOTS + ELECTION RECORD (SOP 8.4 / 8.6) ─────────────
@@ -3944,7 +3804,7 @@ _confirmP2Ext: function(elecId) {
       .withSuccessHandler(function(res) {
         if (res && res.success) {
           showToast('Draw of lots recorded.');
-          AdminPanel._loadHandoverChecklist(elecId);
+          AdminPanel._renderHandoverBody(elecId);
         } else {
           if (btn) { btn.textContent = 'Record Draw of Lots'; btn.disabled = false; }
           if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
