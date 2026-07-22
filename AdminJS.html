@@ -1431,7 +1431,7 @@ _openPresecChecklist: function(electionId) {
 
       var currentPart = '';
       var backupButtonInserted = false;
-      items.forEach(function(item) {
+      items.forEach(function(item, idx) {
         if (item.part !== currentPart) {
           currentPart = item.part;
           html +=
@@ -1546,6 +1546,34 @@ _openPresecChecklist: function(electionId) {
               '</div>' +
             '</div>' +
           '</div>';
+
+        var isLastOfPart = (idx === items.length - 1) || (items[idx + 1].part !== item.part);
+        if (isLastOfPart && (item.part === 'A' || item.part === 'B')) {
+          var pc = (res.partConfirmations && res.partConfirmations[item.part]) || { done: false };
+          html +=
+            '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:6px;' +
+            'padding:12px;margin:4px 0 10px;">' +
+              '<div style="font-size:.8rem;font-weight:600;color:#374151;margin-bottom:6px;">' +
+                'Scrutineers confirm Part ' + escHtml(item.part) +
+              '</div>' +
+              (pc.done ?
+                '<div style="font-size:.78rem;color:#059669;">' +
+                  '✓ Confirmed ' + escHtml(fmtIST(pc.at)) + (pc.by ? ' by ' + escHtml(pc.by) : '') +
+                '</div>'
+              :
+                '<textarea id="presec-part-confirm-text-' + item.part + '" rows="2" ' +
+                  'placeholder="Enter your confirmation statement…" ' +
+                  'style="width:100%;padding:8px;font-size:.82rem;border:1px solid #d1d5db;' +
+                  'border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:6px;"></textarea>' +
+                '<div id="presec-part-confirm-err-' + item.part + '" ' +
+                  'style="color:#c0392b;font-size:.78rem;margin-bottom:6px;display:none;"></div>' +
+                '<button id="btn-presec-part-confirm-' + item.part + '" ' +
+                  'onclick="AdminPanel._confirmPresecPart(\'' + escHtml(electionId) + '\',\'' + item.part + '\')" ' +
+                  'style="padding:6px 14px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;' +
+                  'font-size:.82rem;cursor:pointer;">Record Part ' + item.part + ' Confirmation</button>'
+              ) +
+            '</div>';
+        }
       });
 
       var allDone = res.allComplete;
@@ -1565,6 +1593,36 @@ _openPresecChecklist: function(electionId) {
       body.innerHTML = '<div style="padding:16px;color:#b91c1c;">Error loading checklist.</div>';
     })
     .getChecklistStatus(App.token, electionId);
+},
+
+_confirmPresecPart: function(electionId, part) {
+  var textEl = document.getElementById('presec-part-confirm-text-' + part);
+  var errEl  = document.getElementById('presec-part-confirm-err-' + part);
+  var btn    = document.getElementById('btn-presec-part-confirm-' + part);
+  var text   = textEl ? textEl.value.trim() : '';
+
+  if (!text || text.length < 5) {
+    if (errEl) { errEl.textContent = 'Please enter a confirmation statement.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Part ' + part + ' confirmation recorded.');
+        AdminPanel._openPresecChecklist(electionId);
+      } else {
+        if (btn) { btn.textContent = 'Record Part ' + part + ' Confirmation'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = 'Record Part ' + part + ' Confirmation'; btn.disabled = false; }
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .recordScrutineerConfirmation(App.token, electionId, part, text, getTEMAuthId());
 },
 
 _runPreVoteBackup: function(electionId) {
@@ -3528,7 +3586,6 @@ _confirmP2Ext: function(elecId) {
     var items   = res.items;
     var role    = res.role;
     var isRO    = (role === 'RO_ADMIN' || role === 'DEPUTY_RO' || role === 'TEM');
-    var isScrut = (role === 'SCRUTINEER');
 
     var ITEMS = [
       {
@@ -3552,13 +3609,6 @@ _confirmP2Ext: function(elecId) {
         roBtn:   true,
         btnLabel:'Apply Sheet Protections',
         btnFn:   'AdminPanel._applySheetProtections()'
-      },
-      {
-        key:     'scrutineer_part_a',
-        label:   'Scrutineer confirmation — Part A',
-        desc:    'Scrutineer has confirmed code/data verification (Part A).',
-        roBtn:   false,
-        scrutBtn: true
       },
       {
         key:     'version_verified',
@@ -3636,23 +3686,7 @@ _confirmP2Ext: function(elecId) {
                   escHtml(item.btnLabel) +
                 '</button>'
               : '') +
-              (item.scrutBtn && (isScrut || isRO) ?
-                '<div>' +
-                  '<textarea id="scrut-part-a-text" rows="2" ' +
-                    'placeholder="Enter your confirmation statement…" ' +
-                    'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;' +
-                    'border-radius:4px;box-sizing:border-box;margin-bottom:8px;resize:vertical;"></textarea>' +
-                  '<div id="scrut-part-a-err" ' +
-                    'style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
-                  '<button onclick="AdminPanel._recordScrutPartA(\'' + escHtml(elecId) + '\')" ' +
-                    'id="btn-scrut-part-a" ' +
-                    'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
-                    'border:none;border-radius:4px;cursor:pointer;font-weight:600;">' +
-                    'Record Part A Confirmation' +
-                  '</button>' +
-                '</div>'
-              : '') +
-              (!item.roBtn && !item.scrutBtn ?
+              (!item.roBtn ?
                 '<div style="font-size:.82rem;color:#9ca3af;font-style:italic;">' +
                   'This item is confirmed automatically from system records.' +
                 '</div>'
@@ -4079,36 +4113,6 @@ _applySheetProtections: function() {
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
       .recordGithubTransferred(App.token, getTEMAuthId());
-  },
-
-  _recordScrutPartA: function(elecId) {
-    var textEl = document.getElementById('scrut-part-a-text');
-    var errEl  = document.getElementById('scrut-part-a-err');
-    var btn    = document.getElementById('btn-scrut-part-a');
-    var text   = textEl ? textEl.value.trim() : '';
-
-    if (!text || text.length < 5) {
-      if (errEl) { errEl.textContent = 'Please enter a confirmation statement.'; errEl.style.display = 'block'; }
-      return;
-    }
-    if (errEl) errEl.style.display = 'none';
-    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('Part A confirmation recorded.');
-          AdminPanel._loadHandoverChecklist(elecId);
-        } else {
-          if (btn) { btn.textContent = 'Record Part A Confirmation'; btn.disabled = false; }
-          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
-        }
-      })
-      .withFailureHandler(function() {
-        if (btn) { btn.textContent = 'Record Part A Confirmation'; btn.disabled = false; }
-        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
-      })
-      .recordScrutineerConfirmation(App.token, elecId, 'A', text, getTEMAuthId());
   },
 
 // ── TALLY TAB ────────────────────────────────────────────────

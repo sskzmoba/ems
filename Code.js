@@ -1774,7 +1774,14 @@ function getChecklistStatus(token, electionId) {
     return true;
   });
 
-  return { success: true, items: items, allComplete: allComplete, electionTitle: elecTitle, electionStatus: elecStatus };
+  // Blanket Part A/B Scrutineer confirmation - informational only, not part of
+  // allComplete (the per-item star confirmations above are already stricter).
+  var partConfirmations = {
+    A: getPartScrutineerConfirmationStatus(electionId, 'A'),
+    B: getPartScrutineerConfirmationStatus(electionId, 'B')
+  };
+
+  return { success: true, items: items, allComplete: allComplete, electionTitle: elecTitle, electionStatus: elecStatus, partConfirmations: partConfirmations };
 }
 
 function recordChecklistItem(token, electionId, itemCode, notes, authId) {
@@ -7581,14 +7588,12 @@ function getHandoverChecklist(token, electionId) {
     ec_locked:            { done: false, at: '', by: '' },
     voter_roll_certified: { done: false, at: '', by: '' },
     sheet_protections:    { done: false, at: '', by: '' },
-    scrutineer_part_a:    { done: false, at: '', by: '' },
     version_verified:     { done: false, at: '', by: '' },
     github_transferred:   { done: false, at: '', by: '' }
   };
 
   for (var i = 1; i < logData.length; i++) {
     var action  = logData[i][COL.ALOG_ACTION_TYPE].toString();
-    var newVal  = logData[i][COL.ALOG_NEW_VALUE].toString();
     var at      = logData[i][COL.ALOG_TIMESTAMP].toString();
     var by      = logData[i][COL.ALOG_ADMIN_ID].toString();
     var desc    = logData[i][COL.ALOG_DESCRIPTION].toString();
@@ -7601,10 +7606,6 @@ function getHandoverChecklist(token, electionId) {
     }
     if (action === 'sheet_protections_applied') {
       items.sheet_protections = { done: true, at: at, by: by };
-    }
-    if (action === 'scrutineer_confirmation' && newVal === electionId &&
-        desc.indexOf('Part A') !== -1) {
-      items.scrutineer_part_a = { done: true, at: at, by: by };
     }
     if (action === 'version_verified') {
       items.version_verified = { done: true, at: at, by: by };
@@ -7854,6 +7855,25 @@ function recordScrutineerConfirmation(token, electionId, part, confirmationText,
     '', electionId);
 
   return { success: true };
+}
+
+// Reads whether Scrutineers have recorded the blanket Part A/B confirmation
+// (recordScrutineerConfirmation) for a given election - used by
+// getChecklistStatus, where this confirmation is surfaced (PreSec, Parts A/B).
+function getPartScrutineerConfirmationStatus(electionId, part) {
+  var logSh   = getSheet(SHEETS.ADMIN_LOG);
+  var logData = logSh.getDataRange().getValues();
+  var result = { done: false, at: '', by: '' };
+  for (var i = 1; i < logData.length; i++) {
+    var action = logData[i][COL.ALOG_ACTION_TYPE].toString();
+    var newVal = logData[i][COL.ALOG_NEW_VALUE].toString();
+    var desc   = logData[i][COL.ALOG_DESCRIPTION].toString();
+    if (action === 'scrutineer_confirmation' && newVal === electionId.toString() &&
+        desc.indexOf('Part ' + part) !== -1) {
+      result = { done: true, at: logData[i][COL.ALOG_TIMESTAMP].toString(), by: logData[i][COL.ALOG_ADMIN_ID].toString() };
+    }
+  }
+  return result;
 }
 
 // ============================================================
