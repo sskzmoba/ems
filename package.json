@@ -1,0 +1,28 @@
+{
+  "//": "dev tooling only (acorn parse-check) — this is a Google Apps Script project, not an npm package",
+  "name": "sskzm-oba-ems-systemb",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Code.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sskzmoba/ems.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/sskzmoba/ems/issues"
+  },
+  "homepage": "https://github.com/sskzmoba/ems#readme",
+  "dependencies": {
+    "acorn": "^8.17.0"
+  }
+}
