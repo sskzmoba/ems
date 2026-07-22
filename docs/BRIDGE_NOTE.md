@@ -73,9 +73,9 @@ Held 1400–1600 hrs IST, hybrid (physical + Google Meet, livestreamed). Quorum 
 
 **Trial resolution-voting at the SGM itself:** the President noted in his address that online attendance registration and resolution voting were trialled alongside the physical process at this SGM, and that this "met with partial success," with shortcomings to be rectified before full implementation at the AGM. **Open item — needs your input, not yet documented anywhere:** what specifically didn't work. This corresponds to Phase D (Resolution Voting) in the old Master Brief status table, previously marked "NOT STARTED" — it has now been attempted at least once, informally, outside the main EMS. Worth a short write-up of what broke before this is picked up as a coding task.
 
-### B.2 SOP / Bylaw Document Pointers — action required
+### B.2 SOP / Bylaw Document Pointers — RESOLVED
 
-Project knowledge currently holds `SSKZMOBA_ElectionsSOP_SubcommitteDraft_20052026.docx` and `SSKZMOBA_ElectionsBylawClause_SubcommitteeDraft_20052026.docx`, both dated 20 May — **pre-SGM sub-committee drafts.** Now that both resolutions have passed (Resolution 2 with the floor amendment above), **confirm whether a final adopted-text version exists and supersede these drafts with it** before Claude Code — or anyone — treats the SOP as authoritative for a sync check.
+Final adopted text now in repo: `docs/SSKZMOBA_Elections_SOP_BylawAmendment_Approved_SGM_18_Jul_2026.pdf` supersedes the 20 May pre-SGM sub-committee drafts (`SSKZMOBA_ElectionsSOP_SubcommitteDraft_20052026.docx` and `SSKZMOBA_ElectionsBylawClause_SubcommitteeDraft_20052026.docx`), which should no longer be treated as authoritative for any sync check. **Note this does not close the separate action in B.1/D.2** — the adopted PDF still reflects Resolution 2 as passed with the floor amendment (EC amendments to the SOP go to the AGM for ratification, not information); that clause still needs updating in the SOP's own text, which remains an open item.
 
 ### B.3 Known SOP↔Code Sync Gaps (Tech Spec Appendix G)
 
