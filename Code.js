@@ -7919,15 +7919,39 @@ function getSystemStatus(token) {
     }
   }
 
+  // Sheet protections applied — check AdminLog for most recent entry
+  var sheetProtectionsAppliedAt = ''; var sheetProtectionsAppliedBy = '';
+  for (var j = logData.length - 1; j >= 1; j--) {
+    if (logData[j][COL.ALOG_ACTION_TYPE].toString() === 'sheet_protections_applied') {
+      sheetProtectionsAppliedAt = logData[j][COL.ALOG_TIMESTAMP].toString();
+      sheetProtectionsAppliedBy = logData[j][COL.ALOG_ADMIN_ID].toString();
+      break;
+    }
+  }
+
+  // GitHub org transfer — check AdminLog for most recent entry
+  var githubTransferredAt = ''; var githubTransferredBy = '';
+  for (var k = logData.length - 1; k >= 1; k--) {
+    if (logData[k][COL.ALOG_ACTION_TYPE].toString() === 'github_org_transferred') {
+      githubTransferredAt = logData[k][COL.ALOG_TIMESTAMP].toString();
+      githubTransferredBy = logData[k][COL.ALOG_ADMIN_ID].toString();
+      break;
+    }
+  }
+
   return {
-    success:            true,
-    deployUrl:          DEPLOY_URL,
-    githubUrl:          'https://github.com/sskzmoba/ems',
-    lastLogAt:          lastLogAt,
-    lastLogAction:      lastLogAction,
-    protectionStatus:   protectionStatus,
-    versionVerifiedAt:  versionVerifiedAt,
-    versionVerifiedBy:  versionVerifiedBy
+    success:                     true,
+    deployUrl:                   DEPLOY_URL,
+    githubUrl:                   'https://github.com/sskzmoba/ems',
+    lastLogAt:                   lastLogAt,
+    lastLogAction:                lastLogAction,
+    protectionStatus:            protectionStatus,
+    versionVerifiedAt:           versionVerifiedAt,
+    versionVerifiedBy:           versionVerifiedBy,
+    sheetProtectionsAppliedAt:   sheetProtectionsAppliedAt,
+    sheetProtectionsAppliedBy:   sheetProtectionsAppliedBy,
+    githubTransferredAt:         githubTransferredAt,
+    githubTransferredBy:         githubTransferredBy
   };
 }
 

@@ -3300,6 +3300,67 @@ _confirmP2Ext: function(elecId) {
 
     html += '</div></div>';
 
+    // Apply sheet protections
+    var protDone = !!res.sheetProtectionsAppliedAt;
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Apply Sheet Protections</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+            'Protects critical sheets against manual editing and installs a live edit-audit alert.' +
+          '</div>' +
+          (protDone ?
+            '<div style="padding:10px;background:#dcfce7;border-radius:4px;' +
+              'font-size:.85rem;color:#166534;margin-bottom:12px;">' +
+              '✓ Last applied ' +
+              escHtml(fmtIST(res.sheetProtectionsAppliedAt)) +
+              ' by ' + escHtml(res.sheetProtectionsAppliedBy) +
+            '</div>'
+          : '') +
+          '<div id="sheet-protect-err" ' +
+            'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="AdminPanel._applySheetProtections()" ' +
+            'id="btn-sheet-protect" ' +
+            'style="width:100%;padding:12px;font-size:.9rem;' +
+            'background:' + (protDone ? '#fff' : '#1a3a5c') + ';' +
+            'color:' + (protDone ? '#1a3a5c' : '#fff') + ';' +
+            'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;font-weight:600;">' +
+            (protDone ? 'Re-apply Sheet Protections' : 'Apply Sheet Protections') +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
+    // GitHub organisation transfer
+    var ghDone = !!res.githubTransferredAt;
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">GitHub Organisation Transfer</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+            'Confirm that the RO has been added as owner of the sskzmoba GitHub organisation ' +
+            'above and the outgoing custodian removed.' +
+          '</div>' +
+          (ghDone ?
+            '<div style="padding:10px;background:#dcfce7;border-radius:4px;' +
+              'font-size:.85rem;color:#166534;margin-bottom:12px;">' +
+              '✓ Last confirmed ' +
+              escHtml(fmtIST(res.githubTransferredAt)) +
+              ' by ' + escHtml(res.githubTransferredBy) +
+            '</div>'
+          : '') +
+          '<div id="github-transfer-err" ' +
+            'style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="AdminPanel._confirmGithubTransferred()" ' +
+            'id="btn-github-transfer" ' +
+            'style="width:100%;padding:12px;font-size:.9rem;' +
+            'background:' + (ghDone ? '#fff' : '#1a3a5c') + ';' +
+            'color:' + (ghDone ? '#1a3a5c' : '#fff') + ';' +
+            'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;font-weight:600;">' +
+            (ghDone ? 'Re-confirm GitHub Transfer' : 'Confirm GitHub Transfer') +
+          '</button>' +
+        '</div>' +
+      '</div>';
+
     // Last AdminLog entry
     html +=
       '<div class="panel-card" style="margin-bottom:12px;">' +
@@ -3480,6 +3541,54 @@ _confirmP2Ext: function(elecId) {
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
       .recordVersionVerified(App.token, getTEMAuthId());
+  },
+
+  _applySheetProtections: function() {
+    if (!confirm('Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.')) return;
+
+    var btn   = document.getElementById('btn-sheet-protect');
+    var errEl = document.getElementById('sheet-protect-err');
+    if (btn) { btn.textContent = 'Applying…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Sheet protections applied.');
+          AdminPanel._loadSettings();
+        } else {
+          if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed to apply protections.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .applySheetProtections(App.token, getTEMAuthId());
+  },
+
+  _confirmGithubTransferred: function() {
+    if (!confirm('Confirm that you have been added as owner of the sskzmoba GitHub organisation and the outgoing custodian has been removed?\n\nThis will be recorded in the audit log.')) return;
+
+    var btn   = document.getElementById('btn-github-transfer');
+    var errEl = document.getElementById('github-transfer-err');
+    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('GitHub transfer recorded.');
+          AdminPanel._loadSettings();
+        } else {
+          if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .recordGithubTransferred(App.token, getTEMAuthId());
   },
 
 // ── HANDOVER TAB ─────────────────────────────────────────────
@@ -4083,38 +4192,6 @@ _confirmP2Ext: function(elecId) {
       })
       .withFailureHandler(function() { showToast('Error — please try again.'); })
       .lockECOfficers(App.token, getTEMAuthId());
-  },
-
-_applySheetProtections: function() {
-    if (!confirm('Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.')) return;
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('Sheet protections applied.');
-          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
-        } else {
-          showToast((res && res.message) || 'Failed to apply protections.');
-        }
-      })
-      .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .applySheetProtections(App.token, getTEMAuthId());
-  },
-
-  _confirmGithubTransferred: function() {
-    if (!confirm('Confirm that you have been added as owner of the sskzmoba GitHub organisation and the outgoing custodian has been removed?\n\nThis will be recorded in the audit log.')) return;
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('GitHub transfer recorded.');
-          AdminPanel._loadHandoverChecklist(AdminPanel._handoverSelectedElec);
-        } else {
-          showToast((res && res.message) || 'Failed.');
-        }
-      })
-      .withFailureHandler(function() { showToast('Error — please try again.'); })
-      .recordGithubTransferred(App.token, getTEMAuthId());
   },
 
 // ── TALLY TAB ────────────────────────────────────────────────
