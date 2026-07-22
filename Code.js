@@ -375,6 +375,21 @@ var TEM_AUTHORISABLE_ACTIONS = {
   ]
 };
 
+// Read-only accessor so the checkbox UI always reflects TEM_AUTHORISABLE_ACTIONS —
+// does not touch requiresTEMAuth or recordROAuthorisation's validation.
+// Access: RO_ADMIN only (matches recordROAuthorisation — this data only feeds
+// the RO's own authorisation-issuing screen).
+function getTemAuthorisableActions(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied. RO only.' };
+  return {
+    success:  true,
+    system:   TEM_AUTHORISABLE_ACTIONS.system.slice(),
+    election: TEM_AUTHORISABLE_ACTIONS.election.slice()
+  };
+}
+
 // ── requiresTEMAuth — internal gate for all write functions ───
 // Call at top of every write function after session validation.
 // Non-TEM roles pass through immediately.

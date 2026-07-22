@@ -7082,7 +7082,7 @@ AdminPanel._loadTEMAuth = function() {
           '<div id="tem-actions-block" style="margin-bottom:10px;">' +
             '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:6px;">Actions (select one or more)</label>' +
             '<div style="border:1px solid #d1d5db;border-radius:6px;padding:10px;max-height:200px;overflow-y:auto;background:#f9fafb;">' +
-            _temActionCheckboxes() +
+            '<div id="tem-actions-list">Loading actions…</div>' +
             '</div>' +
           '</div>' +
           '<div style="margin-bottom:10px;">' +
@@ -7116,6 +7116,7 @@ AdminPanel._loadTEMAuth = function() {
       if (tc) tc.innerHTML = html;
 
       AdminPanel._loadTEMAuthTable();
+      AdminPanel._loadTemActionCheckboxes();
     })
     .withFailureHandler(function(e) {
       document.getElementById('tem-auth-content').innerHTML = '<p style="padding:16px;color:red;">Error loading elections.</p>';
@@ -7213,7 +7214,27 @@ AdminPanel._toggleActionTypes = function() {
   }
 };
 
-function _temActionCheckboxes() {
+AdminPanel._loadTemActionCheckboxes = function() {
+  var mount = document.getElementById('tem-actions-list');
+  if (!mount) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var m = document.getElementById('tem-actions-list');
+      if (!m) return;
+      if (!res || !res.success) {
+        m.innerHTML = '<div style="color:#b91c1c;font-size:.85rem;">Failed to load actions.</div>';
+        return;
+      }
+      m.innerHTML = _temActionCheckboxes(res.system || [], res.election || []);
+    })
+    .withFailureHandler(function() {
+      var m = document.getElementById('tem-actions-list');
+      if (m) m.innerHTML = '<div style="color:#b91c1c;font-size:.85rem;">Connection error loading actions.</div>';
+    })
+    .getTemAuthorisableActions(App.token);
+};
+
+function _temActionCheckboxes(systemActions, electionActions) {
   var groups = {
     '— SYSTEM LEVEL —': {
       'Admin Management':    ['addAdmin','disableAdmin','enableAdmin','sendScrutineerAcceptanceLink'],
@@ -7234,9 +7255,27 @@ function _temActionCheckboxes() {
       'Backup':              ['createPreVoteBackup'],
       'Purge':               ['purgeTrialData'],
       'PreSec Checklist':    ['recordChecklistItem','resetChecklistItem'],
-      'Communications':      ['sendNominationCall','sendVoterRollPublicationNotice','sendCandidateListPublishedNotice','sendResultsDeclaredNotice']
+      'Communications':      ['sendNominationCall','sendVoterRollPublicationNotice','sendCandidateListPublishedNotice','sendResultsDeclaredNotice','replyObservation','sendECReferral']
     }
   };
+
+  // Self-healing: any action the server lists that isn't in the map above
+  // (e.g. a future addition to TEM_AUTHORISABLE_ACTIONS in Code.js that this
+  // cosmetic grouping hasn't caught up with yet) still gets a checkbox,
+  // instead of silently never appearing.
+  var knownSystem = [];
+  Object.keys(groups['— SYSTEM LEVEL —']).forEach(function(cat) {
+    knownSystem = knownSystem.concat(groups['— SYSTEM LEVEL —'][cat]);
+  });
+  var knownElection = [];
+  Object.keys(groups['— ELECTION LEVEL —']).forEach(function(cat) {
+    knownElection = knownElection.concat(groups['— ELECTION LEVEL —'][cat]);
+  });
+  var otherSystem   = (systemActions || []).filter(function(a) { return knownSystem.indexOf(a) === -1; });
+  var otherElection = (electionActions || []).filter(function(a) { return knownElection.indexOf(a) === -1; });
+  if (otherSystem.length)   groups['— SYSTEM LEVEL —']['Other'] = otherSystem;
+  if (otherElection.length) groups['— ELECTION LEVEL —']['Other'] = otherElection;
+
   var html = '';
   Object.keys(groups).forEach(function(groupLabel) {
     html += '<div style="font-size:.8rem;color:#1d4ed8;font-weight:700;margin:12px 0 6px;padding:4px 0;border-bottom:1px solid #e5e7eb;">' + groupLabel + '</div>';
