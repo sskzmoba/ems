@@ -7601,7 +7601,8 @@ function getHandoverChecklist(token, electionId) {
     if (action === 'ec_officers_locked') {
       items.ec_locked = { done: true, at: at, by: by };
     }
-    if (action === 'voter_roll_certified') {
+    if (action === 'voter_roll_certified' &&
+        desc.indexOf('for election ' + electionId) !== -1) {
       items.voter_roll_certified = { done: true, at: at, by: by };
     }
     if (action === 'sheet_protections_applied') {
