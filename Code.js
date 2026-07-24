@@ -10999,7 +10999,9 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
             ' — this would move roll ' + cleanRoll + ' from bracket ' + (oldBracket || '(none)') +
             ' to ' + (newBracket || '(none)') + ', but this roll number is currently ' +
             conflicts.join('; ') + ' for a Batch Representative nomination. ' +
-            'Resolve the nomination first, or resubmit without changing the batch.'
+            'That nomination must be withdrawn (Nominations tab) before this batch correction ' +
+            'can be applied — the candidate may then re-nominate under the corrected bracket if ' +
+            'the nomination window is still open. Or resubmit this edit without changing the batch.'
         };
       }
     }
