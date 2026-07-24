@@ -11007,6 +11007,9 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
     }
   }
 
+  var oldName    = data[rowIdx][COL_VRD.NAME].toString();
+  var oldSurname = data[rowIdx][COL_VRD.SURNAME].toString();
+  var oldBatch   = data[rowIdx][COL_VRD.BATCH].toString();
   var oldEmail   = data[rowIdx][COL_VRD.EMAIL].toString();
   var sheetRow   = rowIdx + 1;
   if (name    !== undefined && name    !== null && name.toString().trim()    !== '') sh.getRange(sheetRow, COL_VRD.NAME    + 1).setValue(name.toString().trim());
@@ -11014,10 +11017,20 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
   if (batch   !== undefined && batch   !== null && batch.toString().trim()   !== '') sh.getRange(sheetRow, COL_VRD.BATCH   + 1).setValue(batch.toString().trim());
   if (email   !== undefined && email   !== null && email.toString().trim()   !== '') sh.getRange(sheetRow, COL_VRD.EMAIL   + 1).setValue(email.toString().trim());
 
-  var newEmail = (email && email.toString().trim() !== '') ? email.toString().trim() : oldEmail;
+  var newName    = (name    && name.toString().trim()    !== '') ? name.toString().trim()    : oldName;
+  var newSurname = (surname !== undefined && surname !== null)  ? surname.toString().trim()  : oldSurname;
+  var newBatch   = (batch   && batch.toString().trim()   !== '') ? batch.toString().trim()   : oldBatch;
+  var newEmail   = (email   && email.toString().trim()   !== '') ? email.toString().trim()   : oldEmail;
+
+  var fieldChanges = [];
+  if (newName    !== oldName)    fieldChanges.push('name '    + oldName    + ' → ' + newName);
+  if (newSurname !== oldSurname) fieldChanges.push('surname ' + oldSurname + ' → ' + newSurname);
+  if (newBatch   !== oldBatch)   fieldChanges.push('batch '   + oldBatch   + ' → ' + newBatch);
+  if (newEmail   !== oldEmail)   fieldChanges.push('email '   + oldEmail   + ' → ' + newEmail);
+
   appendAdminLog(sess.identity, 'voter_draft_row_updated',
     'VoterRollDraft roll ' + cleanRoll + ' updated.' +
-    (newEmail !== oldEmail ? ' Email changed from ' + oldEmail + ' to ' + newEmail + '.' : ''),
+    (fieldChanges.length ? ' ' + fieldChanges.join('; ') + '.' : ' No fields changed.'),
     oldEmail, newEmail);
 
   return { success: true };
