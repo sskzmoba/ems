@@ -147,6 +147,9 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
   <div id="results-btn-area" style="display:none;">
     <button class="btn-results" onclick="goResults()">🏆 View Declared Results</button>
   </div>
+  <div id="voterroll-btn-area" style="display:none;">
+    <button class="btn-results" onclick="goVoterRoll()">📋 View Voter Roll</button>
+  </div>
   <a class="btn-tutorial" onclick="window.top.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works &nbsp;(Tutorial)</a>
 
   <!-- VVA card -->
@@ -206,6 +209,7 @@ var DEPLOY_URL = '<?= ScriptApp.getService().getUrl() ?>';
 
 function goVoterLogin() { window.top.location.href = DEPLOY_URL + '?action=login'; }
 function goResults()    { window.top.location.href = DEPLOY_URL + '?action=results'; }
+function goVoterRoll()  { window.top.location.href = DEPLOY_URL + '?action=voterroll'; }
 
 // ── Date helpers ──────────────────────────────────────────────
 
@@ -529,6 +533,9 @@ google.script.run
     area.innerHTML = renderStatusCard(res);
     if (res.status === 'declared') {
       document.getElementById('results-btn-area').style.display = 'block';
+    }
+    if (res.hasVoterRoll) {
+      document.getElementById('voterroll-btn-area').style.display = 'block';
     }
     if (res.vvaUrl && res.vvaUrl.trim() !== '') {
       document.getElementById('vva-link').href = res.vvaUrl;

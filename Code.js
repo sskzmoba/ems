@@ -2916,6 +2916,13 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
+    // R17 — Public voter roll page (SOP 3.4)
+    if (action === 'voterroll') {
+      return HtmlService.createHtmlOutput(buildVoterRollPage())
+        .setTitle('Voter Roll — SSKZM OBA')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
     // R05–R14 — Nomination / query / consent actions
     var nomResult = doGetNomAction(e);
     if (nomResult) return nomResult;
@@ -3886,6 +3893,103 @@ function buildResultsPage(electionId) {
     '</div>';
 
   return standaloneShell('Election Results — SSKZM OBA', html);
+}
+
+// ============================================================
+// buildVoterRollPage — public voter roll listing (SOP 3.4). No
+// authentication required. Roll No / name / batch only - never email.
+// ============================================================
+function buildVoterRollPage() {
+  var res = getPublicVoterRoll();
+
+  if (!res.success) {
+    var errBody =
+      '<div style="text-align:center;padding:32px 0;">' +
+        '<div style="font-size:2.5rem;margin-bottom:12px;">[LIST]</div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">Voter Roll Not Yet Available</div>' +
+        '<div style="font-size:.88rem;color:#6b7280;line-height:1.6;">' + escHtml(res.message) + '</div>' +
+        '<div style="margin-top:24px;">' +
+          '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.85rem;color:#1a3a5c;">← Back to Election Home</a>' +
+        '</div>' +
+      '</div>';
+    return standaloneShell('Voter Roll — SSKZM OBA', errBody);
+  }
+
+  var statusLine = res.source === 'certified'
+    ? '<div style="font-size:.82rem;color:#059669;font-weight:600;margin-top:4px;">Certified Voter Roll</div>'
+    : '<div style="font-size:.82rem;color:#92400e;font-weight:600;margin-top:4px;">Draft Voter Roll — subject to correction until certified</div>';
+
+  var html =
+    '<div style="text-align:center;padding:16px 0 20px;">' +
+      '<div style="font-size:2.5rem;margin-bottom:8px;">[LIST]</div>' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">Voter Roll</div>' +
+      statusLine +
+    '</div>';
+
+  if (res.objDeadline && res.source === 'draft') {
+    html +=
+      '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;' +
+      'padding:12px 16px;margin-bottom:14px;font-size:.85rem;color:#92400e;">' +
+        '⚠ <strong>Objection window closes ' + escHtml(res.objDeadline) + '.</strong> ' +
+        'Corrections cannot be made after this date — verify your details now.' +
+      '</div>';
+  }
+
+  html +=
+    '<div style="background:#f0f4f8;border:1px solid #c8d4e0;border-radius:8px;' +
+    'padding:14px 16px;margin-bottom:16px;font-size:.82rem;color:#374151;line-height:1.5;">' +
+      'Found an error, or believe you should be listed but aren\'t? If you already ' +
+      'corrected this in the Voter Verification portal after the roll was uploaded ' +
+      'here, that correction has not reached this system. Email the Returning ' +
+      'Officer directly with your Roll No and the correction needed:' +
+    '</div>' +
+    roContactFooter();
+
+  html +=
+    '<input type="text" id="vr-search" placeholder="Search by Roll No, name, or batch…" ' +
+    'oninput="filterVoterRoll()" style="width:100%;box-sizing:border-box;padding:10px 12px;' +
+    'border:1px solid #ccc;border-radius:4px;font-size:.9rem;margin-bottom:6px;" />' +
+    '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:12px;" id="vr-count">' +
+      res.count + ' members' +
+    '</div>' +
+    '<div id="vr-list">';
+
+  res.rows.forEach(function(r) {
+    var hay = (r.roll + ' ' + r.name + ' ' + r.batch).toLowerCase();
+    html +=
+      '<div class="vr-row" data-search="' + escHtml(hay) + '" style="display:flex;' +
+      'align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+        '<div style="width:70px;flex-shrink:0;font-size:.82rem;color:#374151;">' + escHtml(r.roll) + '</div>' +
+        '<div style="flex:1;min-width:0;font-size:.85rem;color:#1a3a5c;">' + escHtml(r.name) + '</div>' +
+        '<div style="width:60px;flex-shrink:0;text-align:right;font-size:.8rem;color:#6b7280;">' + escHtml(r.batch) + '</div>' +
+      '</div>';
+  });
+
+  html +=
+    '</div>' +
+    '<div id="vr-no-match" style="display:none;text-align:center;padding:20px;color:#9ca3af;font-size:.85rem;">' +
+      'No members match this search.' +
+    '</div>' +
+    '<div style="text-align:center;margin-top:20px;margin-bottom:8px;">' +
+      '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.83rem;color:#1a3a5c;">← Back to Election Home</a>' +
+    '</div>' +
+    '<script>' +
+      'function filterVoterRoll(){' +
+        'var q=document.getElementById("vr-search").value.trim().toLowerCase();' +
+        'var rows=document.getElementsByClassName("vr-row");' +
+        'var shown=0;' +
+        'for(var i=0;i<rows.length;i++){' +
+          'var hay=rows[i].getAttribute("data-search");' +
+          'var match=(!q||hay.indexOf(q)!==-1);' +
+          'rows[i].style.display=match?"":"none";' +
+          'if(match)shown++;' +
+        '}' +
+        'document.getElementById("vr-count").textContent=shown+" members";' +
+        'document.getElementById("vr-no-match").style.display=(shown===0)?"block":"none";' +
+      '}' +
+    '</script>';
+
+  return standaloneShell('Voter Roll — SSKZM OBA', html);
 }
 
 // ============================================================
@@ -4978,6 +5082,9 @@ function getPublicElectionStatus() {
       }
     } catch (e) { vvaUrl = ''; }
 
+    var hasVoterRoll = false;
+    try { hasVoterRoll = getVoterRollRows('').rows.length > 0; } catch (e) { hasVoterRoll = false; }
+
     return {
       found:       true,
       electionId:  best[COL.ELEC_ID].toString(),
@@ -4990,7 +5097,8 @@ function getPublicElectionStatus() {
       voteClose:   best[COL.ELEC_VOTE_CLOSE].toString(),
       declareDay:  best[COL.ELEC_DECLARE_DAY].toString(),
       resultVis:   best[COL.ELEC_RESULT_VIS].toString(),
-      vvaUrl:      vvaUrl
+      vvaUrl:      vvaUrl,
+      hasVoterRoll: hasVoterRoll
     };
   } catch (e) {
     return { found: false, message: 'Election status unavailable.' };
@@ -10724,6 +10832,65 @@ function getPublicResults(electionId) {
     electionTitle: elec[COL.ELEC_TITLE].toString(),
     posts:         postResults
   };
+}
+
+// ============================================================
+// Mirrors getPublicElectionStatus's priority scan (Code.js:4943) to pick the same
+// "current" election - kept separate rather than refactoring that function, since
+// the roll page needs an electionId (for the schedule lookup) that roll data itself
+// doesn't carry.
+// ============================================================
+function _findCurrentPublicElectionId() {
+  var elections = sheetData(SHEETS.ELECTIONS);
+  var priority = ['active','paused','nominations_open_phase2','nominations_open',
+    'scrutiny','candidates_published','closed','declared','draft'];
+  var best = null; var bestPriority = priority.length;
+  for (var i = 0; i < elections.length; i++) {
+    if (elections[i][COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') continue;
+    var p = priority.indexOf(elections[i][COL.ELEC_STATUS].toString());
+    if (p !== -1 && p < bestPriority) { best = elections[i]; bestPriority = p; }
+  }
+  return best ? best[COL.ELEC_ID].toString() : '';
+}
+
+// ============================================================
+// getPublicVoterRoll — public, unauthenticated. Returns Roll No / name / batch only
+// (never email), per SOP 3.4, plus the real objection deadline from ELECTION_SCHED
+// (not a manually-retyped value) if one has been set.
+// ============================================================
+function getPublicVoterRoll() {
+  var vr = getVoterRollRows('');
+  var rows = (vr.rows || []).map(function(r) {
+    return {
+      roll:  (r[COL.VOTER_ROLL]    || '').toString(),
+      name:  ((r[COL.VOTER_NAME]   || '').toString() + ' ' + (r[COL.VOTER_SURNAME] || '').toString()).trim(),
+      batch: (r[COL.VOTER_BATCH]   || '').toString()
+    };
+  }).filter(function(r) { return r.roll !== ''; });
+
+  rows.sort(function(a, b) { return a.roll.localeCompare(b.roll, undefined, {numeric:true}); });
+
+  if (rows.length === 0) {
+    return { success: false, message: 'No voter roll has been published yet.' };
+  }
+
+  var objDeadline = '';
+  var electionId  = _findCurrentPublicElectionId();
+  if (electionId) {
+    var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+    for (var s = 0; s < schedRows.length; s++) {
+      if (schedRows[s][COL_SCHED.ELEC_ID].toString() !== electionId) continue;
+      var raw = schedRows[s][COL_SCHED.VOTER_ROLL_OBJ_CLOSE];
+      if (raw) {
+        var d = new Date(raw);
+        objDeadline = isNaN(d.getTime()) ? raw.toString() : Utilities.formatDate(d, Session.getScriptTimeZone(), 'd MMM yyyy');
+      }
+      break;
+    }
+  }
+
+  return { success: true, rows: rows, source: vr.source, count: rows.length,
+    objDeadline: objDeadline };
 }
 
 // ============================================================
