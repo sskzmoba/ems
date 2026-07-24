@@ -340,6 +340,7 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'undoAcceptNomination',
     'undoRejectNomination',
     'submitNominationManual',
+    'uploadNominationPhotoAdmin',
     'publishCandidates',
     'triggerPhase2Extension',
     'deleteCandidate',
@@ -9616,6 +9617,7 @@ function getMyNominations(token, electionId) {
       post:             r[COL.NOM_POST].toString(),
       candName:         r[COL.NOM_CAND_NAME].toString(),
       candRoll:         r[COL.NOM_CAND_ROLL].toString(),
+      photo:            r[COL.NOM_PHOTO].toString(),
       status:           r[COL.NOM_STATUS].toString(),
       rejectionReason:  r[COL.NOM_REJECTION].toString(),
       submittedAt:      r[COL.NOM_SUBMITTED_AT].toString(),
@@ -11391,8 +11393,36 @@ function storeDocument(token, electionId, category, filename, base64Data, mimeTy
   }
 }
 
+// _saveNominationPhotoToDrive — shared by uploadNominationPhoto (self-service)
+// and uploadNominationPhotoAdmin (RO/TEM manual entry). Self-provisions a
+// "Candidate Photos" subfolder inside the per-election folder (mirroring
+// getOrCreateElectionFolder's own hasNext()/create pattern) instead of relying
+// on a manually-set PHOTO_FOLDER_ID script property. Returns a Drive
+// "thumbnail" URL — embeddable in <img src>, unlike file.getUrl()'s
+// viewer-page link.
+// ============================================================
+function _saveNominationPhotoToDrive(electionId, filenamePrefix, base64Data, mimeType) {
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elecTitle = electionId;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
+      elecTitle = elecRows[i][COL.ELEC_TITLE].toString();
+      break;
+    }
+  }
+  var elecFolder  = getOrCreateElectionFolder(electionId, elecTitle);
+  var photoIter   = elecFolder.getFoldersByName('Candidate Photos');
+  var photoFolder = photoIter.hasNext() ? photoIter.next() : elecFolder.createFolder('Candidate Photos');
+
+  var ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+  var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType,
+    filenamePrefix + '_' + Date.now() + '.' + ext);
+  var file = photoFolder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1000';
+}
+
 // uploadNominationPhoto — voter uploads their own candidate photo
-// Stores in PHOTO_FOLDER_ID GDrive folder, writes URL to NOM_PHOTO
 // Access: VOTER
 // ============================================================
 function uploadNominationPhoto(token, electionId, base64Data, mimeType, filename) {
@@ -11419,21 +11449,56 @@ function uploadNominationPhoto(token, electionId, base64Data, mimeType, filename
   if (targetRow === -1) return { success: false, message: 'No active nomination found for this election.' };
 
   try {
-    var folderId = PropertiesService.getScriptProperties().getProperty('PHOTO_FOLDER_ID');
-    if (!folderId) return { success: false, message: 'Photo folder not configured. Contact the RO.' };
-    var folder = DriveApp.getFolderById(folderId);
-    var safeFilename = 'photo_' + sess.identity + '_' + electionId + '_' + Date.now() + '.' + (mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg');
-    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, safeFilename);
-    var file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var driveUrl = file.getUrl();
+    var driveUrl = _saveNominationPhotoToDrive(electionId, 'photo_' + sess.identity, base64Data, mimeType);
 
     // Write URL to NOM_PHOTO column
     var sh = getSheet(SHEETS.NOMINATIONS);
     sh.getRange(targetRow + 2, COL.NOM_PHOTO + 1).setValue(driveUrl);
 
     appendAdminLog(sess.identity, 'nomination_photo_uploaded',
-      'Photo uploaded for nomination | Election: ' + electionId + ' | File: ' + safeFilename,
+      'Photo uploaded for nomination | Election: ' + electionId,
+      '', electionId);
+
+    return { success: true, driveUrl: driveUrl };
+  } catch (err) {
+    return { success: false, message: 'Upload failed: ' + err.toString() };
+  }
+}
+
+// uploadNominationPhotoAdmin — RO/TEM uploads a candidate photo on their
+// behalf (manual nomination entry, or retrofitting a photo onto an existing
+// nomination). Looked up by nomId, not identity — the submitter here is not
+// necessarily the candidate.
+// Access: RO_ADMIN, TEM (TEM-authorisable)
+// ============================================================
+function uploadNominationPhotoAdmin(token, nomId, base64Data, mimeType, filename, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+
+  var allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (allowed.indexOf(mimeType) === -1) return { success: false, message: 'Only JPEG, PNG or WebP images are allowed.' };
+  if (!base64Data || base64Data.length > 2700000) return { success: false, message: 'File too large. Maximum size is 2MB.' };
+
+  var nomRows = sheetData(SHEETS.NOMINATIONS);
+  var targetRow = -1, electionId = '';
+  for (var i = 0; i < nomRows.length; i++) {
+    if (nomRows[i][COL.NOM_ID].toString() === nomId.toString()) {
+      targetRow = i; electionId = nomRows[i][COL.NOM_ELEC_ID].toString(); break;
+    }
+  }
+  if (targetRow === -1) return { success: false, message: 'Nomination not found.' };
+
+  var temCheck = requiresTEMAuth(sess, authId, 'uploadNominationPhotoAdmin', electionId);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  try {
+    var driveUrl = _saveNominationPhotoToDrive(electionId, 'photo_admin_' + nomId, base64Data, mimeType);
+    var sh = getSheet(SHEETS.NOMINATIONS);
+    sh.getRange(targetRow + 2, COL.NOM_PHOTO + 1).setValue(driveUrl);
+
+    appendAdminLog(sess.identity, 'nomination_photo_uploaded',
+      'Photo uploaded (admin) for nomination ' + nomId + ' | Election: ' + electionId,
       '', electionId);
 
     return { success: true, driveUrl: driveUrl };

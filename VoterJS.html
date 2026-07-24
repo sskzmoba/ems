@@ -1228,6 +1228,7 @@ var VoterPanel = (function() {
         '<div style=\"margin-bottom:14px;\">' +
           '<label style=\"display:block;font-size:.88rem;font-weight:600;color:#374151;margin-bottom:6px;\">Photo <span style=\"font-weight:400;color:#9ca3af;\">(optional \u2014 JPEG/PNG, max 2MB)</span></label>' +
           '<input type=\"file\" id=\"nom-photo\" accept=\"image/jpeg,image/png,image/webp\" ' +
+          'onchange=\"VoterPanel._previewNomPhoto(this)\" ' +
           'style=\"width:100%;font-size:.88rem;padding:8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;\">' +
           '<div id=\"nom-photo-preview\" style=\"display:none;margin-top:8px;\">' +
             '<img id=\"nom-photo-img\" src=\"\" style=\"width:64px;height:64px;object-fit:cover;border-radius:50%;border:2px solid #1a3a5c;\">' +
@@ -1478,7 +1479,7 @@ var VoterPanel = (function() {
             if (btn) { btn.disabled = false; btn.textContent = 'Submit Nomination'; }
             return;
           }
-          function _showSuccess() {
+          function _showSuccess(photoWarning) {
             var c = document.getElementById('voter-content');
             if (c) c.innerHTML =
               '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
@@ -1490,6 +1491,12 @@ var VoterPanel = (function() {
                   'Confirmation emails have been sent to your proposer and seconder. ' +
                   'Your nomination will be confirmed once both have clicked their links.' +
                 '</div>' +
+                (photoWarning
+                  ? '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;' +
+                      'padding:10px;margin-bottom:16px;font-size:.85rem;color:#92400e;text-align:left;">' +
+                      escHtml(photoWarning) + ' You can add a photo later from My Nominations.' +
+                    '</div>'
+                  : '') +
                 '<button onclick="VoterPanel.showMyNominations()" ' +
                 'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;' +
                 'border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
@@ -1502,16 +1509,10 @@ var VoterPanel = (function() {
               var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
               google.script.run
                 .withSuccessHandler(function(pRes) {
-                  if (!pRes || !pRes.success) {
-                    var pe = document.getElementById('nom-photo-error');
-                    if (pe) { pe.textContent = (pRes && pRes.message) || 'Photo upload failed.'; pe.style.display = 'block'; }
-                  }
-                  _showSuccess();
+                  _showSuccess(!pRes || !pRes.success ? ((pRes && pRes.message) || 'Photo upload failed.') : undefined);
                 })
                 .withFailureHandler(function() {
-                  var pe = document.getElementById('nom-photo-error');
-                  if (pe) { pe.textContent = 'Photo upload failed — please contact the RO.'; pe.style.display = 'block'; }
-                  _showSuccess();
+                  _showSuccess('Photo upload failed — please contact the RO.');
                 })
                 .uploadNominationPhoto(App.token, _election.id, b64, photoFile.type, photoFile.name);
             };
@@ -1561,6 +1562,27 @@ var VoterPanel = (function() {
   function _showNomError(msg) {
     var errEl = document.getElementById('nom-error');
     if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  }
+
+  function _previewNomPhoto(input) {
+    var preview = document.getElementById('nom-photo-preview');
+    var img     = document.getElementById('nom-photo-img');
+    var errEl   = document.getElementById('nom-photo-error');
+    if (errEl) errEl.style.display = 'none';
+    if (!input.files || !input.files[0]) { if (preview) preview.style.display = 'none'; return; }
+    var file = input.files[0];
+    if (file.size > 2097152) {
+      if (errEl) { errEl.textContent = 'Photo is too large. Maximum size is 2MB.'; errEl.style.display = 'block'; }
+      input.value = '';
+      if (preview) preview.style.display = 'none';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      if (img) img.src = e.target.result;
+      if (preview) preview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
   }
 
   function _backToBallot() {
@@ -1684,6 +1706,30 @@ var VoterPanel = (function() {
             '<span style="color:' + (nom.secConfirmed ? '#059669' : '#9ca3af') + ';">' +
               (nom.secConfirmed ? '\u2713' : 'o') + ' Seconder confirmed</span>' +
           '</div>' +
+          (nom.role === 'candidate' &&
+           nom.status !== 'withdrawn' && nom.status !== 'rejected' &&
+           nom.status !== 'consent_declined' && nom.status !== 'deadline_lapsed' ?
+            '<div style="margin-bottom:8px;">' +
+              (nom.photo
+                ? '<img src="' + escHtml(nom.photo) + '" style="width:52px;height:52px;object-fit:cover;' +
+                  'border-radius:50%;border:2px solid #d1d5db;vertical-align:middle;margin-right:10px;">'
+                : '') +
+              '<button onclick="VoterPanel._toggleNomPhotoUpload(\'' + escHtml(nom.id) + '\')" ' +
+              'style="padding:8px 14px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.82rem;cursor:pointer;">' +
+              (nom.photo ? 'Replace Photo' : '+ Add Photo') + '</button>' +
+              '<div id="nom-photo-upload-' + escHtml(nom.id) + '" style="display:none;margin-top:8px;">' +
+                '<input type="file" id="nom-photo-file-' + escHtml(nom.id) + '" ' +
+                'accept="image/jpeg,image/png,image/webp" ' +
+                'style="width:100%;font-size:.85rem;margin-bottom:6px;">' +
+                '<div id="nom-photo-upload-err-' + escHtml(nom.id) + '" ' +
+                'style="display:none;font-size:.8rem;color:#991b1b;margin-bottom:6px;"></div>' +
+                '<button onclick="VoterPanel._uploadMyNomPhoto(\'' + escHtml(nom.id) + '\')" ' +
+                'style="width:100%;padding:10px;background:#1a3a5c;color:#fff;border:none;' +
+                'border-radius:4px;font-size:.85rem;cursor:pointer;min-height:40px;">Upload Photo</button>' +
+              '</div>' +
+            '</div>'
+            : '') +
           (nom.rejectionReason ?
             '<div style="font-size:.82rem;color:#991b1b;background:#fef2f2;' +
             'padding:8px 10px;border-radius:4px;margin-bottom:8px;">' +
@@ -1772,6 +1818,44 @@ var VoterPanel = (function() {
         '</div>';
     }
     return html;
+  }
+
+  function _toggleNomPhotoUpload(nomId) {
+    var el = document.getElementById('nom-photo-upload-' + nomId);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function _uploadMyNomPhoto(nomId) {
+    var fileEl = document.getElementById('nom-photo-file-' + nomId);
+    var errEl  = document.getElementById('nom-photo-upload-err-' + nomId);
+    if (errEl) errEl.style.display = 'none';
+    if (!fileEl || !fileEl.files || !fileEl.files[0]) {
+      if (errEl) { errEl.textContent = 'Please select a photo first.'; errEl.style.display = 'block'; }
+      return;
+    }
+    var file = fileEl.files[0];
+    if (file.size > 2097152) {
+      if (errEl) { errEl.textContent = 'Photo is too large. Maximum size is 2MB.'; errEl.style.display = 'block'; }
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            if (errEl) { errEl.textContent = (res && res.message) || 'Upload failed.'; errEl.style.display = 'block'; }
+            return;
+          }
+          showToast('Photo uploaded.');
+          showMyNominations();
+        })
+        .withFailureHandler(function() {
+          if (errEl) { errEl.textContent = 'Connection error — please try again.'; errEl.style.display = 'block'; }
+        })
+        .uploadNominationPhoto(App.token, _election.id, b64, file.type, file.name);
+    };
+    reader.readAsDataURL(file);
   }
 
   function _showAppealForm(nomId) {
@@ -2069,6 +2153,8 @@ var VoterPanel = (function() {
     showNominationForm: showNominationForm,
     showNominationForm_Phase2: showNominationForm_Phase2,
     showMyNominations: showMyNominations,
+    _toggleNomPhotoUpload: _toggleNomPhotoUpload,
+    _uploadMyNomPhoto: _uploadMyNomPhoto,
     _lookupRollP2: _lookupRollP2,
     _submitPhase2: _submitPhase2,
     _p2Error: _p2Error,
@@ -2076,6 +2162,7 @@ var VoterPanel = (function() {
     _submitAddSeconder: _submitAddSeconder,
     _lookupRoll: _lookupRoll,
     _submitNomination: _submitNomination,
+    _previewNomPhoto: _previewNomPhoto,
     _backToBallot: _backToBallot,
     _confirmWithdraw: _confirmWithdraw,
     _showAppealForm: _showAppealForm,

@@ -2591,6 +2591,16 @@ _renderNominationsShell: function(elections) {
       'box-sizing:border-box;resize:vertical;margin-bottom:14px;"></textarea>' +
 
       '<div style="margin-bottom:14px;">' +
+  '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Photo <span style="font-weight:400;color:#6b7280;">(optional — JPEG/PNG, max 2MB)</span></label>' +
+  '<input type="file" id="mn-photo" accept="image/jpeg,image/png,image/webp" ' +
+  'onchange="AdminPanel._previewMnPhoto(this)" ' +
+  'style="width:100%;font-size:.88rem;padding:8px;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">' +
+  '<div id="mn-photo-preview" style="display:none;margin-top:8px;">' +
+    '<img id="mn-photo-img" src="" style="width:64px;height:64px;object-fit:cover;border-radius:50%;border:2px solid #1a3a5c;">' +
+  '</div>' +
+  '<div id="mn-photo-error" style="display:none;font-size:.8rem;color:#991b1b;margin-top:4px;"></div>' +
+'</div>' +
+      '<div style="margin-bottom:14px;">' +
   '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Supporting Documents</div>' +
   '<div style="font-size:.78rem;color:#6b7280;margin-bottom:8px;">Upload 3 documents (nomination paper, proposer confirmation, seconder confirmation). Acceptance will be blocked until 3 documents are present.</div>' +
   '<div id="mn-doc-uploader"></div>' +
@@ -2840,6 +2850,27 @@ _publishSchedule: function(elecId) {
     .publishSchedule(App.token, elecId, getTEMAuthId());
 },
 
+_previewMnPhoto: function(input) {
+  var preview = document.getElementById('mn-photo-preview');
+  var img     = document.getElementById('mn-photo-img');
+  var errEl   = document.getElementById('mn-photo-error');
+  if (errEl) errEl.style.display = 'none';
+  if (!input.files || !input.files[0]) { if (preview) preview.style.display = 'none'; return; }
+  var file = input.files[0];
+  if (file.size > 2097152) {
+    if (errEl) { errEl.textContent = 'Photo is too large. Maximum size is 2MB.'; errEl.style.display = 'block'; }
+    input.value = '';
+    if (preview) preview.style.display = 'none';
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (img) img.src = e.target.result;
+    if (preview) preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+},
+
 _toggleManualNomForm: function() {
   var f = document.getElementById('manual-nom-form');
   if (!f) return;
@@ -2853,6 +2884,9 @@ _toggleManualNomForm: function() {
       var el = document.getElementById(id); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
     });
     var sel = document.getElementById('mn-post'); if (sel) sel.value = '';
+    var photoEl = document.getElementById('mn-photo'); if (photoEl) photoEl.value = '';
+    var photoPreview = document.getElementById('mn-photo-preview'); if (photoPreview) photoPreview.style.display = 'none';
+    var photoErr = document.getElementById('mn-photo-error'); if (photoErr) photoErr.style.display = 'none';
     // Inject doc uploader for manual_ro_nomination category
     var uploaderEl = document.getElementById('mn-doc-uploader');
     if (uploaderEl) {
@@ -2905,13 +2939,24 @@ _submitManualNom: function() {
   var bio      = (document.getElementById('mn-bio')       || {}).value || '';
   var elecId   = AdminPanel._nominationsSelectedElec;
 
+  var photoEl   = document.getElementById('mn-photo');
+  var photoFile = photoEl && photoEl.files && photoEl.files[0] ? photoEl.files[0] : null;
+
   if (!candRoll.trim()) { _mnErr('Candidate roll number is required.'); return; }
   if (!post)            { _mnErr('Please select a post.'); return; }
   if (!propRoll.trim()) { _mnErr('Proposer roll number is required.'); return; }
   if (bio.trim().length < 30) { _mnErr('A candidate biography is required, with a minimum of 30 characters.'); return; }
+  if (photoFile && photoFile.size > 2097152) { _mnErr('Photo is too large. Maximum size is 2MB.'); return; }
 
   function _mnErr(msg) {
     if (errEl) { errEl.innerHTML = msg; errEl.style.display = 'block'; }
+  }
+
+  function _collapseAndRefresh() {
+    setTimeout(function() {
+      AdminPanel._toggleManualNomForm();
+      AdminPanel._loadNominationsList(elecId);
+    }, 1500);
   }
 
   google.script.run
@@ -2924,11 +2969,27 @@ _submitManualNom: function() {
         okEl.innerHTML = '✓ Nomination entered: ' + escHtml(res.candName) + ' for ' + escHtml(res.post);
         okEl.style.display = 'block';
       }
-      // Refresh list and collapse form after 1.5s
-      setTimeout(function() {
-        AdminPanel._toggleManualNomForm();
-        AdminPanel._loadNominationsList(elecId);
-      }, 1500);
+      if (photoFile) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+          google.script.run
+            .withSuccessHandler(function(pRes) {
+              if (!pRes || !pRes.success) {
+                showToast((pRes && pRes.message) || 'Photo upload failed.', true);
+              }
+              _collapseAndRefresh();
+            })
+            .withFailureHandler(function() {
+              showToast('Photo upload failed — connection error.', true);
+              _collapseAndRefresh();
+            })
+            .uploadNominationPhotoAdmin(App.token, res.nominationId, b64, photoFile.type, photoFile.name, getTEMAuthId());
+        };
+        reader.readAsDataURL(photoFile);
+      } else {
+        _collapseAndRefresh();
+      }
     })
     .withFailureHandler(function() {
       if (errEl) { errEl.innerHTML = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
@@ -3114,6 +3175,14 @@ _renderNominationsList: function(noms) {
                       'border-radius:4px;cursor:pointer;">↺ Seconder</button>'
                   : '') +
 
+                // Upload/Replace Photo
+                '<button onclick="AdminPanel._toggleNomPhotoUpload(\'' +
+                  escHtml(n.id) + '\')" ' +
+                  'style="flex:1;min-width:110px;padding:9px 6px;font-size:.78rem;' +
+                  'background:#fff;color:#1a3a5c;border:1px solid #93c5fd;' +
+                  'border-radius:4px;cursor:pointer;">' +
+                  (n.photo ? 'Replace Photo' : 'Upload Photo') + '</button>' +
+
                 // Withdraw
                 '<button onclick="AdminPanel._confirmWithdraw(\'' +
                   escHtml(n.id) + '\',\'' + escHtml(n.candName) + '\')" ' +
@@ -3121,6 +3190,20 @@ _renderNominationsList: function(noms) {
                   'background:#fff;color:#b91c1c;border:1px solid #fca5a5;' +
                   'border-radius:4px;cursor:pointer;">Withdraw</button>' +
 
+              '</div>'
+            : '') +
+
+          // Photo upload area (RO_ADMIN only)
+          (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
+            ? '<div id="nom-photo-upload-' + escHtml(n.id) + '" style="display:none;margin-top:8px;">' +
+                '<input type="file" id="nom-photo-file-' + escHtml(n.id) + '" ' +
+                'accept="image/jpeg,image/png,image/webp" ' +
+                'style="width:100%;font-size:.85rem;margin-bottom:6px;">' +
+                '<div id="nom-photo-upload-err-' + escHtml(n.id) + '" ' +
+                'style="display:none;font-size:.8rem;color:#991b1b;margin-bottom:6px;"></div>' +
+                '<button onclick="AdminPanel._uploadNomPhoto(\'' + escHtml(n.id) + '\')" ' +
+                'style="width:100%;padding:9px;background:#1a3a5c;color:#fff;border:none;' +
+                'border-radius:4px;font-size:.82rem;cursor:pointer;">Upload</button>' +
               '</div>'
             : '') +
 
@@ -3184,6 +3267,44 @@ _doWithdraw: function(nomId) {
     })
     .withFailureHandler(function() { showToast('Error — withdraw failed.'); })
     .withdrawNomination(App.token, nomId);
+},
+
+_toggleNomPhotoUpload: function(nomId) {
+  var el = document.getElementById('nom-photo-upload-' + nomId);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+},
+
+_uploadNomPhoto: function(nomId) {
+  var fileEl = document.getElementById('nom-photo-file-' + nomId);
+  var errEl  = document.getElementById('nom-photo-upload-err-' + nomId);
+  if (errEl) errEl.style.display = 'none';
+  if (!fileEl || !fileEl.files || !fileEl.files[0]) {
+    if (errEl) { errEl.textContent = 'Please select a photo first.'; errEl.style.display = 'block'; }
+    return;
+  }
+  var file = fileEl.files[0];
+  if (file.size > 2097152) {
+    if (errEl) { errEl.textContent = 'Photo is too large. Maximum size is 2MB.'; errEl.style.display = 'block'; }
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Upload failed.'; errEl.style.display = 'block'; }
+          return;
+        }
+        showToast('Photo uploaded.');
+        AdminPanel._loadNominationsList(AdminPanel._nominationsSelectedElec);
+      })
+      .withFailureHandler(function() {
+        if (errEl) { errEl.textContent = 'Connection error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .uploadNominationPhotoAdmin(App.token, nomId, b64, file.type, file.name, getTEMAuthId());
+  };
+  reader.readAsDataURL(file);
 },
 
 _toggleP2ExtForm: function() {
@@ -7323,7 +7444,7 @@ function _temActionCheckboxes(systemActions, electionActions) {
     },
     '— ELECTION LEVEL —': {
       'Election Management': ['updateElectionStatus','updateElectionSettings','deleteElection','setElectionSchedule','publishSchedule'],
-      'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','publishCandidates','triggerPhase2Extension','resendConfirmationEmail'],
+      'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','uploadNominationPhotoAdmin','publishCandidates','triggerPhase2Extension','resendConfirmationEmail'],
       'Candidates':          ['deleteCandidate'],
       'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft','updateVoterDraftRow'],
       'Scrutiny & Tally':    ['updateScrutinyStatus','updateScrutinyDecision','saveScrutinyItem','recordScrutineerConfirmation','recordDrawOfLots','conductDrawOfLots'],
