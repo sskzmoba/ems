@@ -371,8 +371,12 @@ var VoterPanel = (function() {
     var label = selected === 'NOTA' ? 'None of the Above' :
                 selected === 'ABSTAIN' ? 'Abstain' :
                 _getCandidateName(postName, selected);
+    var confirmMsg = selected === 'ABSTAIN'
+      ? 'Confirm — you are choosing not to vote for "' + postName + '" at this time.\n\n' +
+        'No vote is recorded and you may return to vote on this post any time before voting closes.'
+      : 'Confirm your vote for "' + postName + '":\n\n' + label + '\n\nThis cannot be changed after submission.';
     _showConfirmModal(
-      'Confirm your vote for "' + postName + '":\n\n' + label + '\n\nThis cannot be changed after submission.',
+      confirmMsg,
       function() { _doSubmitVote(postName, selected); },
       'Confirm Vote'
     );
@@ -394,6 +398,11 @@ var VoterPanel = (function() {
         if (!res || !res.success) {
           showToast((res && res.message) ? res.message : 'Vote submission failed. Please try again.');
           if (btn) { btn.disabled = false; btn.textContent = 'Cast Vote for this Post'; }
+          return;
+        }
+        if (res.abstained) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Cast Vote for this Post'; }
+          showToast('Recorded — you may still vote for this post any time before voting closes.');
           return;
         }
         _votedPosts.push(postName);

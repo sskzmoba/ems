@@ -8189,9 +8189,16 @@ function castVote(token, electionId, postName, candidateId) {
     }
   }
  
+  // 2A. Abstain (SOP 7.2/7.10): no vote or NOTA recorded, no receipt token issued -
+  // the voter is defined as not having cast a vote for this post, so they may
+  // return and cast a real vote (or abstain again) at any time before voting closes.
+  if (candidateId === 'ABSTAIN') {
+    return { success: true, abstained: true };
+  }
+
   // 3. Validate candidateId is valid for this post in this election
-  //    (or is 'NOTA' or 'ABSTAIN' — always valid)
-  if (candidateId !== 'NOTA' && candidateId !== 'ABSTAIN') {
+  //    (or is 'NOTA' — always valid)
+  if (candidateId !== 'NOTA') {
     var candRows = sheetData(SHEETS.CANDIDATES);
     var validCand = false;
     for (var k = 0; k < candRows.length; k++) {
