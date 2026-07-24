@@ -6509,13 +6509,39 @@ _renderVoterRollDraft: function(rows, filter, search) {
     html += '<div id="' + cardId + '" style="background:#fff;border:1px solid #e5e7eb;' +
       'border-radius:8px;padding:14px 16px;margin-bottom:10px;">';
 
-    // Top row: name + badge
+    // Top row: name + edit button + badge
     html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;' +
       'gap:8px;margin-bottom:6px;">';
     html += '<div style="font-weight:600;font-size:.95rem;color:#1a3a5c;">' +
       escHtml(name.trim()) + '</div>';
-    html += badge(status);
+    html += '<div style="display:flex;gap:6px;align-items:center;">' +
+      '<button onclick="AdminPanel._toggleVrdEdit(' + idx + ')" ' +
+      'style="padding:3px 10px;background:#fff;color:#1a3a5c;border:1px solid #1a3a5c;' +
+      'border-radius:10px;font-size:.75rem;cursor:pointer;">✏ Edit</button>' +
+      badge(status) +
+      '</div>';
     html += '</div>';
+
+    // Edit form (name/surname/batch/email) — hidden by default
+    html += '<div id="vrd-editform-' + idx + '" style="display:none;background:#f8fafc;' +
+      'border:1px dashed #cbd5e1;border-radius:6px;padding:10px;margin-bottom:10px;">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
+        '<input id="vrd-edit-name-'    + idx + '" type="text" value="' + escHtml((r[1]||'').toString()) + '" placeholder="First name" ' +
+          'style="flex:2;min-width:120px;padding:8px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:.85rem;">' +
+        '<input id="vrd-edit-surname-' + idx + '" type="text" value="' + escHtml((r[2]||'').toString()) + '" placeholder="Surname" ' +
+          'style="flex:2;min-width:120px;padding:8px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:.85rem;">' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
+        '<input id="vrd-edit-batch-'   + idx + '" type="text" value="' + escHtml(batch) + '" placeholder="Batch" ' +
+          'style="flex:1;min-width:100px;padding:8px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:.85rem;">' +
+        '<input id="vrd-edit-email-'   + idx + '" type="email" value="' + escHtml(email) + '" placeholder="Email" ' +
+          'style="flex:2;min-width:180px;padding:8px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:.85rem;">' +
+      '</div>' +
+      '<div id="vrd-edit-err-' + idx + '" style="color:#b91c1c;font-size:.8rem;margin-bottom:6px;display:none;"></div>' +
+      '<button onclick="AdminPanel._saveVrdEdit(\'' + escHtml(rollNo) + '\',' + idx + ')" ' +
+        'style="padding:8px 14px;background:#1a3a5c;color:#fff;border:none;' +
+        'border-radius:5px;font-size:.85rem;cursor:pointer;min-height:44px;">Save Details</button>' +
+      '</div>';
 
     // Meta row
     html += '<div style="font-size:.8rem;color:#6b7280;margin-bottom:10px;">' +
@@ -6587,6 +6613,43 @@ _saveObjectionStatus: function(rollNo, idx) {
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
     .updateObjectionStatus(App.token, rollNo, status, notes, getTEMAuthId());
+},
+
+_toggleVrdEdit: function(idx) {
+  var el = document.getElementById('vrd-editform-' + idx);
+  if (el) el.style.display = (el.style.display === 'none' ? 'block' : 'none');
+},
+
+_saveVrdEdit: function(rollNo, idx) {
+  var name    = document.getElementById('vrd-edit-name-'    + idx);
+  var surname = document.getElementById('vrd-edit-surname-' + idx);
+  var batch   = document.getElementById('vrd-edit-batch-'   + idx);
+  var email   = document.getElementById('vrd-edit-email-'   + idx);
+  var errEl   = document.getElementById('vrd-edit-err-'     + idx);
+  if (errEl) errEl.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Update failed.'; errEl.style.display = 'block'; }
+        return;
+      }
+      showToast('Voter details updated.');
+      var filter = document.getElementById('vrd-filter');
+      var search = document.getElementById('vrd-search');
+      AdminPanel._loadVoterRollDraft(filter ? filter.value : 'all', search ? search.value : '');
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Connection error.'; errEl.style.display = 'block'; }
+    })
+    .updateVoterDraftRow(
+      App.token, rollNo,
+      name    ? name.value    : '',
+      surname ? surname.value : '',
+      batch   ? batch.value   : '',
+      email   ? email.value   : '',
+      getTEMAuthId()
+    );
 },
 
 _certifyRoll: function() {

@@ -10966,6 +10966,45 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
   }
   if (rowIdx === -1) return { success: false, message: 'Roll number ' + cleanRoll + ' not found in the draft roll.' };
 
+  // Batch Rep bracket-conflict guard: only blocks when the correction would actually
+  // move this roll number across a bracket boundary AND it currently holds an active
+  // nomination role (candidate/proposer/seconder) on a Batch Representative post.
+  // Nominations snapshot the candidate's batch at submission (NOM_CAND_BATCH) and
+  // never re-read the voter roll afterward, while the voter's own ballot computes
+  // its Batch Rep post live - an unguarded edit could silently leave a nomination
+  // frozen in the old bracket while the same person's ballot shows the new one.
+  if (batch !== undefined && batch !== null && batch.toString().trim() !== '') {
+    var newBatchTrim = batch.toString().trim();
+    var oldBatchVal  = data[rowIdx][COL_VRD.BATCH].toString();
+    var oldBracket   = getBatchRepBracket(oldBatchVal);
+    var newBracket   = getBatchRepBracket(newBatchTrim);
+    if (oldBracket !== newBracket) {
+      var nomRowsBR = sheetData(SHEETS.NOMINATIONS);
+      var conflicts = [];
+      for (var nb = 0; nb < nomRowsBR.length; nb++) {
+        var nRow = nomRowsBR[nb];
+        if (nRow[COL.NOM_POST].toString().indexOf('Batch Representative') !== 0) continue;
+        var st = nRow[COL.NOM_STATUS].toString();
+        if (st === 'withdrawn' || st === 'rejected' || st === 'consent_declined' || st === 'deadline_lapsed') continue;
+        var role = null;
+        if (nRow[COL.NOM_CAND_ROLL].toString().toUpperCase() === cleanRoll) role = 'candidate';
+        else if (nRow[COL.NOM_PROP_ROLL].toString().toUpperCase() === cleanRoll) role = 'proposer';
+        else if (nRow[COL.NOM_SEC_ROLL].toString().toUpperCase() === cleanRoll) role = 'seconder';
+        if (role) conflicts.push(role + ' on ' + nRow[COL.NOM_ID].toString());
+      }
+      if (conflicts.length > 0) {
+        return {
+          success: false,
+          message: 'Cannot change batch from ' + oldBatchVal + ' to ' + newBatchTrim +
+            ' — this would move roll ' + cleanRoll + ' from bracket ' + (oldBracket || '(none)') +
+            ' to ' + (newBracket || '(none)') + ', but this roll number is currently ' +
+            conflicts.join('; ') + ' for a Batch Representative nomination. ' +
+            'Resolve the nomination first, or resubmit without changing the batch.'
+        };
+      }
+    }
+  }
+
   var oldEmail   = data[rowIdx][COL_VRD.EMAIL].toString();
   var sheetRow   = rowIdx + 1;
   if (name    !== undefined && name    !== null && name.toString().trim()    !== '') sh.getRange(sheetRow, COL_VRD.NAME    + 1).setValue(name.toString().trim());
