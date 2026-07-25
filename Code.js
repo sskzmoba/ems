@@ -3790,7 +3790,7 @@ function buildResultsPage(electionId) {
   if (!res.success) {
     var body =
       '<div style="text-align:center;padding:32px 0;">' +
-        '<div style="font-size:2.5rem;margin-bottom:12px;">[VOTE]</div>' +
+        '<div style="font-size:2.5rem;margin-bottom:12px;">🏆</div>' +
         '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">Results Not Yet Available</div>' +
         '<div style="font-size:.88rem;color:#6b7280;line-height:1.6;">' + escHtml(res.message) + '</div>' +
         '<div style="margin-top:24px;">' +
@@ -3922,7 +3922,7 @@ function buildVoterRollPage() {
   if (!res.success) {
     var errBody =
       '<div style="text-align:center;padding:32px 0;">' +
-        '<div style="font-size:2.5rem;margin-bottom:12px;">[LIST]</div>' +
+        '<div style="font-size:2.5rem;margin-bottom:12px;">📋</div>' +
         '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">Voter Roll Not Yet Available</div>' +
         '<div style="font-size:.88rem;color:#6b7280;line-height:1.6;">' + escHtml(res.message) + '</div>' +
         '<div style="margin-top:24px;">' +
@@ -3938,7 +3938,7 @@ function buildVoterRollPage() {
 
   var html =
     '<div style="text-align:center;padding:16px 0 20px;">' +
-      '<div style="font-size:2.5rem;margin-bottom:8px;">[LIST]</div>' +
+      '<div style="font-size:2.5rem;margin-bottom:8px;">📋</div>' +
       '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">Voter Roll</div>' +
       statusLine +
     '</div>';
@@ -9193,7 +9193,7 @@ function sendConsolidatedObjectionSummary(token, electionId, authId) {
 function storeAppealDocument(token, electionId, appealId, filename, base64Data, mimeType) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'VOTER') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'voter') return { success: false, message: 'Access denied.' };
 
   if (!electionId || !appealId || !filename || !base64Data) {
     return { success: false, message: 'Missing required fields.' };
@@ -11444,7 +11444,7 @@ function _saveNominationPhotoToDrive(electionId, filenamePrefix, base64Data, mim
 function uploadNominationPhoto(token, electionId, base64Data, mimeType, filename) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'VOTER') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'voter') return { success: false, message: 'Access denied.' };
 
   var allowed = ['image/jpeg', 'image/png', 'image/webp'];
   if (allowed.indexOf(mimeType) === -1) return { success: false, message: 'Only JPEG, PNG or WebP images are allowed.' };

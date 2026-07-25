@@ -432,7 +432,7 @@ var VoterPanel = (function() {
 
   function _noElectionCard() {
     return '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-      '<div style="font-size:2.5rem;margin-bottom:12px;">[VOTE]</div>' +
+      '<div style="font-size:2.5rem;margin-bottom:12px;">🗳️</div>' +
       '<div style="font-size:1.1rem;font-weight:700;color:#374151;margin-bottom:8px;">No Election Scheduled</div>' +
       '<div style="font-size:.9rem;">No upcoming election is currently scheduled.</div></div>';
   }
@@ -920,7 +920,7 @@ var VoterPanel = (function() {
 
   function _renderHelp() {
     return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;margin-bottom:14px;">' +
-      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">[VOTE] Voting Guide</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">🗳️ Voting Guide</div>' +
       _helpItem('Who can vote?', 'All Life Members on the electoral roll, verified by the sub-committee before the election.') +
       _helpItem('How do I vote?', 'Tap <strong>My Ballot</strong> when voting is open. For each post, select a candidate (or NOTA/Abstain) and tap "Cast Vote". You will receive a receipt token.') +
       _helpItem('Can I change my vote?', 'No. Once cast, a vote cannot be changed or withdrawn.') +
@@ -1673,7 +1673,7 @@ var VoterPanel = (function() {
     if (nominations.length === 0) {
       html +=
         '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-          '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
+          '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
           '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Nominations Yet</div>' +
           '<div style="font-size:.85rem;margin-bottom:16px;">You have not submitted any nominations.</div>' +
           '<button onclick="VoterPanel.showNominationForm()" ' +
@@ -2073,7 +2073,7 @@ var VoterPanel = (function() {
     if (complaints.length === 0) {
       html +=
         '<div style="text-align:center;padding:24px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">[EMPTY]</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">📭</div>' +
           '<div style="font-size:.9rem;">You have not filed any complaints for this election.</div>' +
         '</div>';
     } else {

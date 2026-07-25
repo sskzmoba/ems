@@ -424,7 +424,7 @@ function _loadElections(role) {
         if (elections.length === 0) {
           html += '<div class="panel-card">' +
             '<div class="panel-card-body" style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
             '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No elections yet</div>' +
             (isRO ? '<div style="font-size:.85rem;">Use the button above to create one.</div>' : '') +
             '</div></div>';
@@ -457,7 +457,7 @@ function _loadElections(role) {
 
               // Dates row
               '<div style="font-size:.82rem;color:#666;margin-bottom:10px;">' +
-                (el.startDate ? '[DATE] ' + escHtml(el.startDate) : 'No start date') +
+                (el.startDate ? '📅 ' + escHtml(el.startDate) : 'No start date') +
                 (el.endDate   ? ' → ' + escHtml(el.endDate)   : '') +
               '</div>' +
 
@@ -893,7 +893,7 @@ _renderManageScreen: function(el) {
 
     // Election Schedule card
     '<div class="panel-card" style="margin-bottom:12px;" id="schedule-card">' +
-      '<div class="panel-card-header">[DATE] Election Schedule</div>' +
+      '<div class="panel-card-header">📅 Election Schedule</div>' +
       '<div class="panel-card-body">' +
         (el.isTrial ?
           '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;' +
@@ -2406,7 +2406,7 @@ _renderVoterList: function(res, role, search) {
   if (voters.length === 0) {
     html += '<div class="panel-card"><div class="panel-card-body" ' +
       'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-      '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+      '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
       '<div style="font-weight:600;color:#374151;margin-bottom:4px;">No voters found</div>' +
       (search ? '<div style="font-size:.85rem;">Try a different search term.</div>' :
                 '<div style="font-size:.85rem;">The voter roll is empty.</div>') +
@@ -2490,7 +2490,7 @@ _loadNominations: function() {
       if (!res || !res.success || !res.elections || res.elections.length === 0) {
         c.innerHTML = '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '<div style="font-size:.85rem;margin-top:4px;">Create an election first.</div>' +
           '</div></div>';
@@ -3767,7 +3767,7 @@ _confirmP2Ext: function(elecId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -4215,7 +4215,7 @@ _confirmP2Ext: function(elecId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -4245,7 +4245,7 @@ _confirmP2Ext: function(elecId) {
         if (c2) c2.innerHTML =
           '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '</div></div>';
         return;
@@ -4629,7 +4629,7 @@ _loadVotedLogData: function(elecId) {
           c2.innerHTML =
             '<div class="panel-card"><div class="panel-card-body" ' +
             'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-            '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+            '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
             '<div style="font-weight:600;color:#374151;">No elections found</div>' +
             '</div></div>';
           return;
@@ -4829,7 +4829,7 @@ _loadScrutiny: function() {
         c2.innerHTML =
           '<div class="panel-card"><div class="panel-card-body" ' +
           'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
-          '<div style="font-size:1.5rem;margin-bottom:8px;">[VOTE]</div>' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
           '<div style="font-weight:600;color:#374151;">No elections found</div>' +
           '</div></div>';
         return;
@@ -5668,7 +5668,7 @@ _renderComplaints: function(complaints) {
   if (complaints.length === 0) {
     html +=
       '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-        '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
+        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
         '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Complaints</div>' +
         '<div style="font-size:.85rem;">No complaints have been filed for this election.</div>' +
       '</div>';
@@ -6215,7 +6215,7 @@ _renderAppeals: function(appeals) {
   if (appeals.length === 0) {
     html +=
       '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
-        '<div style="font-size:2rem;margin-bottom:12px;">[EMPTY]</div>' +
+        '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
         '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Appeals or Objections</div>' +
         '<div style="font-size:.85rem;">None have been filed for this election.</div>' +
       '</div>';
