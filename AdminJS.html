@@ -2600,10 +2600,9 @@ _renderNominationsShell: function(elections) {
   '</div>' +
   '<div id="mn-photo-error" style="display:none;font-size:.8rem;color:#991b1b;margin-top:4px;"></div>' +
 '</div>' +
-      '<div style="margin-bottom:14px;">' +
-  '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Supporting Documents</div>' +
-  '<div style="font-size:.78rem;color:#6b7280;margin-bottom:8px;">Upload 3 documents (nomination paper, proposer confirmation, seconder confirmation). Acceptance will be blocked until 3 documents are present.</div>' +
-  '<div id="mn-doc-uploader"></div>' +
+      '<div style="margin-bottom:14px;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;">' +
+  '<div style="font-size:.82rem;font-weight:600;color:#92400e;margin-bottom:4px;">📎 Supporting Documents</div>' +
+  '<div style="font-size:.8rem;color:#92400e;line-height:1.5;">3 documents (nomination paper, proposer confirmation, seconder confirmation) are required before this nomination can be accepted. Attach them from the <strong>Scrutiny</strong> page after submitting — this nomination has to exist first before documents can be linked to it.</div>' +
 '</div>' +
 '<div id="mn-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
 '<div id="mn-ok" style="color:#16a34a;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
@@ -2887,16 +2886,6 @@ _toggleManualNomForm: function() {
     var photoEl = document.getElementById('mn-photo'); if (photoEl) photoEl.value = '';
     var photoPreview = document.getElementById('mn-photo-preview'); if (photoPreview) photoPreview.style.display = 'none';
     var photoErr = document.getElementById('mn-photo-error'); if (photoErr) photoErr.style.display = 'none';
-    // Inject doc uploader for manual_ro_nomination category
-    var uploaderEl = document.getElementById('mn-doc-uploader');
-    if (uploaderEl) {
-      uploaderEl.innerHTML = AdminPanel._renderDocUploader({
-        electionId:    AdminPanel._nominationsSelectedElec,
-        category:      'manual_ro_nomination',
-        categoryLabel: 'Supporting Documents (Nomination Paper + Confirmations)',
-        containerId:   'mn-doc-uploader'
-      });
-    }
   }
   },
 
@@ -2969,6 +2958,12 @@ _submitManualNom: function() {
         okEl.innerHTML = '✓ Nomination entered: ' + escHtml(res.candName) + ' for ' + escHtml(res.post);
         okEl.style.display = 'block';
       }
+      AdminPanel._showInfoModal(
+        'Nomination for ' + res.candName + ' (' + res.post + ') was created. ' +
+        'Go to Scrutiny for this nomination to attach the 3 required supporting ' +
+        'documents (nomination paper, proposer confirmation, seconder confirmation) — acceptance ' +
+        'will stay blocked until all 3 are present.'
+      );
       if (photoFile) {
         var reader = new FileReader();
         reader.onload = function(e) {
@@ -3267,6 +3262,24 @@ _showLinkModal: function(intro, link) {
           'style="padding:11px 16px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
           'border-radius:4px;font-size:.88rem;cursor:pointer;">Close</button>' +
       '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+},
+
+_showInfoModal: function(message) {
+  var old = document.getElementById('link-modal-overlay');
+  if (old) old.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'link-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:10px;padding:20px;max-width:420px;width:100%;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
+      '<div style="font-size:.92rem;color:#374151;margin-bottom:16px;line-height:1.5;">' + escHtml(message) + '</div>' +
+      '<button onclick="document.getElementById(\'link-modal-overlay\').remove()" ' +
+        'style="width:100%;padding:11px;background:#1a3a5c;color:#fff;border:none;' +
+        'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">Got it</button>' +
     '</div>';
   document.body.appendChild(overlay);
 },
