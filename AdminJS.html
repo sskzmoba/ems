@@ -3222,7 +3222,10 @@ _resendConfirm: function(nomId, role) {
     .withSuccessHandler(function(res) {
       if (res && res.success) {
         if (res.emailSent === false && res.link) {
-          AdminPanel._showLinkModal('Email skipped (trial election) — copy this link and share it with the ' + role + ' manually:', res.link);
+          var links = role === 'consent' && res.declineLink
+            ? [{ label: 'Accept link', url: res.link }, { label: 'Decline link', url: res.declineLink }]
+            : [{ label: 'Link', url: res.link }];
+          AdminPanel._showLinkModal('Email skipped (trial election) — copy the link(s) below and share them with the ' + role + ' manually:', links);
         } else {
           showToast(res.message || ('Email resent to ' + role + '.'));
         }
@@ -3234,34 +3237,45 @@ _resendConfirm: function(nomId, role) {
     .resendConfirmationEmail(App.token, nomId, role, sendEmail, getTEMAuthId());
 },
 
-_showLinkModal: function(intro, link) {
+_showLinkModal: function(intro, links) {
+  if (typeof links === 'string') links = [{ label: 'Link', url: links }];
   var old = document.getElementById('link-modal-overlay');
   if (old) old.remove();
   var overlay = document.createElement('div');
   overlay.id = 'link-modal-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;' +
     'display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  var rowsHtml = '';
+  links.forEach(function(item, idx) {
+    var inputId = 'link-modal-input-' + idx;
+    var btnId   = 'link-modal-copy-btn-' + idx;
+    rowsHtml +=
+      '<div style="margin-bottom:12px;">' +
+        '<div style="font-size:.75rem;font-weight:600;color:#6b7280;margin-bottom:4px;">' + escHtml(item.label) + '</div>' +
+        '<input type="text" readonly value="' + escHtml(item.url) + '" id="' + inputId + '" onclick="this.select()" ' +
+          'style="width:100%;padding:10px;font-size:.8rem;border:1px solid #d1d5db;border-radius:4px;' +
+          'box-sizing:border-box;margin-bottom:6px;font-family:monospace;" />' +
+        '<button id="' + btnId + '" onclick="(function(){' +
+          'var inp=document.getElementById(\'' + inputId + '\');inp.select();' +
+          'navigator.clipboard.writeText(inp.value).then(function(){' +
+            'var b=document.getElementById(\'' + btnId + '\');' +
+            'b.textContent=\'Copied!\';b.style.background=\'#166534\';' +
+            'setTimeout(function(){b.textContent=\'Copy ' + item.label.replace(/'/g, "") + '\';b.style.background=\'#1d4ed8\';},2000);' +
+          '});' +
+        '})()" style="width:100%;padding:10px;background:#1d4ed8;color:#fff;border:none;' +
+          'border-radius:4px;font-size:.85rem;font-weight:600;cursor:pointer;">Copy ' + escHtml(item.label) + '</button>' +
+      '</div>';
+  });
+
   overlay.innerHTML =
     '<div style="background:#fff;border-radius:10px;padding:20px;max-width:480px;width:100%;' +
       'box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
-      '<div style="font-size:.9rem;color:#374151;margin-bottom:12px;line-height:1.5;">' + escHtml(intro) + '</div>' +
-      '<input type="text" readonly value="' + escHtml(link) + '" id="link-modal-input" onclick="this.select()" ' +
-        'style="width:100%;padding:10px;font-size:.8rem;border:1px solid #d1d5db;border-radius:4px;' +
-        'box-sizing:border-box;margin-bottom:12px;font-family:monospace;" />' +
-      '<div style="display:flex;gap:8px;">' +
-        '<button id="link-modal-copy-btn" onclick="(function(){' +
-          'var inp=document.getElementById(\'link-modal-input\');inp.select();' +
-          'navigator.clipboard.writeText(inp.value).then(function(){' +
-            'var b=document.getElementById(\'link-modal-copy-btn\');' +
-            'b.textContent=\'Copied!\';b.style.background=\'#166534\';' +
-            'setTimeout(function(){b.textContent=\'Copy Link\';b.style.background=\'#1d4ed8\';},2000);' +
-          '});' +
-        '})()" style="flex:1;padding:11px;background:#1d4ed8;color:#fff;border:none;' +
-          'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;">Copy Link</button>' +
-        '<button onclick="document.getElementById(\'link-modal-overlay\').remove()" ' +
-          'style="padding:11px 16px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
-          'border-radius:4px;font-size:.88rem;cursor:pointer;">Close</button>' +
-      '</div>' +
+      '<div style="font-size:.9rem;color:#374151;margin-bottom:14px;line-height:1.5;">' + escHtml(intro) + '</div>' +
+      rowsHtml +
+      '<button onclick="document.getElementById(\'link-modal-overlay\').remove()" ' +
+        'style="width:100%;padding:11px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
+        'border-radius:4px;font-size:.88rem;cursor:pointer;margin-top:4px;">Close</button>' +
     '</div>';
   document.body.appendChild(overlay);
 },

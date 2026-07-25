@@ -6356,13 +6356,17 @@ function resendConfirmationEmail(token, nomId, role, sendEmail, authId) {
     var consentUrl = DEPLOY_URL + '?action=consentAccept&nomId=' +
       encodeURIComponent(nom[COL.NOM_ID].toString()) + '&token=' +
       encodeURIComponent(consentToken);
+    var consentDeclineUrl = DEPLOY_URL + '?action=consentDecline&nomId=' +
+      encodeURIComponent(nom[COL.NOM_ID].toString()) + '&token=' +
+      encodeURIComponent(consentToken);
     var consentSubject = 'Reminder: Your consent required — SSKZM OBA Election Nomination';
     var consentBody =
       '<p>Dear ' + nom[COL.NOM_CAND_NAME].toString() + ',</p>' +
       '<p>You have been nominated for the post of <strong>' + nom[COL.NOM_POST].toString() +
       '</strong> in the SSKZM OBA Election.</p>' +
-      '<p>Please click the link below to accept or decline this nomination:</p>' +
-      '<p><a href="' + consentUrl + '">✅ Respond to Nomination</a></p>' +
+      '<p>Please click one of the links below:</p>' +
+      '<p><a href="' + consentUrl + '">✅ ACCEPT this nomination</a></p>' +
+      '<p><a href="' + consentDeclineUrl + '">❌ DECLINE this nomination</a></p>' +
       '<p>SSKZM OBA Elections</p>';
     if (sendEmail) {
       try {
@@ -6378,9 +6382,10 @@ function resendConfirmationEmail(token, nomId, role, sendEmail, authId) {
       success: true,
       emailSent: sendEmail,
       link: consentUrl,
+      declineLink: consentDeclineUrl,
       message: sendEmail
         ? 'Consent email resent to candidate.'
-        : 'Email skipped (trial election). Share this link with the candidate manually: ' + consentUrl
+        : 'Email skipped (trial election). Share these links with the candidate manually.'
     };
   }
 
