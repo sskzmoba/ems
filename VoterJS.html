@@ -112,7 +112,7 @@ var VoterPanel = (function() {
         if (!res || !res.success) {
           if (res && res.wrongRole) {
             c.innerHTML = '<div style="text-align:center;padding:40px 20px;">' +
-              '<div style="font-size:2rem;margin-bottom:12px;">[NO]</div>' +
+              '<div style="font-size:2rem;margin-bottom:12px;">🚫</div>' +
               '<div style="font-size:1rem;font-weight:700;color:#991b1b;margin-bottom:8px;">Wrong Portal</div>' +
               '<div style="font-size:.9rem;color:#374151;margin-bottom:20px;">' +
                 escHtml(res.message) + '</div>' +
@@ -211,7 +211,7 @@ var VoterPanel = (function() {
       return;
     }
     if (status === 'paused') {
-      c.innerHTML = _statusCard('[PAUSED]', 'Voting Temporarily Paused',
+      c.innerHTML = _statusCard('⏸️', 'Voting Temporarily Paused',
         'The Returning Officer has paused voting. Please check back later.' +
         (_election.ecContact ? '<br><br>Contact: <strong>' + escHtml(_election.ecContact) + '</strong>' : ''),
         _election.isTrial ? 'trial' : '');
@@ -222,9 +222,13 @@ var VoterPanel = (function() {
       return;
     }
     if (status === 'scrutiny') {
-      c.innerHTML = _statusCard('[SEARCH]', 'Nominations Under Scrutiny',
+      c.innerHTML = _statusCard('🔍', 'Nominations Under Scrutiny',
         'The Returning Officer is reviewing nominations. No action required from you at this stage.',
-        _election.isTrial ? 'trial' : '');
+        _election.isTrial ? 'trial' : '') +
+        '<button onclick="VoterPanel.showMyNominations()" style="width:100%;padding:14px;background:#fff;' +
+        'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;' +
+        'cursor:pointer;min-height:48px;margin-top:12px;">' +
+        '📄 My Nominations</button>';
       return;
     }
     if (status === 'candidates_published') {
@@ -302,7 +306,7 @@ var VoterPanel = (function() {
   function _renderPostCard(pg, voted, receiptToken) {
     var seatLine = pg.seatCount > 1
       ? '<div style="font-size:.8rem;color:#1a3a5c;background:#eff6ff;padding:4px 10px;' +
-        'border-radius:4px;margin-bottom:10px;display:inline-block;">[PIN] Elect <strong>' +
+        'border-radius:4px;margin-bottom:10px;display:inline-block;">📌 Elect <strong>' +
         pg.seatCount + '</strong> candidates for this post</div><br>'
       : '';
     var dis = voted ? 'disabled ' : '';
@@ -476,7 +480,7 @@ var VoterPanel = (function() {
       (phase === 2 ?
       '<button onclick="VoterPanel.showNominationForm_Phase2()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
-      '[AGREE] Nominate Another Member</button>' : '') +
+      '🤝 Nominate Another Member</button>' : '') +
       '<button onclick="VoterPanel.showNominationsBoard()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
       '☰ View Nominations Board</button></div>';
@@ -935,7 +939,7 @@ var VoterPanel = (function() {
       _helpItem('What is a receipt token?', 'A random code confirming your vote was recorded. It does not reveal who you voted for \u2014 votes are anonymous.') +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
-      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:12px;">[CONTACT] Contact</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:12px;">📞 Contact</div>' +
       '<div style="font-size:.88rem;color:#374151;line-height:1.8;">For help during the election, contact the Returning Officer.<br>' +
         'For technical issues, email the EC Officer.<br><br>' +
         '<em>Contact details will be published with the election notice.</em></div></div>';
@@ -1006,7 +1010,7 @@ var VoterPanel = (function() {
         'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">\u2190 Back</button>' +
       '</div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 16px;">' +
-        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">[AGREE] Nominate Another Member</div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">🤝 Nominate Another Member</div>' +
         '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">You will be recorded as the Proposer. The candidate will receive an email asking them to accept or decline.</div>' +
 
         '<div style="margin-bottom:14px;">' +
@@ -1058,7 +1062,7 @@ var VoterPanel = (function() {
         '<button onclick="VoterPanel._submitPhase2()" ' +
         'style="width:100%;padding:14px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
         'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-        '[AGREE] Submit Nomination</button>' +
+        '🤝 Submit Nomination</button>' +
       '</div>';
   }
 
@@ -1112,7 +1116,7 @@ var VoterPanel = (function() {
 
     google.script.run
       .withSuccessHandler(function(res) {
-        if (btn) { btn.disabled = false; btn.textContent = '[AGREE] Submit Nomination'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
         if (!res || !res.success) {
           _p2Error((res && res.message) || 'Submission failed. Please try again.');
           return;
@@ -1132,7 +1136,7 @@ var VoterPanel = (function() {
         }
       })
       .withFailureHandler(function() {
-        if (btn) { btn.disabled = false; btn.textContent = '[AGREE] Submit Nomination'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🤝 Submit Nomination'; }
         _p2Error('Connection error. Please try again.');
       })
       .submitNomination_Phase2(App.token, _election.id, post, candRoll, secRoll, bio);

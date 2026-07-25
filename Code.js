@@ -49,7 +49,8 @@ var SHEETS = {
   RO_PANEL_LOG:     'ROPanelLog',
   LANDING_CONTENT:  'LandingPageContent',
   EC_HISTORY:       'ECHistory',
-  PRESEC_CHECKLIST: 'PreSecChecklist'
+  PRESEC_CHECKLIST: 'PreSecChecklist',
+  APPEALS_PANEL:    'AppealsPanel'
 };
 
 // ── COL CONSTANTS — modified and frozen sheets ────────────────
@@ -259,6 +260,17 @@ var COL_ECH = {
 
 var COL_RPL   = {};  // ROPanelLog — 15 cols
 
+var COL_AP = {
+  ID:        0,  // unique ID
+  NAME:      1,  // Appeals Panel member's name
+  ROLL:      2,  // Roll No
+  BATCH:     3,  // Batch
+  EMAIL:     4,  // registered email — where appeal/objection notices go
+  IS_CHAIR:  5,  // Boolean — most senior member per SOP 2A.12
+  ADDED_AT:  6,  // ISO timestamp
+  ADDED_BY:  7   // AdminID who added this contact
+};  // 8 cols ✓
+
 // ── EC POSTS — 21 posts in display order ─────────────────────
 
 var EC_POSTS = [
@@ -327,7 +339,9 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'lockECOfficers',
     'recordVersionVerified',
     'recordGithubTransferred',
-    'sendScrutineerAcceptanceLink'
+    'sendScrutineerAcceptanceLink',
+    'addAppealsPanelContact',
+    'removeAppealsPanelContact'
   ],
   election: [
     'updateElectionStatus',
@@ -378,12 +392,13 @@ var TEM_AUTHORISABLE_ACTIONS = {
 
 // Read-only accessor so the checkbox UI always reflects TEM_AUTHORISABLE_ACTIONS —
 // does not touch requiresTEMAuth or recordROAuthorisation's validation.
-// Access: RO_ADMIN only (matches recordROAuthorisation — this data only feeds
-// the RO's own authorisation-issuing screen).
+// Access: RO_ADMIN, DEPUTY_RO (matches recordROAuthorisation — this data only feeds
+// the RO's own authorisation-issuing screen; Deputy RO acts with full RO authority
+// while activated, per SOP 2A.1).
 function getTemAuthorisableActions(token) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied. RO only.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') return { success: false, message: 'Access denied. RO only.' };
   return {
     success:  true,
     system:   TEM_AUTHORISABLE_ACTIONS.system.slice(),
@@ -1112,7 +1127,7 @@ function checkEligibilityAutomatic(token, rollNo, postName, electionId) {
 function setElectionSchedule(token, electionId, schedData, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'EC_OFFICER') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'setElectionSchedule', electionId);
@@ -1326,7 +1341,7 @@ function getPublicSchedule() {
 function publishSchedule(token, electionId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'EC_OFFICER') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'publishSchedule', electionId);
@@ -1385,7 +1400,7 @@ function getLandingPageContent() {
 function setLandingPageContent(token, key, value, type, label, publicVisible, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'EC_OFFICER' && sess.role !== 'TEM') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'EC_OFFICER' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'setLandingPageContent');
@@ -1481,7 +1496,7 @@ function getAllElections(token) {
 function createElection(token, data, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'createElection');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -1585,7 +1600,7 @@ function getElection(token, id) {
 function updateElection(token, id, data, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'updateElectionSettings', id);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -1635,7 +1650,7 @@ function updateElection(token, id, data, authId) {
 function deleteElection(token, id, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'deleteElection', id);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -2000,7 +2015,7 @@ function computeVotesHash(electionId) {
 function updateElectionStatus(token, electionId, newStatus, overrideNote, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'updateElectionStatus', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -2022,6 +2037,27 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
       var currentStatus = rows[i][COL.ELEC_STATUS].toString();
       if (currentStatus === newStatus) {
         return { success: false, message: 'Election is already at that status.' };
+      }
+
+      // ── GATE: scrutiny → candidates_published ─────────────────
+      // Appeals Panel must be constituted and contactable before the final
+      // candidate list is published — per SOP 2A.12 the Panel should be
+      // constituted simultaneously with Scrutineer appointments, well
+      // before this point, not left until rejections/appeals start
+      // happening. Trial elections are exempt (isTrial pattern, C.2).
+      if (currentStatus === 'scrutiny' && newStatus === 'candidates_published') {
+        var isTrialScrPub = rows[i][COL.ELEC_TRIAL].toString() === 'true';
+        if (!isTrialScrPub) {
+          var panelContactsGate = sheetData(SHEETS.APPEALS_PANEL);
+          if (panelContactsGate.length === 0) {
+            return {
+              success: false,
+              message: 'Cannot publish the final candidate list — no Appeals Panel contacts are on record. ' +
+                       'The Appeals Panel (SOP 2A.12) must be constituted and its contact details recorded ' +
+                       'before scrutiny can conclude.'
+            };
+          }
+        }
       }
 
       // ── GATE: candidates_published → active ──────────────────
@@ -2444,7 +2480,7 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
 function triggerPhase2Extension(token, electionId, days, reason, notifyMembers, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'triggerPhase2Extension', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -2660,7 +2696,7 @@ function getECOfficerPanel(token) {
 function getVoterRollDraft(token, page, search) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') {
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
 
@@ -2688,7 +2724,7 @@ function getVoterRollDraft(token, page, search) {
 function uploadVoterRollDraft(token, rows, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') {
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'uploadVoterRollDraft', null);
@@ -2751,7 +2787,7 @@ Logger.log('First row: ' + JSON.stringify(rows[0]));
 function getMessages(token) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
     return { success: false, message: 'Access denied.' };
   }
 
@@ -2786,7 +2822,7 @@ function getMessages(token) {
 function sendHandoverMessage(token, subject, messageText) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN') {
+  if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
     return { success: false, message: 'Access denied.' };
   }
 
@@ -2830,7 +2866,7 @@ function sendHandoverMessage(token, subject, messageText) {
 function acknowledgeMessage(token, messageId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') return { success: false, message: 'Access denied.' };
 
   var sh = getSheet(SHEETS.MESSAGES);
   if (!sh) return { success: false, message: 'Messages sheet not found.' };
@@ -3803,7 +3839,7 @@ function buildResultsPage(electionId) {
   // ── Results HTML ──────────────────────────────────────────
   var html =
     '<div style="text-align:center;padding:16px 0 20px;">' +
-      '<div style="font-size:2.5rem;margin-bottom:8px;">[WIN]</div>' +
+      '<div style="font-size:2.5rem;margin-bottom:8px;">🏆</div>' +
       '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">' + escHtml(res.electionTitle) + '</div>' +
       '<div style="font-size:.82rem;color:#059669;font-weight:600;margin-top:4px;">Results Declared</div>' +
     '</div>';
@@ -3886,7 +3922,7 @@ function buildResultsPage(electionId) {
   html +=
     '<div style="background:#f0f4f8;border:1px solid #c8d4e0;border-radius:8px;' +
     'padding:16px;margin-top:8px;margin-bottom:16px;">' +
-      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:6px;">[SEARCH] Verify Your Vote</div>' +
+      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:6px;">🔍 Verify Your Vote</div>' +
       '<div style="font-size:.82rem;color:#555;margin-bottom:10px;line-height:1.5;">' +
         'Enter your vote receipt token to confirm your vote was counted.' +
       '</div>' +
@@ -5286,7 +5322,10 @@ function initSystemBSheets() {
       'PublicVisible',   // 4 — Boolean — show on Landing Page
       'LastUpdatedBy',   // 5 — AdminID or EC Officer ID
       'LastUpdatedAt'    // 6 — ISO timestamp
-    ]    // 7 cols ✓
+    ],   // 7 cols ✓
+    'AppealsPanel': [
+      'ID','Name','RollNo','Batch','Email','IsChair','AddedAt','AddedBy'
+    ]    // 8 cols ✓
   };
 
   // ── Process each tab in order ─────────────────────────────────
@@ -5295,7 +5334,8 @@ function initSystemBSheets() {
     'Voters','Elections','Candidates','Admins','Nominations',
     'ScrutinyLog','NomQueries','DocStore',
     'VoterRollDraft','Complaints','Appeals','Observations','Messages',
-    'ECOfficerBoardDatabase','ElectionSchedule','TEMAuth','ROPanelLog','LandingPageContent'
+    'ECOfficerBoardDatabase','ElectionSchedule','TEMAuth','ROPanelLog','LandingPageContent',
+    'AppealsPanel'
   ];
 
   tabOrder.forEach(function(tabName) {
@@ -5358,7 +5398,7 @@ function getAdminList(token) {
 function addAdmin(token, data, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'addAdmin');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5417,7 +5457,7 @@ function sendScrutineerAcceptanceLink(token, adminId, authId) {
   if (token) {
     sess = getSession(token);
     if (!sess) return { success: false, message: 'Session expired.' };
-    if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+    if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
     // System-scoped — not tied to a specific election (Scrutineer appointment
     // is an association-level admin action, not an election-level one).
     var temCheck = requiresTEMAuth(sess, authId, 'sendScrutineerAcceptanceLink');
@@ -5487,7 +5527,7 @@ function sendScrutineerAcceptanceLink(token, adminId, authId) {
 function disableAdmin(token, adminId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'disableAdmin');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5526,7 +5566,7 @@ function disableAdmin(token, adminId, authId) {
 function enableAdmin(token, adminId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'enableAdmin');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5597,7 +5637,7 @@ function activateDeputyRO(token, adminId, witnessNote, authId) {
 function recordNoTEMDeclaration(token, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied. RO only.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') return { success: false, message: 'Access denied. RO only.' };
 
   if (!electionId) return { success: false, message: 'Election ID required.' };
 
@@ -5620,7 +5660,7 @@ function recordNoTEMDeclaration(token, electionId) {
 function sendNominationCall(token, electionId, customNote, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'sendNominationCall', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5682,7 +5722,7 @@ function sendNominationCall(token, electionId, customNote, authId) {
 function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'sendVoterRollPublicationNotice', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5748,7 +5788,7 @@ function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, au
 function sendCandidateListPublishedNotice(token, electionId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'sendCandidateListPublishedNotice', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5813,7 +5853,7 @@ function sendCandidateListPublishedNotice(token, electionId, authId) {
 function sendResultsDeclaredNotice(token, electionId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'sendResultsDeclaredNotice', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -5902,7 +5942,7 @@ function deactivateDeputyRO(token, adminId, witnessNote, authId) {
 function recordROAuthorisation(token, electionId, scope, actionTypes, notes, expiresAt) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied. RO only.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') return { success: false, message: 'Access denied. RO only.' };
 
   // Validate scope
   if (scope !== 'specific_actions' && scope !== 'ALL_ACTIONS') {
@@ -5960,7 +6000,7 @@ function recordROAuthorisation(token, electionId, scope, actionTypes, notes, exp
 function revokeROAuthorisation(token, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN') return { success: false, message: 'Access denied. RO only.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') return { success: false, message: 'Access denied. RO only.' };
 
   var sh   = getSheet(SHEETS.TEM_AUTH);
   var rows = sh.getDataRange().getValues();
@@ -5991,7 +6031,7 @@ function revokeROAuthorisation(token, authId) {
 function getTEMAuthorisations(token, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
 
@@ -6195,7 +6235,7 @@ function getNominations(token, electionId) {
 function withdrawNomination(token, nomId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  var isRO = sess.role === 'RO_ADMIN';
+  var isRO = (sess.role === 'RO_ADMIN' || sess.role === 'DEPUTY_RO');
 
   var sh = getSheet(SHEETS.NOMINATIONS);
   if (!sh) return { success: false, message: 'Nominations sheet not found.' };
@@ -6272,7 +6312,7 @@ function withdrawNomination(token, nomId) {
 function resendConfirmationEmail(token, nomId, role, sendEmail, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
 
   if (role !== 'proposer' && role !== 'seconder' && role !== 'consent') {
     return { success: false, message: 'Role must be proposer, seconder, or consent.' };
@@ -6433,6 +6473,80 @@ function resendConfirmationEmail(token, nomId, role, sendEmail, authId) {
 // SCRUTINY FUNCTIONS
 // ============================================================
 
+// Shared auto-assessment for post_eligibility, used identically by getScrutinyData
+// (display) and acceptNomination (the actual gate) so they can never diverge.
+// President: Rules P-A / P-B via checkPresidentEligibility().
+// GS: any EC capacity >=1 year in preceding 15 years via checkGSEligibility().
+// VP/Joint Secretary/Treasurer: no additional criteria beyond Life Member status (bylaw).
+// Batch Representative: candidate's batch bracket must match the post's named bracket.
+// Organising Secretary: candidate's batch must match the election's restricted batch, if any.
+// All other posts: remain Pending for manual Scrutineer review.
+function _autoAssessPostEligibility(nom) {
+  var nomPost = nom[COL.NOM_POST].toString().trim().toLowerCase();
+  if (nomPost === 'president') {
+    var peResult = checkPresidentEligibility(nom[COL.NOM_CAND_ROLL].toString());
+    return {
+      result: peResult.eligible ? 'Yes' : 'No',
+      notes:  '[AUTO] President eligibility — ' + peResult.reason +
+              ' | To override: save a manual Yes/No with explanatory notes.'
+    };
+  } else if (nomPost === 'general secretary') {
+    var gsResult = checkGSEligibility(nom[COL.NOM_CAND_ROLL].toString());
+    return {
+      result: gsResult.eligible ? 'Yes' : 'No',
+      notes:  '[AUTO] GS eligibility — ' + gsResult.reason +
+              ' | To override: save a manual Yes/No with explanatory notes.'
+    };
+  } else if (nomPost === 'vice president' || nomPost === 'joint secretary' || nomPost === 'treasurer') {
+    return {
+      result: 'Yes',
+      notes:  '[AUTO] No additional eligibility criteria for this post beyond Life Member status ' +
+              '(per bylaw). | To override: save a manual Yes/No with explanatory notes.'
+    };
+  } else if (nomPost.indexOf('batch representative') === 0) {
+    var candBatchBR  = nom[COL.NOM_CAND_BATCH].toString().trim();
+    var candBracket  = getBatchRepBracket(candBatchBR);
+    var postBracket  = nom[COL.NOM_POST].toString().replace(/^batch representative\s*/i, '').trim();
+    var bracketMatch = !!candBracket && candBracket === postBracket;
+    return {
+      result: bracketMatch ? 'Yes' : 'No',
+      notes:  bracketMatch
+        ? '[AUTO] Candidate batch ' + candBatchBR + ' falls within the ' + postBracket + ' bracket. ' +
+          '| To override: save a manual Yes/No with explanatory notes.'
+        : '[AUTO] Candidate batch ' + candBatchBR + ' (bracket ' + (candBracket || 'unrecognised') +
+          ') does NOT match the required bracket ' + postBracket + ' for this post. ' +
+          '| To override: save a manual Yes/No with explanatory notes.'
+    };
+  } else if (nomPost === 'organising secretary') {
+    var elecRowsOS = sheetData(SHEETS.ELECTIONS);
+    var elecOS = null;
+    for (var eo = 0; eo < elecRowsOS.length; eo++) {
+      if (elecRowsOS[eo][COL.ELEC_ID].toString() === nom[COL.NOM_ELEC_ID].toString()) { elecOS = elecRowsOS[eo]; break; }
+    }
+    var orgRestricted = elecOS && elecOS[COL.ELEC_ORGSECY_RESTRICTED].toString().toLowerCase() === 'true';
+    var orgBatch      = elecOS ? elecOS[COL.ELEC_ORGSECY_BATCH].toString().trim() : '';
+    if (!orgRestricted || !orgBatch) {
+      return {
+        result: 'Yes',
+        notes:  '[AUTO] Organising Secretary is not currently batch-restricted for this election — ' +
+                'any Life Member is eligible. | To override: save a manual Yes/No with explanatory notes.'
+      };
+    } else {
+      var candBatchOS = nom[COL.NOM_CAND_BATCH].toString().trim();
+      var osMatch = candBatchOS === orgBatch;
+      return {
+        result: osMatch ? 'Yes' : 'No',
+        notes:  osMatch
+          ? '[AUTO] Candidate batch ' + candBatchOS + ' matches the designated Organising Secretary batch (' +
+            orgBatch + '). | To override: save a manual Yes/No with explanatory notes.'
+          : '[AUTO] Candidate batch ' + candBatchOS + ' does not match the designated Organising Secretary ' +
+            'batch (' + orgBatch + '). | To override: save a manual Yes/No with explanatory notes.'
+      };
+    }
+  }
+  return { result: 'Pending', notes: '' };
+}
+
 function getScrutinyData(token, nomId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
@@ -6535,84 +6649,16 @@ function getScrutinyData(token, nomId) {
     };
   }
 
-  // Auto-assess post_eligibility for President and General Secretary.
-  // President: Rules P-A / P-B via checkPresidentEligibility().
-  // GS: any EC capacity ≥1 year in preceding 15 years via checkGSEligibility().
-  // All other posts: remain Pending for manual Scrutineer review unless already saved.
-  var nomPost = nom[COL.NOM_POST].toString().trim().toLowerCase();
+  // Auto-assess post_eligibility via the shared helper (also used by acceptNomination's
+  // gate) so the checklist display and the actual acceptance gate can never diverge.
   if (!savedMap['post_eligibility']) {
-    if (nomPost === 'president') {
-      var peResult = checkPresidentEligibility(nom[COL.NOM_CAND_ROLL].toString());
+    var autoPE = _autoAssessPostEligibility(nom);
+    if (autoPE.result !== 'Pending') {
       savedMap['post_eligibility'] = {
         checkItem:   'post_eligibility',
-        checkResult: peResult.eligible ? 'Yes' : 'No',
-        notes:       '[AUTO] President eligibility — ' + peResult.reason +
-                     ' | To override: save a manual Yes/No with explanatory notes.'
+        checkResult: autoPE.result,
+        notes:       autoPE.notes
       };
-    } else if (nomPost === 'general secretary') {
-      var gsResult = checkGSEligibility(nom[COL.NOM_CAND_ROLL].toString());
-      savedMap['post_eligibility'] = {
-        checkItem:   'post_eligibility',
-        checkResult: gsResult.eligible ? 'Yes' : 'No',
-        notes:       '[AUTO] GS eligibility — ' + gsResult.reason +
-                     ' | To override: save a manual Yes/No with explanatory notes.'
-      };
-    } else if (nomPost === 'vice president' || nomPost === 'joint secretary' || nomPost === 'treasurer') {
-      // Bylaw: no additional criteria beyond Life Member status, which is
-      // already implicit for anyone on the certified/draft voter roll.
-      savedMap['post_eligibility'] = {
-        checkItem:   'post_eligibility',
-        checkResult: 'Yes',
-        notes:       '[AUTO] No additional eligibility criteria for this post beyond Life Member status ' +
-                     '(per bylaw). | To override: save a manual Yes/No with explanatory notes.'
-      };
-    } else if (nomPost.indexOf('batch representative') === 0) {
-      // Candidate's own batch year must fall within the bracket named in the post itself.
-      // Note: this is a scrutiny-stage safety check — submitNomination() currently only
-      // verifies proposer/seconder share the CANDIDATE's actual bracket, not that the
-      // candidate's bracket matches the POST they nominated for.
-      var candBatchBR  = nom[COL.NOM_CAND_BATCH].toString().trim();
-      var candBracket  = getBatchRepBracket(candBatchBR);
-      var postBracket  = nom[COL.NOM_POST].toString().replace(/^batch representative\s*/i, '').trim();
-      var bracketMatch = !!candBracket && candBracket === postBracket;
-      savedMap['post_eligibility'] = {
-        checkItem:   'post_eligibility',
-        checkResult: bracketMatch ? 'Yes' : 'No',
-        notes:       bracketMatch
-          ? '[AUTO] Candidate batch ' + candBatchBR + ' falls within the ' + postBracket + ' bracket. ' +
-            '| To override: save a manual Yes/No with explanatory notes.'
-          : '[AUTO] Candidate batch ' + candBatchBR + ' (bracket ' + (candBracket || 'unrecognised') +
-            ') does NOT match the required bracket ' + postBracket + ' for this post. ' +
-            '| To override: save a manual Yes/No with explanatory notes.'
-      };
-    } else if (nomPost === 'organising secretary') {
-      var elecRowsOS = sheetData(SHEETS.ELECTIONS);
-      var elecOS = null;
-      for (var eo = 0; eo < elecRowsOS.length; eo++) {
-        if (elecRowsOS[eo][COL.ELEC_ID].toString() === nom[COL.NOM_ELEC_ID].toString()) { elecOS = elecRowsOS[eo]; break; }
-      }
-      var orgRestricted = elecOS && elecOS[COL.ELEC_ORGSECY_RESTRICTED].toString().toLowerCase() === 'true';
-      var orgBatch      = elecOS ? elecOS[COL.ELEC_ORGSECY_BATCH].toString().trim() : '';
-      if (!orgRestricted || !orgBatch) {
-        savedMap['post_eligibility'] = {
-          checkItem:   'post_eligibility',
-          checkResult: 'Yes',
-          notes:       '[AUTO] Organising Secretary is not currently batch-restricted for this election — ' +
-                       'any Life Member is eligible. | To override: save a manual Yes/No with explanatory notes.'
-        };
-      } else {
-        var candBatchOS = nom[COL.NOM_CAND_BATCH].toString().trim();
-        var osMatch = candBatchOS === orgBatch;
-        savedMap['post_eligibility'] = {
-          checkItem:   'post_eligibility',
-          checkResult: osMatch ? 'Yes' : 'No',
-          notes:       osMatch
-            ? '[AUTO] Candidate batch ' + candBatchOS + ' matches the designated Organising Secretary batch (' +
-              orgBatch + '). | To override: save a manual Yes/No with explanatory notes.'
-            : '[AUTO] Candidate batch ' + candBatchOS + ' does not match the designated Organising Secretary ' +
-              'batch (' + orgBatch + '). | To override: save a manual Yes/No with explanatory notes.'
-        };
-      }
     }
   }
 
@@ -6885,17 +6931,11 @@ function acceptNomination(token, nomId, authId) {
   // Auto-assessed items are always resolved; only manual items need checking
   var isBatchRep = nom[COL.NOM_POST].toString().toLowerCase().indexOf('batch') !== -1;
 
-  // post_eligibility: use saved value if present; otherwise auto-assess same as getScrutinyData
+  // post_eligibility: use saved value if present; otherwise auto-assess via the same
+  // shared helper getScrutinyData uses, so display and gate can never diverge.
 var postEligResult = savedItems['post_eligibility'];
 if (!postEligResult) {
-  var nomPostLower = nom[COL.NOM_POST].toString().trim().toLowerCase();
-  if (nomPostLower === 'president') {
-    postEligResult = checkPresidentEligibility(nom[COL.NOM_CAND_ROLL].toString()).eligible ? 'Yes' : 'No';
-  } else if (nomPostLower === 'general secretary') {
-    postEligResult = checkGSEligibility(nom[COL.NOM_CAND_ROLL].toString()).eligible ? 'Yes' : 'No';
-  } else {
-    postEligResult = 'Pending'; // other posts require manual scrutineer decision
-  }
+  postEligResult = _autoAssessPostEligibility(nom).result;
 }
 if (postEligResult !== 'Yes') {
   return { success: false,
@@ -7769,10 +7809,6 @@ function applySheetProtections(token, authId) {
   var otpSh = ss.getSheetByName(SHEETS.OTPS);
   if (otpSh) { otpSh.hideSheet(); results.push('OTPs: hidden'); }
 
-  // ── Install onDirectEditAudit trigger ────────────────────────
-  var triggerResult = installDirectEditTrigger();
-  results.push('onDirectEditAudit trigger: ' + triggerResult);
-
   // ── Log everything ───────────────────────────────────────────
   appendAdminLog(sess.identity, 'sheet_protections_applied',
     'Sheet protections applied. ' + results.join('; '), '', '');
@@ -7783,78 +7819,10 @@ function applySheetProtections(token, authId) {
   };
 }
 
-function installDirectEditTrigger() {
-  try {
-    // Remove any existing onDirectEditAudit triggers first to avoid duplicates
-    var triggers = ScriptApp.getProjectTriggers();
-    triggers.forEach(function(t) {
-      if (t.getHandlerFunction() === 'onDirectEditAudit') {
-        ScriptApp.deleteTrigger(t);
-      }
-    });
-    // Install fresh
-    ScriptApp.newTrigger('onDirectEditAudit')
-      .forSpreadsheet(SYSTEM_B_SHEET_ID)
-      .onEdit()
-      .create();
-    return 'installed successfully';
-  } catch(e) {
-    return 'install failed — ' + e.message;
-  }
-}
-
-function onDirectEditAudit(e) {
-  try {
-    var sheetName  = e.range.getSheet().getName();
-    var cellRef    = e.range.getA1Notation();
-    var oldValue   = e.oldValue !== undefined ? e.oldValue.toString() : '(empty)';
-    var newValue   = e.value    !== undefined ? e.value.toString()    : '(empty)';
-    var userEmail  = (e.user && e.user.getEmail) ? e.user.getEmail() : 'unknown';
-    var timestamp  = new Date().toISOString();
-
-    // Log to AdminLog
-    appendAdminLog('SYSTEM', 'DIRECT_SHEET_EDIT',
-      'Direct edit by ' + userEmail + ' on sheet [' + sheetName + '] cell ' + cellRef +
-      ' | Old: ' + oldValue + ' | New: ' + newValue,
-      oldValue, newValue);
-
-    // Email all active Scrutineers
-    var adminSh   = getSheet(SHEETS.ADMINS);
-    var adminRows = adminSh.getDataRange().getValues();
-    var subject   = 'SECURITY ALERT — SSKZM OBA Election System: Direct Sheet Edit Detected';
-    var body      = '<p><strong>SECURITY ALERT — SSKZM OBA Election System</strong></p>' +
-      '<p>A direct edit to the election spreadsheet has been detected.</p>' +
-      '<table style="border-collapse:collapse;font-family:monospace">' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>Sheet:</strong></td><td>' + sheetName + '</td></tr>' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>Cell:</strong></td><td>' + cellRef + '</td></tr>' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>Previous value:</strong></td><td>' + oldValue + '</td></tr>' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>New value:</strong></td><td>' + newValue + '</td></tr>' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>Time (UTC):</strong></td><td>' + timestamp + '</td></tr>' +
-      '<tr><td style="padding:4px 12px 4px 0"><strong>Account:</strong></td><td>' + userEmail + '</td></tr>' +
-      '</table>' +
-      '<p>This alert has been sent to all active Scrutineers.<br>' +
-      'If this edit was not authorised, contact the Returning Officer immediately.</p>';
-
-    for (var i = 1; i < adminRows.length; i++) {
-      var r = adminRows[i];
-      if (r[COL.ADMIN_ROLE].toString() !== 'SCRUTINEER') continue;
-      if (r[COL.ADMIN_STATUS].toString().toUpperCase() !== 'ACTIVE') continue;
-      var toEmail = r[COL.ADMIN_EMAIL].toString().trim();
-      if (toEmail) {
-        sendEmailViaSendGrid(toEmail, subject, body);
-      }
-    }
-  } catch(err) {
-    // Silent fail — must not throw inside a trigger handler
-    appendAdminLog('SYSTEM', 'DIRECT_SHEET_EDIT_TRIGGER_ERROR',
-      'onDirectEditAudit error: ' + err.message, '', '');
-  }
-}
-
 function removeSheetProtections(token, reason, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'removeSheetProtections');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -7897,16 +7865,6 @@ function removeSheetProtections(token, reason, authId) {
 
     var name = r[COL.ADMIN_NAME].toString();
   }
-
-  // ── Delete onDirectEditAudit trigger ─────────────────────────
-  var triggerRemoved = 0;
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === 'onDirectEditAudit') {
-      ScriptApp.deleteTrigger(t);
-      triggerRemoved++;
-    }
-  });
-  results.push('onDirectEditAudit trigger: ' + (triggerRemoved > 0 ? 'removed' : 'not found'));
 
   // ── Log with mandatory reason ────────────────────────────────
   appendAdminLog(sess.identity, 'sheet_protections_removed',
@@ -8816,6 +8774,122 @@ function updateComplaintStatus(token, complaintId, status, roNotes, resolution, 
 // APPEALS MODULE
 // ============================================================
 
+// Returns [{ email, name }] for every currently ACTIVE RO_ADMIN, plus any
+// currently-activated DEPUTY_RO — used to notify whoever is actually
+// exercising RO authority right now, replacing the old static
+// RO_CONTACT_EMAIL script property.
+function _getActiveROEmails() {
+  var rows = sheetData(SHEETS.ADMINS);
+  var result = [];
+  for (var i = 0; i < rows.length; i++) {
+    var role   = rows[i][COL.ADMIN_ROLE].toString();
+    var status = rows[i][COL.ADMIN_STATUS].toString().toUpperCase();
+    if (status !== 'ACTIVE') continue;
+    if (role === 'RO_ADMIN' ||
+        (role === 'DEPUTY_RO' && rows[i][COL.ADMIN_DEPRO_ACTIVE].toString().toLowerCase() === 'true')) {
+      result.push({
+        email: rows[i][COL.ADMIN_EMAIL].toString(),
+        name:  rows[i][COL.ADMIN_NAME].toString()
+      });
+    }
+  }
+  return result;
+}
+
+// ============================================================
+// getAppealsPanelContacts — list current Appeals Panel contacts
+// Access: RO_ADMIN, DEPUTY_RO, TEM
+// ============================================================
+function getAppealsPanelContacts(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var rows = sheetData(SHEETS.APPEALS_PANEL);
+  var contacts = rows.map(function(r) {
+    return {
+      id:      r[COL_AP.ID].toString(),
+      name:    r[COL_AP.NAME].toString(),
+      roll:    r[COL_AP.ROLL].toString(),
+      batch:   r[COL_AP.BATCH].toString(),
+      email:   r[COL_AP.EMAIL].toString(),
+      isChair: r[COL_AP.IS_CHAIR].toString().toLowerCase() === 'true',
+      addedAt: r[COL_AP.ADDED_AT].toString()
+    };
+  });
+  return { success: true, contacts: contacts };
+}
+
+// ============================================================
+// addAppealsPanelContact — RO records an Appeals Panel member's contact
+// details (SOP 2A.12 — constituted by the EC, drawn from the RO-selection
+// panel; not a system login role, offline deliberation only).
+// Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
+// ============================================================
+function addAppealsPanelContact(token, name, rollNo, batch, email, isChair, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'addAppealsPanelContact', null);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  if (!name || !name.toString().trim()) return { success: false, message: 'Name is required.' };
+  if (!email || !email.toString().trim()) return { success: false, message: 'Email is required.' };
+
+  var sh = getSheet(SHEETS.APPEALS_PANEL);
+  if (!sh) return { success: false, message: 'AppealsPanel sheet not found. Run initSystemBSheets() first.' };
+
+  var id = generateId();
+  var newRow = new Array(8).fill('');
+  newRow[COL_AP.ID]       = id;
+  newRow[COL_AP.NAME]     = name.toString().trim();
+  newRow[COL_AP.ROLL]     = rollNo ? rollNo.toString().trim() : '';
+  newRow[COL_AP.BATCH]    = batch ? batch.toString().trim() : '';
+  newRow[COL_AP.EMAIL]    = email.toString().trim().toLowerCase();
+  newRow[COL_AP.IS_CHAIR] = !!isChair;
+  newRow[COL_AP.ADDED_AT] = now().toISOString();
+  newRow[COL_AP.ADDED_BY] = sess.identity;
+  sh.appendRow(newRow);
+
+  appendAdminLog(sess.identity, 'appeals_panel_contact_added',
+    'Appeals Panel contact added: ' + name.toString().trim() +
+    (isChair ? ' (Chair)' : ''),
+    '', email.toString().trim());
+
+  return { success: true, id: id };
+}
+
+// ============================================================
+// removeAppealsPanelContact — RO removes an Appeals Panel member's contact
+// Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
+// ============================================================
+function removeAppealsPanelContact(token, id, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'removeAppealsPanelContact', null);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  var sh = getSheet(SHEETS.APPEALS_PANEL);
+  if (!sh) return { success: false, message: 'AppealsPanel sheet not found.' };
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_AP.ID].toString() === id.toString()) {
+      var removedName = rows[i][COL_AP.NAME].toString();
+      sh.deleteRow(i + 1);
+      appendAdminLog(sess.identity, 'appeals_panel_contact_removed',
+        'Appeals Panel contact removed: ' + removedName, id.toString(), '');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Contact not found.' };
+}
+
 // ============================================================
 // fileAppeal — candidate files appeal against rejection
 // Access: VOTER (own rejected nomination only)
@@ -8898,9 +8972,8 @@ function fileAppeal(token, nominationId, appealText) {
     '', nom[COL.NOM_ELEC_ID].toString());
 
   // ── Notify Appeals Panel immediately ─────────────────────────
-  var panelEmailsProp = PropertiesService.getScriptProperties().getProperty('APPEALS_PANEL_EMAILS') || '';
-  var panelEmails = panelEmailsProp.split(',');
-  if (panelEmails.length > 0 && panelEmailsProp) {
+  var panelContacts = sheetData(SHEETS.APPEALS_PANEL);
+  if (panelContacts.length > 0) {
     var elecTitle = elecRec ? elecRec[COL.ELEC_TITLE].toString() : nom[COL.NOM_ELEC_ID].toString();
     var panelSubject = 'SSKZM OBA Election — Appeal Filed: ' + nom[COL.NOM_POST].toString();
     var panelBody =
@@ -8922,8 +8995,8 @@ function fileAppeal(token, nominationId, appealText) {
       '<p>Please deliberate and communicate your decision to the Returning Officer. The Returning Officer will record the decision in the Election Management System.</p>' +
       '<p style="color:#888;font-size:.82rem;">SSKZM OBA Election Management System</p>' +
       '</div></div>';
-    panelEmails.forEach(function(email) {
-      email = email.trim();
+    panelContacts.forEach(function(c) {
+      var email = c[COL_AP.EMAIL].toString().trim();
       if (email) { try { sendEmailViaSendGrid(email, panelSubject, panelBody); } catch(e) {} }
     });
   }
@@ -9041,8 +9114,8 @@ function fileObjection(token, nominationId, groundsType, objectionText) {
     '', nom[COL.NOM_ELEC_ID].toString());
 
   // ── Notify RO immediately (awareness only) ───────────────────
-  var roEmail = PropertiesService.getScriptProperties().getProperty('RO_CONTACT_EMAIL') || '';
-  if (roEmail) {
+  var activeROs = _getActiveROEmails();
+  if (activeROs.length > 0) {
     var elecTitle = elecRec[COL.ELEC_TITLE].toString();
     var roSubject = 'SSKZM OBA Election — Objection Filed: ' + nom[COL.NOM_POST].toString();
     var roBody =
@@ -9064,7 +9137,9 @@ function fileObjection(token, nominationId, groundsType, objectionText) {
       '</table>' +
       '<p style="color:#888;font-size:.82rem;">SSKZM OBA Election Management System</p>' +
       '</div></div>';
-    try { sendEmailViaSendGrid(roEmail, roSubject, roBody); } catch(e) {}
+    activeROs.forEach(function(ro) {
+      try { sendEmailViaSendGrid(ro.email, roSubject, roBody); } catch(e) {}
+    });
   }
 
   return { success: true, objectionId: id };
@@ -9086,6 +9161,17 @@ function sendConsolidatedObjectionSummary(token, electionId, authId) {
   }
   var temCheck = requiresTEMAuth(sess, authId, 'sendConsolidatedObjectionSummary', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  // ── Fetch election record (title + deadline display below) ────
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elecRec = null;
+  for (var e = 0; e < elecRows.length; e++) {
+    if (elecRows[e][COL.ELEC_ID].toString() === electionId.toString()) {
+      elecRec = elecRows[e]; break;
+    }
+  }
+  if (!elecRec) return { success: false, message: 'Election not found.' };
+  var candPubAt = elecRec[COL.ELEC_CAND_PUB_AT] ? elecRec[COL.ELEC_CAND_PUB_AT].toString() : '';
 
   // ── Collect all filed objections for this election ───────────
   var aplRows = sheetData(SHEETS.APPEALS);
@@ -9117,16 +9203,7 @@ function sendConsolidatedObjectionSummary(token, electionId, authId) {
     return { success: true, message: 'No open objections found for this election. No email sent.' };
   }
 
-  // ── Fetch election record for title + deadline ───────────────
-  var elecRows = sheetData(SHEETS.ELECTIONS);
-  var elecRec = null;
-  for (var e = 0; e < elecRows.length; e++) {
-    if (elecRows[e][COL.ELEC_ID].toString() === electionId.toString()) {
-      elecRec = elecRows[e]; break;
-    }
-  }
-  var elecTitle = elecRec ? elecRec[COL.ELEC_TITLE].toString() : electionId;
-  var candPubAt = elecRec && elecRec[COL.ELEC_CAND_PUB_AT] ? elecRec[COL.ELEC_CAND_PUB_AT].toString() : '';
+  var elecTitle = elecRec[COL.ELEC_TITLE].toString();
   var panelDeadline = candPubAt
     ? fmtIST(new Date(new Date(candPubAt).getTime() + (96 * 60 * 60 * 1000)))
     : 'as soon as possible';
@@ -9169,17 +9246,17 @@ function sendConsolidatedObjectionSummary(token, electionId, authId) {
     '</div></div>';
 
   // ── Send to Appeals Panel ────────────────────────────────────
-  var panelEmailsProp = PropertiesService.getScriptProperties().getProperty('APPEALS_PANEL_EMAILS') || '';
-  var panelEmails = panelEmailsProp.split(',');
+  var panelContactsSummary = sheetData(SHEETS.APPEALS_PANEL);
   var sent = 0;
-  panelEmails.forEach(function(email) {
-    email = email.trim();
+  panelContactsSummary.forEach(function(c) {
+    var email = c[COL_AP.EMAIL].toString().trim();
     if (email) { try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) {} }
   });
 
   // ── Send copy to RO ──────────────────────────────────────────
-  var roEmail = PropertiesService.getScriptProperties().getProperty('RO_CONTACT_EMAIL') || '';
-  if (roEmail) { try { sendEmailViaSendGrid(roEmail, '[RO COPY] ' + subject, body); } catch(e) {} }
+  _getActiveROEmails().forEach(function(ro) {
+    try { sendEmailViaSendGrid(ro.email, '[RO COPY] ' + subject, body); } catch(e) {}
+  });
 
   appendAdminLog(sess.identity, 'objection_summary_sent',
     'Consolidated objection summary sent to Appeals Panel. Candidates with objections: ' + nomIds.length +
@@ -9284,7 +9361,7 @@ function storeAppealDocument(token, electionId, appealId, filename, base64Data, 
 function storeAppealRuling(token, electionId, appealId, filename, base64Data, mimeType, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'storeAppealRuling', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message }; 
 
@@ -9409,7 +9486,7 @@ function getAppeals(token, electionId) {
 function updateAppealDecision(token, appealId, decision, roNotes, decisionText, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'updateAppealDecision', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -9924,7 +10001,7 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
 function submitNominationManual(token, electionId, candRoll, postName, propRoll, secRoll, bio, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'submitNominationManual', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -10929,7 +11006,9 @@ function getPublicVoterRoll() {
 function purgeTrialData(token, electionId, confirmPhrase, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  var isRO = sess.role === 'RO_ADMIN';
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
   var temCheck = requiresTEMAuth(sess, authId, 'purgeTrialData', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -11031,7 +11110,7 @@ function purgeTrialData(token, electionId, confirmPhrase, authId) {
 function updateObjectionStatus(token, rollNo, status, notes, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'updateObjectionStatus', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -11080,7 +11159,7 @@ function updateObjectionStatus(token, rollNo, status, notes, authId) {
 function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'addVoterToDraft', null);
@@ -11138,7 +11217,7 @@ function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, auth
 function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') {
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'updateVoterDraftRow', null);
@@ -11241,7 +11320,7 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
 function certifyVoterRoll(token, electionId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'certifyVoterRoll', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
@@ -11360,7 +11439,7 @@ function getOrCreateElectionFolder(electionId, electionTitle) {
 function storeDocument(token, electionId, category, filename, base64Data, mimeType, notes, authId, nomRef) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'storeDocument', electionId);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
   if (!electionId || !category || !filename || !base64Data) {
@@ -11499,7 +11578,7 @@ function uploadNominationPhoto(token, electionId, base64Data, mimeType, filename
 function uploadNominationPhotoAdmin(token, nomId, base64Data, mimeType, filename, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
 
   var allowed = ['image/jpeg', 'image/png', 'image/webp'];
   if (allowed.indexOf(mimeType) === -1) return { success: false, message: 'Only JPEG, PNG or WebP images are allowed.' };
@@ -11570,7 +11649,7 @@ function getDocuments(token, electionId, category, nomRef) {
 function deleteDocument(token, docId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-  if (sess.role !== 'RO_ADMIN' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'deleteDocument');
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 

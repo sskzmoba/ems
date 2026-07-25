@@ -82,19 +82,22 @@ var AdminPanel = (function() {
       { id:'tem_auth',         label:'TEM Auth' }
     ],
     DEPUTY_RO: [
-      { id:'elections',    label:'Elections' },
-      { id:'nominations',  label:'Nominations' },
-      { id:'scrutiny',     label:'Scrutiny' },
-      { id:'candidates',   label:'Candidates' },
-      { id:'voters',       label:'Voters' },
-      { id:'tally',        label:'Tally' },
+      { id:'elections',        label:'Elections' },
+      { id:'nominations',      label:'Nominations' },
+      { id:'scrutiny',         label:'Scrutiny' },
+      { id:'candidates',       label:'Candidates' },
+      { id:'presec',           label:'PreSec' },
+      { id:'voter_roll_draft', label:'Roll Draft' },
+      { id:'voters',           label:'Voters' },
+      { id:'tally',            label:'Tally' },
       { id:'admins',       label:'Admins' },
       { id:'adminlog',     label:'Admin Log' },
       { id:'appeals',      label:'Appeals' },
       { id:'complaints',   label:'Complaints' },
       { id:'handover',     label:'Handover' },
       { id:'observations', label:'Observations' },
-      { id:'settings',     label:'Settings' }
+      { id:'settings',     label:'Settings' },
+      { id:'tem_auth',     label:'TEM Auth' }
     ],
     TEM: [
       { id:'elections',        label:'Elections' },
@@ -394,7 +397,7 @@ function _loadElections(role) {
         }
 
         var elections = res.elections || [];
-        var isRO = (role === 'RO_ADMIN' || role === 'TEM');
+        var isRO = (role === 'RO_ADMIN' || role === 'DEPUTY_RO' || role === 'TEM');
 
         // Status → badge class map
         var badgeMap = {
@@ -690,7 +693,7 @@ _renderManageScreen: function(el) {
   var content = document.getElementById('admin-content');
   if (!content) return;
 
-  var isRO    = (App.role === 'RO_ADMIN' || App.role === 'TEM');
+  var isRO    = (App.role === 'RO_ADMIN' || App.role === 'DEPUTY_RO' || App.role === 'TEM');
   var isDraft = el.status === 'draft' || (el.isTrial && el.status !== 'active');
 
   var statusBadgeMap = {
@@ -750,6 +753,20 @@ _renderManageScreen: function(el) {
         '</div>' +
       '</div>' +
     '</div>' +
+
+    // Appeals Panel Contacts — visible to RO/DEPUTY_RO/TEM from the moment
+    // they open the election, not buried in Settings. SOP 2A.12: the Appeals
+    // Panel should be constituted simultaneously with Scrutineer appointments,
+    // well before scrutiny concludes.
+    (isRO ?
+      '<div id="appeals-panel-card-' + escHtml(el.id) + '">' +
+        '<div class="panel-card" style="margin-bottom:12px;">' +
+          '<div class="panel-card-body" style="text-align:center;padding:20px;color:#6b7280;">' +
+            '<div class="spinner"></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    : '') +
 
     // Advance status — draft only
     (advance ?
@@ -1035,7 +1052,7 @@ _renderManageScreen: function(el) {
               'this.style.display=\'none\';" ' +
               'style="width:100%;padding:14px;font-size:1rem;background:#fff;color:#d97706;' +
               'border:2px solid #d97706;border-radius:4px;cursor:pointer;">' +
-              '[DEL] Purge Trial Data' +
+              '🗑️ Purge Trial Data' +
             '</button>' +
           '</div>' +
         '</div>'
@@ -1048,6 +1065,161 @@ _renderManageScreen: function(el) {
   setTimeout(function() {
     AdminPanel._loadScheduleIntoForm(el.id);
   }, 0);
+
+  if (isRO) {
+    setTimeout(function() {
+      AdminPanel._loadAppealsPanelCard(el.id);
+    }, 0);
+  }
+},
+
+_loadAppealsPanelCard: function(elecId) {
+  var box = document.getElementById('appeals-panel-card-' + elecId);
+  if (!box) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var box = document.getElementById('appeals-panel-card-' + elecId);
+      if (!box) return;
+      if (!res || !res.success) {
+        box.innerHTML = '<div class="panel-card" style="margin-bottom:12px;">' +
+          '<div class="panel-card-body" style="color:#c0392b;font-size:.85rem;">' +
+          escHtml((res && res.message) || 'Failed to load Appeals Panel contacts.') +
+          '</div></div>';
+        return;
+      }
+      AdminPanel._appealsPanelContacts = res.contacts || [];
+      box.innerHTML = AdminPanel._renderAppealsPanelCard(elecId);
+    })
+    .withFailureHandler(function() {
+      var box = document.getElementById('appeals-panel-card-' + elecId);
+      if (box) box.innerHTML = '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-body" style="color:#c0392b;font-size:.85rem;">' +
+        'Error loading Appeals Panel contacts.</div></div>';
+    })
+    .getAppealsPanelContacts(App.token);
+},
+
+_renderAppealsPanelCard: function(elecId) {
+  var contacts = AdminPanel._appealsPanelContacts || [];
+  var configured = contacts.length > 0;
+  var html =
+    '<div class="panel-card" style="margin-bottom:12px;' +
+      (configured ? 'border:1.5px solid #16a34a;' : 'border:1.5px solid #d97706;') + '">' +
+      '<div class="panel-card-header" ' +
+        'style="' + (configured ? 'background:#f0fdf4;color:#15803d;' : 'background:#fef3c7;color:#92400e;') + '">' +
+        (configured ? '✓ Appeals Panel Contacts' : '⚠ Appeals Panel Contacts — Not Configured') +
+      '</div>' +
+      '<div class="panel-card-body">' +
+      (!configured ?
+        '<div style="font-size:.85rem;color:#92400e;margin-bottom:12px;line-height:1.5;">' +
+          'No Appeals Panel contacts are on record. Per SOP 2A.12, the Appeals Panel should be constituted ' +
+          '<strong>simultaneously with Scrutineer appointments</strong> — early in the election, not left until ' +
+          'candidate-list publication. Scrutiny cannot conclude (candidate list cannot be published) until at ' +
+          'least one contact is added.' +
+        '</div>'
+      : '') +
+      (contacts.length > 0 ?
+        '<div style="margin-bottom:12px;">' +
+        contacts.map(function(c) {
+          return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+            'padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:.85rem;">' +
+            '<div><strong>' + escHtml(c.name) + '</strong>' +
+            (c.isChair ? ' <span style="color:#b8960c;">(Chair)</span>' : '') +
+            (c.roll || c.batch ?
+              ' <span style="color:#6b7280;">(' +
+              [c.roll ? 'Roll ' + escHtml(c.roll) : '', c.batch ? 'Batch ' + escHtml(c.batch) : '']
+                .filter(function(s) { return s; }).join(' · ') +
+              ')</span>'
+            : '') +
+            '<br><span style="color:#6b7280;">' + escHtml(c.email) + '</span></div>' +
+            '<button onclick="AdminPanel._removeAppealsPanelContact(\'' + escHtml(c.id) + '\',\'' + escHtml(elecId) + '\')" ' +
+              'style="padding:6px 10px;font-size:.78rem;background:#fff;color:#c0392b;' +
+              'border:1px solid #c0392b;border-radius:4px;cursor:pointer;">Remove</button>' +
+            '</div>';
+        }).join('') +
+        '</div>'
+      : '') +
+      '<div id="appeals-panel-add-area-' + escHtml(elecId) + '"></div>' +
+      '<button onclick="AdminPanel._showAddAppealsPanelContact(\'' + escHtml(elecId) + '\')" ' +
+        'style="width:100%;padding:10px;font-size:.85rem;background:#fff;color:#1a3a5c;' +
+        'border:1.5px solid #1a3a5c;border-radius:4px;cursor:pointer;">+ Add Appeals Panel Contact</button>' +
+      '</div>' +
+    '</div>';
+  return html;
+},
+
+_showAddAppealsPanelContact: function(elecId) {
+  var area = document.getElementById('appeals-panel-add-area-' + elecId);
+  if (!area) return;
+  area.innerHTML =
+    '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:12px;margin-bottom:12px;">' +
+      '<input type="text" id="ap-name-' + escHtml(elecId) + '" placeholder="Name" ' +
+        'style="width:100%;padding:10px;margin-bottom:8px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;">' +
+      '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
+        '<input type="text" id="ap-roll-' + escHtml(elecId) + '" placeholder="Roll No" ' +
+          'style="flex:1;padding:10px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;">' +
+        '<input type="text" id="ap-batch-' + escHtml(elecId) + '" placeholder="Batch" ' +
+          'style="flex:1;padding:10px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;">' +
+      '</div>' +
+      '<input type="email" id="ap-email-' + escHtml(elecId) + '" placeholder="Email" ' +
+        'style="width:100%;padding:10px;margin-bottom:8px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;margin-bottom:10px;">' +
+        '<input type="checkbox" id="ap-chair-' + escHtml(elecId) + '"> Chair (most senior member, per SOP 2A.12)' +
+      '</label>' +
+      '<div id="ap-err-' + escHtml(elecId) + '" style="color:#c0392b;font-size:.8rem;margin-bottom:8px;display:none;"></div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button onclick="document.getElementById(\'appeals-panel-add-area-' + escHtml(elecId) + '\').innerHTML=\'\';" ' +
+          'style="flex:1;padding:10px;font-size:.85rem;">Cancel</button>' +
+        '<button onclick="AdminPanel._submitAddAppealsPanelContact(\'' + escHtml(elecId) + '\')" ' +
+          'style="flex:1;padding:10px;font-size:.85rem;background:#1a3a5c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Save</button>' +
+      '</div>' +
+    '</div>';
+},
+
+_submitAddAppealsPanelContact: function(elecId) {
+  var nameEl  = document.getElementById('ap-name-' + elecId);
+  var rollEl  = document.getElementById('ap-roll-' + elecId);
+  var batchEl = document.getElementById('ap-batch-' + elecId);
+  var emailEl = document.getElementById('ap-email-' + elecId);
+  var chairEl = document.getElementById('ap-chair-' + elecId);
+  var errEl   = document.getElementById('ap-err-' + elecId);
+  var name  = nameEl  ? nameEl.value.trim()  : '';
+  var roll  = rollEl  ? rollEl.value.trim()  : '';
+  var batch = batchEl ? batchEl.value.trim() : '';
+  var email = emailEl ? emailEl.value.trim() : '';
+  var isChair = chairEl ? chairEl.checked : false;
+  if (!name || !email) {
+    if (errEl) { errEl.textContent = 'Name and email are both required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Appeals Panel contact added.');
+        AdminPanel._loadAppealsPanelCard(elecId);
+      } else {
+        if (errEl) { errEl.textContent = (res && res.message) || 'Failed to add contact.'; errEl.style.display = 'block'; }
+      }
+    })
+    .withFailureHandler(function() {
+      if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+    })
+    .addAppealsPanelContact(App.token, name, roll, batch, email, isChair, getTEMAuthId());
+},
+
+_removeAppealsPanelContact: function(id, elecId) {
+  if (!confirm('Remove this Appeals Panel contact?')) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        showToast('Contact removed.');
+        AdminPanel._loadAppealsPanelCard(elecId);
+      } else {
+        showToast((res && res.message) || 'Failed to remove contact.');
+      }
+    })
+    .withFailureHandler(function() { showToast('Error — please try again.'); })
+    .removeAppealsPanelContact(App.token, id, getTEMAuthId());
 },
 
 _advanceStatusMsg: function(status) {
@@ -1883,7 +2055,7 @@ _renderAdminsList: function(admins) {
     '</div>' +
     '<div id="add-admin-form-area"></div>' +
     // No-TEM declaration button — RO only
-    (App.role === 'RO_ADMIN' ?
+    (App.role === 'RO_ADMIN' || App.role === 'DEPUTY_RO' ?
       '<div class="panel-card" style="margin-bottom:12px;">' +
         '<div class="panel-card-header">TEM Declaration</div>' +
         '<div class="panel-card-body">' +
@@ -2530,7 +2702,7 @@ _renderNominationsShell: function(elections) {
   });
   selHtml += '</select>';
 
-  var isRO = ((App.role || '').toUpperCase() === 'RO_ADMIN' || (App.role || '').toUpperCase() === 'TEM');
+  var isRO = ((App.role || '').toUpperCase() === 'RO_ADMIN' || (App.role || '').toUpperCase() === 'DEPUTY_RO' || (App.role || '').toUpperCase() === 'TEM');
   var selElec = elections.find(function(e) { return e.id === AdminPanel._nominationsSelectedElec; }) || elections[0];
   var nomOpen = selElec && (selElec.status === 'nominations_open' || selElec.status === 'nominations_open_phase2');
 
@@ -2807,7 +2979,7 @@ _saveSchedule: function(elecId) {
         res.warnings.forEach(function(w) {
           var color = w.severity === 'block' ? '#fef2f2' : '#fffbeb';
           var border = w.severity === 'block' ? '#fca5a5' : '#fbbf24';
-          var icon = w.severity === 'block' ? '[RED]' : '[YEL]';
+          var icon = w.severity === 'block' ? '🔴' : '🟡';
           html += '<div style="background:' + color + ';border:1px solid ' + border + ';' +
             'border-radius:4px;padding:8px 12px;margin-bottom:6px;font-size:.8rem;">' +
             icon + ' ' + escHtml(w.message) + '</div>';
@@ -3130,8 +3302,8 @@ _renderNominationsList: function(noms) {
                 'Reason: ' + escHtml(n.rejectionReason) + '</div>'
             : '') +
 
-          // Action buttons — RO_ADMIN only
-          (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
+          // Action buttons — RO_ADMIN/DEPUTY_RO only
+          ((role === 'RO_ADMIN' || role === 'DEPUTY_RO') && n.status !== 'withdrawn' && n.status !== 'rejected'
             ? '<label style="display:flex;align-items:center;gap:6px;font-size:.78rem;' +
                 'color:#6b7280;margin-bottom:8px;cursor:pointer;" ' +
                 'title="Controls the Resend buttons below. When unchecked, no email is sent — ' +
@@ -3188,8 +3360,8 @@ _renderNominationsList: function(noms) {
               '</div>'
             : '') +
 
-          // Photo upload area (RO_ADMIN only)
-          (role === 'RO_ADMIN' && n.status !== 'withdrawn' && n.status !== 'rejected'
+          // Photo upload area (RO_ADMIN/DEPUTY_RO only)
+          ((role === 'RO_ADMIN' || role === 'DEPUTY_RO') && n.status !== 'withdrawn' && n.status !== 'rejected'
             ? '<div id="nom-photo-upload-' + escHtml(n.id) + '" style="display:none;margin-top:8px;">' +
                 '<input type="file" id="nom-photo-file-' + escHtml(n.id) + '" ' +
                 'accept="image/jpeg,image/png,image/webp" ' +
@@ -3532,7 +3704,7 @@ _confirmP2Ext: function(elecId) {
         '<div class="panel-card-header">Apply Sheet Protections</div>' +
         '<div class="panel-card-body">' +
           '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
-            'Protects critical sheets against manual editing and installs a live edit-audit alert.' +
+            'Protects critical sheets against manual editing.' +
           '</div>' +
           (protDone ?
             '<div style="padding:10px;background:#dcfce7;border-radius:4px;' +
@@ -4228,7 +4400,7 @@ _confirmP2Ext: function(elecId) {
     html += '<div style="margin-top:14px;">' +
       '<button id="btn-generate-record-pdf" onclick="AdminPanel._generateElectionRecordPDF(\'' + escHtml(r.electionId) + '\')" ' +
       'style="width:100%;padding:12px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
-      'border:none;border-radius:4px;cursor:pointer;font-weight:600;">[PDF] Generate Election Record PDF</button>' +
+      'border:none;border-radius:4px;cursor:pointer;font-weight:600;">📄 Generate Election Record PDF</button>' +
       '<div id="election-record-pdf-result" style="margin-top:8px;"></div>' +
       '</div>' +
       '</div>';
@@ -4244,7 +4416,7 @@ _confirmP2Ext: function(elecId) {
 
     google.script.run
       .withSuccessHandler(function(res) {
-        if (btn) { btn.textContent = '[PDF] Generate Election Record PDF'; btn.disabled = false; }
+        if (btn) { btn.textContent = '📄 Generate Election Record PDF'; btn.disabled = false; }
         if (!resDiv) return;
         if (!res || !res.success) {
           resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">' +
@@ -4258,7 +4430,7 @@ _confirmP2Ext: function(elecId) {
           '</div>';
       })
       .withFailureHandler(function() {
-        if (btn) { btn.textContent = '[PDF] Generate Election Record PDF'; btn.disabled = false; }
+        if (btn) { btn.textContent = '📄 Generate Election Record PDF'; btn.disabled = false; }
         if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error. Please try again.</div>';
       })
       .generateElectionRecordPDF(App.token, elecId, getTEMAuthId());
@@ -6944,7 +7116,7 @@ _renderDocUploader: function(config) {
 
   var html =
     '<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:12px;">' +
-      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">[CLIP] ' + escHtml(label) + '</div>' +
+      '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">📎 ' + escHtml(label) + '</div>' +
 
       '<div style="margin-bottom:10px;">' +
         '<input type="file" id="doc-file-' + escHtml(container) + '"' +
@@ -7160,7 +7332,7 @@ _renderDocTabList: function(elecId) {
 _buildDocList: function(elecId, docs) {
   if (!docs || docs.length === 0) {
     return '<div style="text-align:center;padding:32px 16px;color:#6b7280;font-size:.88rem;">' +
-      '[FOLDER] No documents uploaded for this election yet.</div>';
+      '📁 No documents uploaded for this election yet.</div>';
   }
 
   // Group by category
