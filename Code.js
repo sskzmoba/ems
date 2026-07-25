@@ -11532,7 +11532,7 @@ function uploadNominationPhotoAdmin(token, nomId, base64Data, mimeType, filename
   }
 }
 
-function getDocuments(token, electionId, category) {
+function getDocuments(token, electionId, category, nomRef) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   var allowed = ['RO_ADMIN', 'DEPUTY_RO', 'SCRUTINEER', 'OBSERVER', 'TEM'];
@@ -11540,11 +11540,20 @@ function getDocuments(token, electionId, category) {
 
   var rows = sheetData(SHEETS.DOC_STORE);
   var docs = [];
+  // When nomRef is given, scope strictly to documents linked to that one
+  // nomination — otherwise multiple manual-entry nominations' documents
+  // (all sharing the same category) would show up mixed together.
+  var nomRefPrefix = nomRef ? ('nomRef:' + nomRef + '|') : '';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r[COL.DOC_ELEC_ID].toString() !== electionId.toString()) continue;
     if (category && r[COL.DOC_CATEGORY].toString() !== category) continue;
+    if (nomRefPrefix && (r[COL.DOC_NOTES] || '').toString().indexOf(nomRefPrefix) !== 0) continue;
     if ((r[COL.DOC_NOTES] || '').toString().indexOf('DELETED') === 0) continue;
+    var rawNotes = r[COL.DOC_NOTES].toString();
+    var displayNotes = nomRefPrefix && rawNotes.indexOf(nomRefPrefix) === 0
+      ? rawNotes.substring(nomRefPrefix.length)
+      : rawNotes;
     docs.push({
       docId:      r[COL.DOC_ID].toString(),
       category:   r[COL.DOC_CATEGORY].toString(),
@@ -11552,7 +11561,7 @@ function getDocuments(token, electionId, category) {
       driveUrl:   r[COL.DOC_GDRIVE_URL].toString(),
       uploadedBy: r[COL.DOC_UPLOADER_ROLL].toString(),
       uploadedAt: r[COL.DOC_UPLOADED_AT].toString(),
-      notes:      r[COL.DOC_NOTES].toString()
+      notes:      displayNotes
     });
   }
   return { success: true, docs: docs };

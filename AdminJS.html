@@ -6947,13 +6947,13 @@ _renderDocUploader: function(config) {
       '<div style="font-size:.88rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;">[CLIP] ' + escHtml(label) + '</div>' +
 
       '<div style="margin-bottom:10px;">' +
-        '<input type="file" id="doc-file-' + escHtml(category) + '"' +
+        '<input type="file" id="doc-file-' + escHtml(container) + '"' +
         ' accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"' +
         ' style="font-size:.83rem;width:100%;box-sizing:border-box;" />' +
       '</div>' +
 
       '<div style="margin-bottom:10px;">' +
-        '<input type="text" id="doc-notes-' + escHtml(category) + '"' +
+        '<input type="text" id="doc-notes-' + escHtml(container) + '"' +
         ' placeholder="Notes (optional)"' +
         ' style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;' +
         'border-radius:4px;font-size:.83rem;" />' +
@@ -6964,21 +6964,25 @@ _renderDocUploader: function(config) {
         ' style="padding:10px 20px;background:#1a3a5c;color:#fff;border:none;border-radius:4px;' +
         'font-size:.85rem;font-weight:600;cursor:pointer;min-height:44px;">Upload</button>' +
 
-      '<div id="doc-list-' + escHtml(category) + '" style="margin-top:14px;">' +
+      '<div id="doc-list-' + escHtml(container) + '" style="margin-top:14px;">' +
         '<div style="font-size:.8rem;color:#9ca3af;">Loading documents…</div>' +
       '</div>' +
     '</div>';
 
-  // Load existing documents for this category
-  AdminPanel._loadDocuments(elecId, category);
+  // Load existing documents for this category (scoped to nomRef if given —
+  // each manual-entry nomination's uploader must only show its own docs,
+  // not every manual_ro_nomination document across the whole election)
+  AdminPanel._loadDocuments(elecId, category, container, nomRef);
 
   return html;
 },
 
-_loadDocuments: function(elecId, category) {
+_loadDocuments: function(elecId, category, container, nomRef) {
+  container = container || category;
+  nomRef = nomRef || '';
   google.script.run
     .withSuccessHandler(function(res) {
-      var listEl = document.getElementById('doc-list-' + category);
+      var listEl = document.getElementById('doc-list-' + container);
       if (!listEl) return;
       if (!res || !res.success || res.docs.length === 0) {
         listEl.innerHTML = '<div style="font-size:.8rem;color:#9ca3af;">No documents uploaded yet.</div>';
@@ -7003,7 +7007,7 @@ _loadDocuments: function(elecId, category) {
               '</div>' +
             '</div>' +
             '<button onclick="AdminPanel._deleteDoc(\'' + escHtml(d.docId) + '\',\'' +
-              escHtml(elecId) + '\',\'' + escHtml(category) + '\')"' +
+              escHtml(elecId) + '\',\'' + escHtml(category) + '\',\'' + escHtml(container) + '\',\'' + escHtml(nomRef) + '\')"' +
               ' style="padding:4px 10px;background:#fff;color:#c0392b;border:1px solid #c0392b;' +
               'border-radius:4px;font-size:.75rem;cursor:pointer;flex-shrink:0;">Delete</button>' +
           '</div>';
@@ -7011,16 +7015,16 @@ _loadDocuments: function(elecId, category) {
       listEl.innerHTML = html;
     })
     .withFailureHandler(function() {
-      var listEl = document.getElementById('doc-list-' + category);
+      var listEl = document.getElementById('doc-list-' + container);
       if (listEl) listEl.innerHTML = '<div style="font-size:.8rem;color:#c0392b;">Error loading documents.</div>';
     })
-    .getDocuments(App.token, elecId, category);
+    .getDocuments(App.token, elecId, category, nomRef);
 },
 
 _uploadDoc: function(elecId, category, containerId, nomRef) {
   nomRef = nomRef || '';
-  var fileInput = document.getElementById('doc-file-' + category);
-  var notesInput = document.getElementById('doc-notes-' + category);
+  var fileInput = document.getElementById('doc-file-' + containerId);
+  var notesInput = document.getElementById('doc-notes-' + containerId);
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
     showToast('Please select a file first.', true); return;
   }
@@ -7043,7 +7047,7 @@ _uploadDoc: function(elecId, category, containerId, nomRef) {
         showToast('Document uploaded successfully.');
         fileInput.value = '';
         if (notesInput) notesInput.value = '';
-        AdminPanel._loadDocuments(elecId, category);
+        AdminPanel._loadDocuments(elecId, category, containerId, nomRef);
       })
       .withFailureHandler(function() { showToast('Upload failed — connection error.', true); })
       .storeDocument(App.token, elecId, category, file.name, base64, file.type, notes, getTEMAuthId(), nomRef);
@@ -7051,7 +7055,7 @@ _uploadDoc: function(elecId, category, containerId, nomRef) {
   reader.readAsDataURL(file);
 },
 
-_deleteDoc: function(docId, elecId, category) {
+_deleteDoc: function(docId, elecId, category, containerId, nomRef) {
   if (!confirm('Delete this document? It will be removed from the list (the Drive file is retained).')) return;
   google.script.run
     .withSuccessHandler(function(res) {
@@ -7059,7 +7063,7 @@ _deleteDoc: function(docId, elecId, category) {
         showToast((res && res.message) || 'Delete failed.', true); return;
       }
       showToast('Document deleted.');
-      AdminPanel._loadDocuments(elecId, category);
+      AdminPanel._loadDocuments(elecId, category, containerId, nomRef);
     })
     .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
     .deleteDocument(App.token, docId, getTEMAuthId());
