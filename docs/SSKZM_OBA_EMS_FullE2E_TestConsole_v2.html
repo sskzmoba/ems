@@ -287,7 +287,7 @@
   </div>
 
   <details class="roster" open>
-    <summary>Voter roster — 24 identities (3 real, 21 dummy)</summary>
+    <summary>Voter roster — 27 identities (3 real, 24 dummy)</summary>
     <div class="roster-table-wrap">
       <table class="roster">
         <thead><tr><th>Roll</th><th>Batch</th><th>Email</th><th>Role in this test</th></tr></thead>
@@ -403,7 +403,7 @@ T2024,Test,TurnoutVoterB,2012,dummy2024@example.test,+91,9000002024,,,verified</
       ['Create Election B: title "TEST — Gate Verification (do not advance)", Trial Election = No, Internal Test Election = Yes.', '"Internal Test" badge only, no "Trial" badge.']
     ]},
     { n: 1, title: 'Voter roll draft build (Election A)', who: 'EC Officer for step 1, RO/TEM after', items: [
-      ['As EC Officer: Voter Roll → Upload Draft Roll, using the CSV above. This replaces VoterRollDraft entirely — the current real Tier 2 data is gone from the draft in this one action (already safely archived).', 'exactly 24 rows in the draft list, all matching the roster table, no leftover real names/rolls from Tier 2.'],
+      ['As EC Officer: Voter Roll → Upload Draft Roll, using the CSV above. This replaces VoterRollDraft entirely — the current real Tier 2 data is gone from the draft in this one action (already safely archived).', 'exactly 27 rows in the draft list, all matching the roster table, no leftover real names/rolls from Tier 2.'],
       ['Pick any one dummy row (e.g. T2023) and mark it Objected via the per-row status dropdown, with a note.', 'row shows "Objected" status.'],
       ['Attempt Certify Voter Roll.', 'blocked — "Cannot certify: 1 objection(s) unresolved. Mark each as Retained or Removed first."'],
       ['Resolve the objection on T2023 as Retain.', 'objection cleared, no longer blocks certification.'],
@@ -417,7 +417,7 @@ T2024,Test,TurnoutVoterB,2012,dummy2024@example.test,+91,9000002024,,,verified</
     { n: 3, title: 'Public voter roll page (SOP 3.4) + certification', who: 'anyone, logged out; RO/TEM for step 3', items: [
       ['Visit ?action=voterroll while the roll is still in draft (not yet certified).', '"Draft Voter Roll" heading, objection-deadline banner (if a schedule is set) or no banner (if not), every roster row’s Roll/Name/Batch only — no email column anywhere, search box filters correctly.'],
       ['Confirm the remedy copy names the RO as the contact (not EC/VVA), matching roContactFooter().', 'RO contact line appears, matches every other public page.'],
-      ['Certify the voter roll now (certifyVoterRoll), before any nomination testing begins. This must happen here, not later: Voters (once certified) takes priority over VoterRollDraft in every roll lookup system-wide — if the Tier 2 roll was ever certified, its real data would otherwise silently override this synthetic roster for every nomination/candidate lookup from Part 4 onward.', 'Voters count = 24, matches the synthetic roster exactly, no leftover Tier 2 entries.']
+      ['Certify the voter roll now (certifyVoterRoll), before any nomination testing begins. This must happen here, not later: Voters (once certified) takes priority over VoterRollDraft in every roll lookup system-wide — if the Tier 2 roll was ever certified, its real data would otherwise silently override this synthetic roster for every nomination/candidate lookup from Part 4 onward.', 'Voters count = 27, matches the synthetic roster exactly, no leftover Tier 2 entries.']
     ]},
     { n: 4, title: 'Phase 1 nominations (self-nomination)', who: 'T1001 (real)', items: [
       ['Log in as T1001 (shelleykdas@gmail.com, real OTP). Nominate Myself for President, proposer T2001, seconder T2002. Enter a bio under 30 characters first.', 'blocked client-side before submission, clear message.'],
@@ -500,7 +500,7 @@ T2024,Test,TurnoutVoterB,2012,dummy2024@example.test,+91,9000002024,,,verified</
     { n: 16, title: 'Cleanup', who: 'RO/TEM, with TEM AuthID and the confirmation phrase', items: [
       ['On Election A: Purge Trial Data, typing CONFIRM PURGE.', 'Candidates/Votes/VotedLog/Nominations/ScrutinyLog/Complaints/Appeals/OTPs cleared for Election A; election resets to draft. Voter roll, Admins, and TEM config remain untouched.'],
       ['On Election B: since it never had transactional data, either delete it or leave it in draft.', 'no purge needed (and purgeTrialData would refuse it anyway, being non-trial).']
-    ], note: 'purgeTrialData never touches VoterRollDraft/Voters, and there\'s no dedicated function to clear them — the synthetic 24-row roster stays in the system after this cleanup. Expected, not a gap: when the real election restarts from a fresh VVA export, the EC Officer\'s uploadVoterRollDraft upload replaces the draft again (same mechanism as Part 1), and the next certifyVoterRoll replaces Voters again — the same reset this test relied on. No manual roll cleanup is required before then.'}
+    ], note: 'purgeTrialData never touches VoterRollDraft/Voters, and there\'s no dedicated function to clear them — the synthetic 27-row roster stays in the system after this cleanup. Expected, not a gap: when the real election restarts from a fresh VVA export, the EC Officer\'s uploadVoterRollDraft upload replaces the draft again (same mechanism as Part 1), and the next certifyVoterRoll replaces Voters again — the same reset this test relied on. No manual roll cleanup is required before then.'}
   ];
 
   var root = document.getElementById('partsRoot');

@@ -35,7 +35,7 @@ testing.
 **Do this as EC Officer** (CSV bulk-upload is the only UI path that actually replaces
 the draft — `addVoterToDraft` in the RO panel only appends one row at a time and
 would leave the old real rows mixed in): Voter Roll → Upload Draft Roll, using the
-CSV below. This clears `VoterRollDraft` and replaces it with exactly these 24 rows.
+CSV below. This clears `VoterRollDraft` and replaces it with exactly these 27 rows.
 
 ```csv
 RollNo,Name,Surname,Batch,Email,PhoneCC,Phone,Phone2CC,Phone2,VerificationCategory
@@ -132,7 +132,7 @@ second factor. No dummy inbox is ever needed.
       This **replaces** `VoterRollDraft` entirely — the current real Tier 2 data is
       gone from the draft in this one action (already safely archived — Election
       Record downloaded, scrutiny-stage backups exist).
-      **Expected:** exactly 24 rows in the draft list, all matching the roster
+      **Expected:** exactly 27 rows in the draft list, all matching the roster
       table, no leftover real names/rolls from Tier 2.
 - [ ] 2. Pick any one dummy row (e.g. T2023) and mark it **Objected** via the
       per-row status dropdown, with a note.
@@ -179,9 +179,9 @@ second factor. No dummy inbox is ever needed.
       takes priority over `VoterRollDraft` in every roll lookup system-wide — if the
       Tier 2 roll was ever certified, its real data would otherwise silently
       override this synthetic roster for every nomination/candidate lookup from
-      Part 4 onward. Certifying now fully replaces `Voters` with exactly these 24
+      Part 4 onward. Certifying now fully replaces `Voters` with exactly these 27
       rows.
-      **Expected:** `Voters` count = 24, matches the synthetic roster exactly, no
+      **Expected:** `Voters` count = 27, matches the synthetic roster exactly, no
       leftover Tier 2 entries.
 
 ---
@@ -518,7 +518,7 @@ BRIDGE_NOTE.md C.2/D.1.
       anyway, being non-trial).
 
 **Note on the voter roll itself**: `purgeTrialData` never touches `VoterRollDraft`/
-`Voters`, and there's no dedicated function to clear them — the synthetic 24-row
+`Voters`, and there's no dedicated function to clear them — the synthetic 27-row
 roster will remain in the system after this cleanup. That's expected, not a gap to
 fix now: when the real election process restarts from a fresh VVA export, the EC
 Officer's `uploadVoterRollDraft` upload will fully replace the draft again (same
