@@ -2168,38 +2168,46 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
         if (orgBatch) {
           // Auto-set restricted flag
           sh.getRange(i + 1, COL.ELEC_ORGSECY_RESTRICTED + 1).setValue(true);
-          // Email all voters from the designated batch
-          // Draft-fallback: roll may not be certified yet pre-trial.
-          var voterRows = getVoterRollRows(electionId).rows;
-          var batchBracket = getBatchRepBracket(orgBatch);
-          var batchLabel = batchBracket ? batchBracket : orgBatch;
-          var elecTitle = rows[i][COL.ELEC_TITLE].toString();
-          for (var vb = 0; vb < voterRows.length; vb++) {
-            var vBatch = voterRows[vb][COL.VOTER_BATCH].toString().trim();
-            var vBracket = getBatchRepBracket(vBatch);
-            // Match on exact year for Org Secy (not bracket)
-            if (vBatch !== orgBatch) continue;
-            var vEmail = voterRows[vb][COL.VOTER_EMAIL].toString().trim();
-            var vName  = voterRows[vb][COL.VOTER_NAME].toString().trim();
-            if (!vEmail) continue;
-            var subject = 'SSKZM OBA Election — Organising Secretary: Priority Nomination Window for Batch ' + orgBatch;
-            var body =
-              '<p>Dear ' + vName + ',</p>' +
-              '<p>Nominations are now open for the <strong>' + elecTitle + '</strong>.</p>' +
-              '<p>The post of <strong>Organising Secretary</strong> has been designated for ' +
-              'Batch <strong>' + orgBatch + '</strong> for this election.</p>' +
-              '<p><strong>Phase 1 (first 7 days):</strong> Only members of Batch ' + orgBatch +
-              ' may nominate for or propose/second a nomination for Organising Secretary.</p>' +
-              '<p><strong>Important:</strong> If no complete nomination (with proposer and seconder confirmed) ' +
-              'is received from Batch ' + orgBatch + ' by the end of Phase 1, the post will be ' +
-              'declared open to all Life Members for Phase 2.</p>' +
-              '<p>Please log in to the election portal to submit or support a nomination.</p>' +
-              '<p>SSKZM OBA Elections</p>';
-            try { sendEmailViaSendGrid(vEmail, subject, body); } catch(e) {}
+          if (isTrial2) {
+            // Skip the real-world email blast for trial elections — matches
+            // the same trial-skip convention used by triggerPhase2Extension.
+            appendAdminLog(sess.identity, 'orgsecy_batch_restricted',
+              'Org Secy restricted to batch ' + orgBatch + '. Batch email SKIPPED (trial election).',
+              '', electionId);
+          } else {
+            // Email all voters from the designated batch
+            // Draft-fallback: roll may not be certified yet pre-trial.
+            var voterRows = getVoterRollRows(electionId).rows;
+            var batchBracket = getBatchRepBracket(orgBatch);
+            var batchLabel = batchBracket ? batchBracket : orgBatch;
+            var elecTitle = rows[i][COL.ELEC_TITLE].toString();
+            for (var vb = 0; vb < voterRows.length; vb++) {
+              var vBatch = voterRows[vb][COL.VOTER_BATCH].toString().trim();
+              var vBracket = getBatchRepBracket(vBatch);
+              // Match on exact year for Org Secy (not bracket)
+              if (vBatch !== orgBatch) continue;
+              var vEmail = voterRows[vb][COL.VOTER_EMAIL].toString().trim();
+              var vName  = voterRows[vb][COL.VOTER_NAME].toString().trim();
+              if (!vEmail) continue;
+              var subject = 'SSKZM OBA Election — Organising Secretary: Priority Nomination Window for Batch ' + orgBatch;
+              var body =
+                '<p>Dear ' + vName + ',</p>' +
+                '<p>Nominations are now open for the <strong>' + elecTitle + '</strong>.</p>' +
+                '<p>The post of <strong>Organising Secretary</strong> has been designated for ' +
+                'Batch <strong>' + orgBatch + '</strong> for this election.</p>' +
+                '<p><strong>Phase 1 (first 7 days):</strong> Only members of Batch ' + orgBatch +
+                ' may nominate for or propose/second a nomination for Organising Secretary.</p>' +
+                '<p><strong>Important:</strong> If no complete nomination (with proposer and seconder confirmed) ' +
+                'is received from Batch ' + orgBatch + ' by the end of Phase 1, the post will be ' +
+                'declared open to all Life Members for Phase 2.</p>' +
+                '<p>Please log in to the election portal to submit or support a nomination.</p>' +
+                '<p>SSKZM OBA Elections</p>';
+              try { sendEmailViaSendGrid(vEmail, subject, body); } catch(e) {}
+            }
+            appendAdminLog(sess.identity, 'orgsecy_batch_restricted',
+              'Org Secy restricted to batch ' + orgBatch + '. Batch email sent.',
+              '', electionId);
           }
-          appendAdminLog(sess.identity, 'orgsecy_batch_restricted',
-            'Org Secy restricted to batch ' + orgBatch + '. Batch email sent.',
-            '', electionId);
         }
       }
       // ────────────────────────────────────────────────────────
@@ -2243,27 +2251,35 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
             appendAdminLog(sess.identity, 'orgsecy_restriction_lifted',
               'No complete Org Secy nomination from batch ' + orgBatchP2 +
               '. Restriction lifted automatically.', 'true', 'false');
-            // Draft-fallback: roll may not be certified yet pre-trial.
-            var allVoterRows = getVoterRollRows(electionId).rows;
-            var elecTitleP2  = rows[i][COL.ELEC_TITLE].toString();
-            for (var avP2 = 0; avP2 < allVoterRows.length; avP2++) {
-              var avEmail = allVoterRows[avP2][COL.VOTER_EMAIL].toString().trim();
-              var avName  = allVoterRows[avP2][COL.VOTER_NAME].toString().trim();
-              if (!avEmail) continue;
-              var avSubject = 'SSKZM OBA Election — Organising Secretary now open to all members';
-              var avBody =
-                '<p>Dear ' + avName + ',</p>' +
-                '<p>Phase 2 nominations are now open for the <strong>' + elecTitleP2 + '</strong>.</p>' +
-                '<p>No complete nomination was received from Batch <strong>' + orgBatchP2 +
-                '</strong> for the post of Organising Secretary during Phase 1.</p>' +
-                '<p>The post of <strong>Organising Secretary is now open to all Life Members</strong> ' +
-                'for Phase 2 nominations.</p>' +
-                '<p>Please log in to the election portal to submit or support a nomination.</p>' +
-                '<p>SSKZM OBA Elections</p>';
-              try { sendEmailViaSendGrid(avEmail, avSubject, avBody); } catch(e) {}
+            var isTrialP2 = rows[i][COL.ELEC_TRIAL].toString() === 'true';
+            if (isTrialP2) {
+              // Skip the real-world email blast for trial elections — matches
+              // the same trial-skip convention used by triggerPhase2Extension.
+              appendAdminLog(sess.identity, 'orgsecy_open_all_email_sent',
+                'Org Secy opened to all. Email to all voters SKIPPED (trial election).', '', electionId);
+            } else {
+              // Draft-fallback: roll may not be certified yet pre-trial.
+              var allVoterRows = getVoterRollRows(electionId).rows;
+              var elecTitleP2  = rows[i][COL.ELEC_TITLE].toString();
+              for (var avP2 = 0; avP2 < allVoterRows.length; avP2++) {
+                var avEmail = allVoterRows[avP2][COL.VOTER_EMAIL].toString().trim();
+                var avName  = allVoterRows[avP2][COL.VOTER_NAME].toString().trim();
+                if (!avEmail) continue;
+                var avSubject = 'SSKZM OBA Election — Organising Secretary now open to all members';
+                var avBody =
+                  '<p>Dear ' + avName + ',</p>' +
+                  '<p>Phase 2 nominations are now open for the <strong>' + elecTitleP2 + '</strong>.</p>' +
+                  '<p>No complete nomination was received from Batch <strong>' + orgBatchP2 +
+                  '</strong> for the post of Organising Secretary during Phase 1.</p>' +
+                  '<p>The post of <strong>Organising Secretary is now open to all Life Members</strong> ' +
+                  'for Phase 2 nominations.</p>' +
+                  '<p>Please log in to the election portal to submit or support a nomination.</p>' +
+                  '<p>SSKZM OBA Elections</p>';
+                try { sendEmailViaSendGrid(avEmail, avSubject, avBody); } catch(e) {}
+              }
+              appendAdminLog(sess.identity, 'orgsecy_open_all_email_sent',
+                'Org Secy opened to all. Email sent to all voters.', '', electionId);
             }
-            appendAdminLog(sess.identity, 'orgsecy_open_all_email_sent',
-              'Org Secy opened to all. Email sent to all voters.', '', electionId);
           } else {
             appendAdminLog(sess.identity, 'orgsecy_restriction_maintained',
               'Complete Org Secy nomination from batch ' + orgBatchP2 +
