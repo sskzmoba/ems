@@ -405,8 +405,8 @@ T2024,Test,TurnoutVoterB,2012,dummy2024@example.test,+91,9000002024,,,verified</
     { n: 1, title: 'Voter roll draft build (Election A)', who: 'EC Officer for step 1, RO/TEM after', items: [
       ['As EC Officer: Voter Roll → Upload Draft Roll, using the CSV above. This replaces VoterRollDraft entirely — the current real Tier 2 data is gone from the draft in this one action (already safely archived).', 'exactly 27 rows in the draft list, all matching the roster table, no leftover real names/rolls from Tier 2.'],
       ['Pick any one dummy row (e.g. T2023) and mark it Objected via the per-row status dropdown, with a note.', 'row shows "Objected" status.'],
-      ['Attempt Certify Voter Roll.', 'blocked — "Cannot certify: 1 objection(s) unresolved. Mark each as Retained or Removed first."'],
-      ['Resolve the objection on T2023 as Retain.', 'objection cleared, no longer blocks certification.'],
+['Confirm the Certify Voter Roll button itself is gone while the objection is unresolved — this is a UI swap, not a clickable-then-blocked button.', 'button replaced by an inline warning: "⚠ 1 unresolved objection(s) must be resolved before certification."'],
+      ['Resolve the objection on T2023 as Retain.', 'the Certify Voter Roll button reappears.'],
       ['Do not certify yet — Part 3 needs the roll in draft state first.', 'roll remains in draft.']
     ]},
     { n: 2, title: 'Draft voter roll editing', who: 'RO/TEM', items: [

@@ -137,11 +137,13 @@ second factor. No dummy inbox is ever needed.
 - [ ] 2. Pick any one dummy row (e.g. T2023) and mark it **Objected** via the
       per-row status dropdown, with a note.
       **Expected:** row shows "Objected" status.
-- [ ] 3. Attempt **Certify Voter Roll**.
-      **Expected:** blocked — "Cannot certify: 1 objection(s) unresolved. Mark each
-      as Retained or Removed first."
+- [ ] 3. Confirm the **Certify Voter Roll** button itself is gone while the
+      objection is unresolved — this is a UI swap, not a clickable-then-blocked
+      button.
+      **Expected:** button replaced by an inline warning: "⚠ 1 unresolved
+      objection(s) must be resolved before certification."
 - [ ] 4. Resolve the objection on T2023 as **Retain**.
-      **Expected:** objection cleared, no longer blocks certification.
+      **Expected:** the Certify Voter Roll button reappears.
 - [ ] 5. **Do not certify yet** — Part 3 needs the roll in draft state first.
 
 ---
