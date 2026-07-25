@@ -8465,10 +8465,14 @@ function getNominationsBoard(token, electionId) {
     postMap[post].nominations.push({
       id:     row[COL.NOM_ID].toString(),
       name:   row[COL.NOM_CAND_NAME].toString(),
+      roll:   row[COL.NOM_CAND_ROLL].toString(),
       batch:  row[COL.NOM_CAND_BATCH].toString(),
       bio:    row[COL.NOM_BIO].toString(),
+      photo:  row[COL.NOM_PHOTO].toString(),
       status: row[COL.NOM_STATUS].toString()
-      // Deliberately excludes: roll, proposer roll, seconder roll
+      // Candidate roll number was previously deliberately excluded here;
+      // now shown by RO decision, since similar-sounding names across
+      // batches need disambiguation. Proposer/seconder roll remain excluded.
     });
   }
  

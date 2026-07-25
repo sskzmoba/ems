@@ -721,9 +721,15 @@ var VoterPanel = (function() {
           : '';
         html += '<div style="padding:10px 0;border-bottom:1px solid #f9fafb;">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
-            '<div style="font-size:.9rem;font-weight:600;color:#1f2937;">' + escHtml(nom.name) + '</div>' + badge +
+            '<div style="display:flex;align-items:center;gap:10px;">' +
+              (nom.photo
+                ? '<img src="' + escHtml(nom.photo) + '" style="width:44px;height:44px;object-fit:cover;' +
+                  'border-radius:50%;border:2px solid #e5e7eb;flex-shrink:0;">'
+                : '') +
+              '<div style="font-size:.9rem;font-weight:600;color:#1f2937;">' + escHtml(nom.name) + '</div>' +
+            '</div>' + badge +
           '</div>' +
-          '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">Batch: ' + escHtml(nom.batch) + '</div>' +
+          '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">Roll: ' + escHtml(nom.roll) + ' · Batch: ' + escHtml(nom.batch) + '</div>' +
           (nom.bio ? '<div style="font-size:.82rem;color:#374151;margin-top:6px;line-height:1.5;">' + escHtml(nom.bio) + '</div>' : '') +
           objBtn +
           '</div>';
