@@ -171,11 +171,6 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
       </div>
     </div>
   </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Document links (SOP / TechSpec) -->
   <div id="doc-links-area" style="display:none;"></div>
@@ -200,15 +195,16 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
   </div>
   <div class="footer-links">
     <a href="https://github.com/sskzmoba/ems" class="footer-lk" target="_blank" rel="noopener">GitHub</a>
-    <a href="mailto:elections@sskzmoba.org" class="footer-lk">Contact RO</a>
+    <a href="mailto:<?= ELECTIONS_EMAIL ?>" class="footer-lk">Contact</a>
   </div>
 </div>
 
 <script>
 var DEPLOY_URL = '<?= ScriptApp.getService().getUrl() ?>';
+var _currentElectionId = '';
 
 function goVoterLogin() { window.top.location.href = DEPLOY_URL + '?action=login'; }
-function goResults()    { window.top.location.href = DEPLOY_URL + '?action=results'; }
+function goResults()    { window.top.location.href = DEPLOY_URL + '?action=results' + (_currentElectionId ? '&electionId=' + encodeURIComponent(_currentElectionId) : ''); }
 function goVoterRoll()  { window.top.location.href = DEPLOY_URL + '?action=voterroll'; }
 
 // ── Date helpers ──────────────────────────────────────────────
@@ -473,18 +469,24 @@ function renderAnnouncements(cm) {
   var items = [];
   if (cm.sgm_date  && cm.sgm_date.value)  items.push({ label:'SGM',   val: fmtDate(cm.sgm_date.value)  || cm.sgm_date.value });
   if (cm.sgm_venue && cm.sgm_venue.value) items.push({ label:'Venue',  val: cm.sgm_venue.value });
-  if (cm.agm_date  && cm.agm_date.value)  items.push({ label:'AGM',   val: fmtDate(cm.agm_date.value)  || cm.agm_date.value });
+  // AGM date is derived from the Schedule's V-Day (same real-world date,
+  // same "AGM Day (V-Day)" milestone shown in the schedule widget below) —
+  // not a separately-entered CMS field, so the two can never disagree.
+  var agmVDay = (_schedRes && _schedRes.liveSchedule && _schedRes.liveSchedule.vDay) ? _schedRes.liveSchedule.vDay : '';
+  if (agmVDay) items.push({ label:'AGM', val: fmtDate(agmVDay) || agmVDay });
 
   var sgmNotice = (cm.sgm_notice    && cm.sgm_notice.value)    ? cm.sgm_notice.value    : '';
+  var agmNotice = (cm.agm_notice    && cm.agm_notice.value)    ? cm.agm_notice.value    : '';
   var notice    = (cm.announcement  && cm.announcement.value)  ? cm.announcement.value  : '';
 
-  if (!items.length && !sgmNotice && !notice) return '';
+  if (!items.length && !sgmNotice && !agmNotice && !notice) return '';
 
   var html = '<div class="card"><div class="card-head"><div class="card-head-t">📢 Association Notices</div></div><div class="ann-body">';
   items.forEach(function(item) {
     html += '<div class="ann-row"><div class="ann-lbl">' + item.label + '</div><div class="ann-val">' + item.val + '</div></div>';
   });
   if (sgmNotice) html += '<div class="ann-row"><div class="ann-lbl">Notice</div><div class="ann-val ann-notice">' + sgmNotice + '</div></div>';
+  if (agmNotice) html += '<div class="ann-row"><div class="ann-lbl">AGM Notice</div><div class="ann-val ann-notice">' + agmNotice + '</div></div>';
   if (notice)    html += '<div class="ann-row"><div class="ann-lbl">Update</div><div class="ann-val ann-notice">' + notice    + '</div></div>';
   html += '</div></div>';
   return html;
@@ -517,6 +519,24 @@ function fetchVVACount(jsonUrl) {
 // ── Global state for schedule render ─────────────────────────
 var _elecStatus = 'draft';
 var _schedRes   = null;
+var _lpcData    = null;
+
+// Re-renders the Announcements card from whatever Landing Page Content
+// and Schedule data has arrived so far — called from both the CMS load
+// and the schedule load, since the AGM line depends on both and either
+// one may resolve first.
+function renderAnnouncementsArea() {
+  if (!_lpcData) return;
+  var annArea = document.getElementById('announcements-area');
+  if (!annArea) return;
+  var annHtml = renderAnnouncements(_lpcData);
+  if (annHtml) {
+    annArea.innerHTML = annHtml;
+    annArea.style.display = 'block';
+  } else {
+    annArea.style.display = 'none';
+  }
+}
 
 // ── Load 1: Election status ───────────────────────────────────
 
@@ -528,6 +548,7 @@ google.script.run
       return;
     }
     _elecStatus = res.status;
+    _currentElectionId = res.electionId || '';
     if (res.trial) document.getElementById('trial-banner').style.display = 'block';
     if (res.title) document.getElementById('header-sub').textContent = res.title;
     area.innerHTML = renderStatusCard(res);
@@ -537,10 +558,7 @@ google.script.run
     if (res.hasVoterRoll) {
       document.getElementById('voterroll-btn-area').style.display = 'block';
     }
-    if (res.vvaUrl && res.vvaUrl.trim() !== '') {
-      document.getElementById('vva-link').href = res.vvaUrl;
-      document.getElementById('vva-area').style.display = 'block';
-    }
+    // vva_url/vva-area is handled solely by Load 2 (getLandingPageContent) now.
     // Re-render schedule if it already loaded
     if (_schedRes) renderScheduleArea();
   })
@@ -561,12 +579,8 @@ google.script.run
     var cm = {};
     (res.items || []).forEach(function(item) { cm[item.key] = item; });
 
-    var annHtml = renderAnnouncements(cm);
-    if (annHtml) {
-      var annArea = document.getElementById('announcements-area');
-      annArea.innerHTML = annHtml;
-      annArea.style.display = 'block';
-    }
+    _lpcData = cm;
+    renderAnnouncementsArea();
     if (cm.vva_json && cm.vva_json.value) fetchVVACount(cm.vva_json.value);
     if (cm.vva_url  && cm.vva_url.value  && cm.vva_url.value.trim() !== '') {
       var vvaLink = document.getElementById('vva-link');
@@ -596,7 +610,7 @@ google.script.run
     }
   })
   .withFailureHandler(function() {})
-  .getLandingPageContent();
+  .getLandingPageContent(true);
 
 // ── Load 3: Schedule ─────────────────────────────────────────
 
@@ -615,6 +629,7 @@ google.script.run
     if (!res || !res.success) return;
     _schedRes = res;
     renderScheduleArea();
+    renderAnnouncementsArea();
   })
   .withFailureHandler(function(e) {
     console.log('getPublicSchedule failed:', e);

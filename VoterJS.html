@@ -34,6 +34,29 @@ var VoterPanel = (function() {
   var _voterBatch        = '';
   var _orgSecyBatch      = '';
   var _orgSecyRestricted = false;
+  var _nomBoardData         = null;
+  var _nomBoardPostFilter   = '';
+
+  var POST_ORDER_CANONICAL = [
+    'President','Vice President','General Secretary','Joint Secretary',
+    'Organising Secretary','Treasurer',
+    'Batch Representative 1965-70','Batch Representative 1971-75',
+    'Batch Representative 1976-80','Batch Representative 1981-85',
+    'Batch Representative 1986-90','Batch Representative 1991-95',
+    'Batch Representative 1996-00','Batch Representative 2001-05',
+    'Batch Representative 2006-10','Batch Representative 2011-15',
+    'Batch Representative 2016-20','Batch Representative 2021-25',
+    'Batch Representative 2026-30'
+  ];
+
+  function _sortPostOrder(postOrder) {
+    return postOrder.slice().sort(function(a, b) {
+      var ia = POST_ORDER_CANONICAL.indexOf(a); if (ia === -1) ia = 999;
+      var ib = POST_ORDER_CANONICAL.indexOf(b); if (ib === -1) ib = 999;
+      if (ia !== ib) return ia - ib;
+      return a.localeCompare(b);
+    });
+  }
 
   function _getBatchBracket(batchYear) {
     var yr = parseInt(batchYear);
@@ -503,8 +526,11 @@ var VoterPanel = (function() {
       'color:#fff;border:none;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
       '☰ View Candidate List</button>' +
       '<button onclick="VoterPanel.showMyNominations()" style="width:100%;padding:14px;background:#fff;' +
+      'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;margin-bottom:10px;">' +
+      '📄 My Nominations</button>' +
+      '<button onclick="VoterPanel.showMyObjections()" style="width:100%;padding:14px;background:#fff;' +
       'color:#1a3a5c;border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">' +
-      '📄 My Nominations</button></div>';
+      '📋 My Objections</button></div>';
   }
 
   function _declaredCard() {
@@ -674,6 +700,8 @@ var VoterPanel = (function() {
     if (posts.length === 0) {
       return _statusCard('☰', 'No Nominations Yet', 'No nominations have been confirmed yet.', '');
     }
+    _nomBoardData = res;
+    _nomBoardPostFilter = '';
     var statusLabel = {
       nominations_open: 'Nominations Open', nominations_open_phase2: 'Nominations Open \u2014 Phase 2',
       scrutiny: 'Under Scrutiny', candidates_published: 'Final Candidate List',
@@ -701,45 +729,25 @@ var VoterPanel = (function() {
         '</div>';
     }
 
-    for (var i = 0; i < posts.length; i++) {
-      var pg = posts[i];
-      var noms = pg.nominations || [];
-      html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:14px;">' +
-        '<div style="font-size:.95rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f3f4f6;">' +
-          escHtml(pg.post) +
-          ' <span style="font-size:.78rem;font-weight:400;color:#9ca3af;">(' + noms.length + ' nomination' + (noms.length !== 1 ? 's' : '') + ')</span></div>';
-      if (noms.length === 0) {
-        html += '<div style="font-size:.85rem;color:#9ca3af;padding:4px 0;">No nominations confirmed yet.</div>';
-      }
-      for (var j = 0; j < noms.length; j++) {
-        var nom = noms[j];
-        var badge = nom.status === 'accepted'
-          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">\u2713 Confirmed Candidate</span>'
-          : '';
-        var objBtn = (objWindowOpen && nom.status === 'accepted' && nom.id)
-          ? '<button onclick="VoterPanel._showObjModal(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.name) + '\',\'' + escHtml(pg.post) + '\')" ' +
-            'style="margin-top:8px;width:100%;padding:9px;background:#fff;color:#b45309;' +
-            'border:1.5px solid #b45309;border-radius:4px;font-size:.8rem;cursor:pointer;min-height:40px;">' +
-            '⚠ File Objection Against This Nomination' +
-            '</button>'
-          : '';
-        html += '<div style="padding:10px 0;border-bottom:1px solid #f9fafb;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
-            '<div style="display:flex;align-items:center;gap:10px;">' +
-              (nom.photo
-                ? '<img src="' + escHtml(nom.photo) + '" style="width:44px;height:44px;object-fit:cover;' +
-                  'border-radius:50%;border:2px solid #e5e7eb;flex-shrink:0;">'
-                : '') +
-              '<div style="font-size:.9rem;font-weight:600;color:#1f2937;">' + escHtml(nom.name) + '</div>' +
-            '</div>' + badge +
-          '</div>' +
-          '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">Roll: ' + escHtml(nom.roll) + ' · Batch: ' + escHtml(nom.batch) + '</div>' +
-          (nom.bio ? '<div style="font-size:.82rem;color:#374151;margin-top:6px;line-height:1.5;">' + escHtml(nom.bio) + '</div>' : '') +
-          objBtn +
-          '</div>';
-      }
-      html += '</div>';
-    }
+    // Post filter dropdown — sorted President -> VP -> Gen Sec -> Jt Sec ->
+    // Org Sec -> Treasurer -> Batch Reps, regardless of server return order.
+    var sortedPosts = _sortPostOrder(posts.map(function(pg) { return pg.post; }));
+    var postsByName = {};
+    posts.forEach(function(pg) { postsByName[pg.post] = pg; });
+    var totalNoms = posts.reduce(function(sum, pg) { return sum + (pg.nominations || []).length; }, 0);
+
+    html += '<select id="nom-board-post-filter" ' +
+      'style="width:100%;box-sizing:border-box;padding:11px 10px;border:1px solid #d1d5db;' +
+      'border-radius:4px;font-size:.88rem;margin-bottom:14px;" ' +
+      'onchange="VoterPanel._onNomBoardPostFilterChange(this.value)">' +
+      '<option value="">All Posts (' + totalNoms + ')</option>' +
+      sortedPosts.map(function(post) {
+        return '<option value="' + escHtml(post) + '">' + escHtml(post) +
+          ' (' + (postsByName[post].nominations || []).length + ')</option>';
+      }).join('') +
+    '</select>';
+
+    html += '<div id="nom-board-groups">' + _renderNomBoardGroups(res, '') + '</div>';
 
     // ── Objection modal (hidden, shown per nomination) ──────────
     html +=
@@ -773,6 +781,11 @@ var VoterPanel = (function() {
           'dismissed by the Appeals Panel. Your identity as objector will be known to the Appeals Panel and the Returning Officer.' +
           '</div>' +
 
+          '<div style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">Supporting Document (optional)</div>' +
+          '<input type="file" id="obj-doc" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" ' +
+          'style="width:100%;font-size:.82rem;margin-bottom:4px;">' +
+          '<div style="font-size:.75rem;color:#9ca3af;margin-bottom:12px;">PDF, image, or Word document. Max 5MB.</div>' +
+
           '<div id="obj-error" style="display:none;color:#dc2626;font-size:.82rem;margin-bottom:10px;"></div>' +
 
           '<button onclick="VoterPanel._submitObjection()" ' +
@@ -787,6 +800,70 @@ var VoterPanel = (function() {
     return html;
   }
 
+  function _renderNomBoardGroups(res, selectedPost) {
+    var candPubAt = res.candPubAt || null;
+    var objWindowOpen = false;
+    if (res.electionStatus === 'candidates_published' && candPubAt) {
+      var deadlineMs = new Date(candPubAt).getTime() + (48 * 60 * 60 * 1000);
+      objWindowOpen = Date.now() < deadlineMs;
+    }
+
+    var allPosts = res.posts || [];
+    var byName = {};
+    allPosts.forEach(function(pg) { byName[pg.post] = pg; });
+    var order = selectedPost ? [selectedPost] : _sortPostOrder(allPosts.map(function(pg) { return pg.post; }));
+
+    var html = '';
+    order.forEach(function(postName) {
+      var pg = byName[postName];
+      if (!pg) return;
+      var noms = pg.nominations || [];
+      html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:14px;">' +
+        '<div style="font-size:.95rem;font-weight:700;color:#1a3a5c;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #f3f4f6;">' +
+          escHtml(pg.post) +
+          ' <span style="font-size:.78rem;font-weight:400;color:#9ca3af;">(' + noms.length + ' nomination' + (noms.length !== 1 ? 's' : '') + ')</span></div>';
+      if (noms.length === 0) {
+        html += '<div style="font-size:.85rem;color:#9ca3af;padding:4px 0;">No nominations confirmed yet.</div>';
+      }
+      for (var j = 0; j < noms.length; j++) {
+        var nom = noms[j];
+        var badge = nom.status === 'accepted'
+          ? '<span style="font-size:.72rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;font-weight:600;">✓ Confirmed Candidate</span>'
+          : '';
+        var objBtn = (objWindowOpen && nom.status === 'accepted' && nom.id)
+          ? '<button onclick="VoterPanel._showObjModal(\'' + escHtml(nom.id) + '\',\'' + escHtml(nom.name) + '\',\'' + escHtml(pg.post) + '\')" ' +
+            'style="margin-top:8px;width:100%;padding:9px;background:#fff;color:#b45309;' +
+            'border:1.5px solid #b45309;border-radius:4px;font-size:.8rem;cursor:pointer;min-height:40px;">' +
+            '⚠ File Objection Against This Nomination' +
+            '</button>'
+          : '';
+        html += '<div style="padding:10px 0;border-bottom:1px solid #f9fafb;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+            '<div style="display:flex;align-items:center;gap:10px;">' +
+              (nom.photo
+                ? '<img src="' + escHtml(nom.photo) + '" style="width:44px;height:44px;object-fit:cover;' +
+                  'border-radius:50%;border:2px solid #e5e7eb;flex-shrink:0;">'
+                : '') +
+              '<div style="font-size:.9rem;font-weight:600;color:#1f2937;">' + escHtml(nom.name) + '</div>' +
+            '</div>' + badge +
+          '</div>' +
+          '<div style="font-size:.78rem;color:#6b7280;margin-top:2px;">Roll: ' + escHtml(nom.roll) + ' · Batch: ' + escHtml(nom.batch) + '</div>' +
+          (nom.bio ? '<div style="font-size:.82rem;color:#374151;margin-top:6px;line-height:1.5;">' + escHtml(nom.bio) + '</div>' : '') +
+          objBtn +
+          '</div>';
+      }
+      html += '</div>';
+    });
+
+    return html;
+  }
+
+  function _onNomBoardPostFilterChange(post) {
+    _nomBoardPostFilter = post;
+    var area = document.getElementById('nom-board-groups');
+    if (area && _nomBoardData) area.innerHTML = _renderNomBoardGroups(_nomBoardData, post);
+  }
+
   var _objNomId = null;
 
   function _showObjModal(nomId, candName, post) {
@@ -797,6 +874,8 @@ var VoterPanel = (function() {
     if (sel) sel.value = '';
     var ta = document.getElementById('obj-text');
     if (ta) ta.value = '';
+    var docEl = document.getElementById('obj-doc');
+    if (docEl) docEl.value = '';
     var err = document.getElementById('obj-error');
     if (err) { err.style.display = 'none'; err.textContent = ''; }
     var m = document.getElementById('obj-modal');
@@ -825,41 +904,67 @@ var VoterPanel = (function() {
     }
     if (!_objNomId) { return; }
 
+    var docEl   = document.getElementById('obj-doc');
+    var docFile = docEl && docEl.files && docEl.files[0] ? docEl.files[0] : null;
+    if (docFile && docFile.size > 5242880) {
+      if (errEl) { errEl.textContent = 'Document too large. Maximum size is 5MB.'; errEl.style.display = 'block'; }
+      return;
+    }
+
     var btn = document.querySelector('#obj-modal button');
     if (btn) { btn.disabled = true; btn.textContent = 'Submitting\u2026'; }
     if (errEl) { errEl.style.display = 'none'; }
 
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res || !res.success) {
-          if (errEl) { errEl.textContent = (res && res.message) || 'Submission failed.'; errEl.style.display = 'block'; }
-          if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
-          return;
-        }
-        _closeObjModal();
-        showToast('Objection filed. Reference: ' + res.objectionId);
-      })
-      .withFailureHandler(function(e) {
-        // The write may have succeeded server-side even though the response
-        // failed to reach the browser. Verify before alarming the voter.
-        var nomIdAtFailure = _objNomId;
-        google.script.run
-          .withSuccessHandler(function(checkRes) {
-            if (checkRes && checkRes.success && checkRes.filed) {
-              _closeObjModal();
-              showToast('Objection filed. Reference: ' + checkRes.objectionId);
-            } else {
+    // Submitted as one combined action \u2014 the document (if any) uploads
+    // before fileObjection composes its notifications, so its Drive link
+    // is already ready to carry through (RO's immediate notice, and later
+    // the consolidated Panel summary).
+    function doSubmit(docFilename, docB64, docMime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            if (errEl) { errEl.textContent = (res && res.message) || 'Submission failed.'; errEl.style.display = 'block'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+            return;
+          }
+          _closeObjModal();
+          showToast(res.docUploaded
+            ? 'Objection filed with supporting document. Reference: ' + res.objectionId
+            : 'Objection filed. Reference: ' + res.objectionId);
+        })
+        .withFailureHandler(function(e) {
+          // The write may have succeeded server-side even though the response
+          // failed to reach the browser. Verify before alarming the voter.
+          var nomIdAtFailure = _objNomId;
+          google.script.run
+            .withSuccessHandler(function(checkRes) {
+              if (checkRes && checkRes.success && checkRes.filed) {
+                _closeObjModal();
+                showToast('Objection filed. Reference: ' + checkRes.objectionId);
+              } else {
+                if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+                if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+              }
+            })
+            .withFailureHandler(function() {
               if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
               if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
-            }
-          })
-          .withFailureHandler(function() {
-            if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
-            if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
-          })
-          .checkObjectionFiled(App.token, nomIdAtFailure);
-      })
-      .fileObjection(App.token, _objNomId, grounds, text.trim());
+            })
+            .checkObjectionFiled(App.token, nomIdAtFailure);
+        })
+        .fileObjection(App.token, _objNomId, grounds, text.trim(), docFilename, docB64, docMime);
+    }
+
+    if (docFile) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+        doSubmit(docFile.name, b64, docFile.type);
+      };
+      reader.readAsDataURL(docFile);
+    } else {
+      doSubmit('', '', '');
+    }
   }
 
   function _loadReceipts() {
@@ -1868,6 +1973,115 @@ var VoterPanel = (function() {
     reader.readAsDataURL(file);
   }
 
+  // ── MY OBJECTIONS DASHBOARD ────────────────────────────────
+  // Tracks objections THIS member has personally filed against other
+  // candidates' accepted nominations — distinct from My Nominations, which
+  // only covers appeals against the member's own rejection. Before this,
+  // filing an objection only ever showed a one-time toast with no way to
+  // check back on its status later.
+
+  function showMyObjections() {
+    var c = document.getElementById('voter-content');
+    if (!c) return;
+    c.innerHTML = _spinner('Loading your objections…');
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success && res.election) {
+          _election = res.election;
+          _loadMyObjections();
+        } else {
+          var c2 = document.getElementById('voter-content');
+          if (c2) c2.innerHTML = _errorCard('No active election found.');
+        }
+      })
+      .withFailureHandler(function() {
+        var c2 = document.getElementById('voter-content');
+        if (c2) c2.innerHTML = _errorCard('Connection error.');
+      })
+      .getElectionsForVoter(App.token, _selectedElectionId);
+  }
+
+  function _loadMyObjections() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c) return;
+        if (!res || !res.success) {
+          c.innerHTML = _errorCard((res && res.message) || 'Could not load objections.');
+          return;
+        }
+        c.innerHTML = _renderMyObjections(res.objections || []);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML = _errorCard('Connection error.');
+      })
+      .getMyObjections(App.token, _election.id);
+  }
+
+  function _renderMyObjections(objections) {
+    var statusLabels = {
+      filed:             'Filed',
+      under_review:      'Under Review',
+      upheld:            'Upheld',
+      dismissed:         'Dismissed',
+      panel_no_response: 'Panel No Response',
+      duplicate:         'Duplicate (voided)'
+    };
+    var statusColors = {
+      filed:             '#fef3c7',
+      under_review:      '#eff6ff',
+      upheld:            '#d1fae5',
+      dismissed:         '#f3f4f6',
+      panel_no_response: '#fce7f3',
+      duplicate:         '#f3f4f6'
+    };
+
+    var html =
+      '<div style="margin-bottom:12px;">' +
+        '<button onclick="VoterPanel._backToBallot()" ' +
+        'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;' +
+        'border:2px solid #1a3a5c;border-radius:6px;font-size:.95rem;cursor:pointer;">← Back</button>' +
+      '</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:14px;">📋 My Objections</div>';
+
+    if (objections.length === 0) {
+      html +=
+        '<div style="text-align:center;padding:48px 16px;color:#6b7280;">' +
+          '<div style="font-size:2rem;margin-bottom:12px;">📭</div>' +
+          '<div style="font-size:.95rem;font-weight:600;color:#374151;margin-bottom:6px;">No Objections Filed</div>' +
+          '<div style="font-size:.85rem;">You have not filed any objections against a nomination.</div>' +
+        '</div>';
+      return html;
+    }
+
+    objections.forEach(function(obj) {
+      var bgColor     = statusColors[obj.status] || '#f9fafb';
+      var statusLabel = statusLabels[obj.status]  || obj.status;
+      html +=
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+        'padding:16px;margin-bottom:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">' +
+            '<div>' +
+              '<div style="font-size:.9rem;font-weight:700;color:#1a3a5c;">' + escHtml(obj.candName) + '</div>' +
+              '<div style="font-size:.8rem;color:#6b7280;">Post: ' + escHtml(obj.post) + '</div>' +
+            '</div>' +
+            '<span style="font-size:.72rem;padding:3px 10px;border-radius:10px;font-weight:600;' +
+              'background:' + bgColor + ';white-space:nowrap;">' + escHtml(statusLabel) + '</span>' +
+          '</div>' +
+          '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:8px;">Filed: ' +
+            escHtml(obj.filedAt.toString().split('T')[0] || obj.filedAt.toString()) + '</div>' +
+          '<div style="font-size:.85rem;color:#1f2937;background:#f9fafb;border-radius:6px;' +
+          'padding:10px 12px;white-space:pre-wrap;">' + escHtml(obj.appealText) + '</div>' +
+          (obj.decision ? '<div style="font-size:.82rem;color:#374151;margin-top:8px;">' +
+            '<strong>Panel decision:</strong> ' + escHtml(obj.decision) + '</div>' : '') +
+        '</div>';
+    });
+
+    return html;
+  }
+
   function _showAppealForm(nomId) {
     var form = document.getElementById('appeal-form-' + nomId);
     if (form) form.style.display = 'block';
@@ -1890,43 +2104,35 @@ var VoterPanel = (function() {
       showToast('Document too large. Maximum size is 5MB.', true); return;
     }
 
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res || !res.success) {
-          showToast((res && res.message) || 'Appeal submission failed.', true);
-          return;
-        }
-        var appealId = res.appealId;
-        // Upload supporting document if provided
-        if (docFile) {
-          var reader = new FileReader();
-          reader.onload = function(e) {
-            var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
-            google.script.run
-              .withSuccessHandler(function(dRes) {
-                if (!dRes || !dRes.success) {
-                  showToast('Appeal filed (Ref: ' + appealId + ') but document upload failed: ' +
-                    ((dRes && dRes.message) || 'Unknown error'), true);
-                } else {
-                  showToast('Appeal filed with supporting document. Reference: ' + appealId);
-                }
-                _loadMyNominations();
-              })
-              .withFailureHandler(function() {
-                showToast('Appeal filed (Ref: ' + appealId + ') but document upload failed.', true);
-                _loadMyNominations();
-              })
-              .storeAppealDocument(App.token, _election.id, appealId,
-                docFile.name, b64, docFile.type);
-          };
-          reader.readAsDataURL(docFile);
-        } else {
-          showToast('Appeal filed. Reference: ' + appealId);
+    // Submitted as one combined action — if a document is attached, it's
+    // uploaded first so its Drive link is already ready to embed in the
+    // Panel-notification email fileAppeal sends as part of this same call.
+    function doSubmit(docFilename, docB64, docMime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Appeal submission failed.', true);
+            return;
+          }
+          showToast(res.docUploaded
+            ? 'Appeal filed with supporting document. Reference: ' + res.appealId
+            : 'Appeal filed. Reference: ' + res.appealId);
           _loadMyNominations();
-        }
-      })
-      .withFailureHandler(function() { showToast('Connection error.', true); })
-      .fileAppeal(App.token, nomId, text);
+        })
+        .withFailureHandler(function() { showToast('Connection error.', true); })
+        .fileAppeal(App.token, nomId, text, docFilename, docB64, docMime);
+    }
+
+    if (docFile) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+        doSubmit(docFile.name, b64, docFile.type);
+      };
+      reader.readAsDataURL(docFile);
+    } else {
+      doSubmit('', '', '');
+    }
   }
 
   function _confirmWithdraw(nomId, postName) {
@@ -2163,6 +2369,7 @@ var VoterPanel = (function() {
     showNominationForm: showNominationForm,
     showNominationForm_Phase2: showNominationForm_Phase2,
     showMyNominations: showMyNominations,
+    showMyObjections: showMyObjections,
     _toggleNomPhotoUpload: _toggleNomPhotoUpload,
     _uploadMyNomPhoto: _uploadMyNomPhoto,
     _lookupRollP2: _lookupRollP2,
@@ -2180,6 +2387,7 @@ var VoterPanel = (function() {
     _submitAppeal: _submitAppeal,
     _submitComplaint: _submitComplaint,
     _showObjModal: _showObjModal,
+    _onNomBoardPostFilterChange: _onNomBoardPostFilterChange,
     _closeObjModal: _closeObjModal,
     _submitObjection: _submitObjection,
     _showEligibilityModal: _showEligibilityModal,

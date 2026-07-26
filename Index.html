@@ -44,6 +44,7 @@ html, body {
   font-size: 1rem;
   font-weight: 600;
   letter-spacing: .02em;
+  cursor: pointer;
 }
 
 #topbar-title span {
@@ -364,8 +365,8 @@ label {
 
   <!-- Top bar — shown after login -->
   <div id="topbar">
-    <div id="topbar-title">
-      SSKZM OBA
+    <div id="topbar-title" onclick="window.top.location.href=App.deployUrl" title="Back to Home">
+      🏠 SSKZM OBA
       <span id="topbar-subtitle">Election Management System</span>
     </div>
     <div id="topbar-user" class="hidden">

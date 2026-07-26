@@ -441,13 +441,16 @@ function _loadElections(role) {
             var internalTestTag = el.isInternalTest
               ? '<span class="status-badge" style="margin-left:6px;background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;">Internal Test</span>'
               : '';
+            var landingTag = el.showOnLandingPage
+              ? '<span class="status-badge" style="margin-left:6px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;">📌 On Landing Page</span>'
+              : '';
 
             html += '<div class="panel-card" style="margin-bottom:12px;">' +
               '<div class="panel-card-body" style="padding:14px 16px;">' +
 
               // Title row
               '<div style="font-weight:600;color:#1a3a5c;font-size:.95rem;margin-bottom:6px;">' +
-                escHtml(el.title) + trialTag + internalTestTag +
+                escHtml(el.title) + trialTag + internalTestTag + landingTag +
               '</div>' +
 
               // Status + mode row
@@ -464,13 +467,22 @@ function _loadElections(role) {
                 (el.endDate   ? ' → ' + escHtml(el.endDate)   : '') +
               '</div>' +
 
-              // Action button — RO only for now
+              // Action buttons — RO only for now
               (isRO ?
+                '<div style="display:flex;gap:8px;">' +
                 '<button class="btn btn-outline btn-sm" ' +
                   'onclick="AdminPanel.manageElection(\'' + escHtml(el.id) + '\')" ' +
-                  'style="width:100%;padding:10px;font-size:.85rem;">' +
+                  'style="flex:1;padding:10px;font-size:.85rem;">' +
                   'Manage' +
-                '</button>'
+                '</button>' +
+                '<button class="btn btn-outline btn-sm" ' +
+                  'onclick="AdminPanel._setShowOnLandingPage(\'' + escHtml(el.id) + '\', ' +
+                    (el.showOnLandingPage ? 'false' : 'true') + ')" ' +
+                  'style="flex:1;padding:10px;font-size:.85rem;' +
+                  (el.showOnLandingPage ? 'color:#b91c1c;border-color:#fca5a5;' : '') + '">' +
+                  (el.showOnLandingPage ? '📌 Remove from Landing Page' : '📌 Set as Landing Page') +
+                '</button>' +
+                '</div>'
               : '') +
 
               '</div></div>';
@@ -654,7 +666,21 @@ function _loadElections(role) {
           mode:    AdminPanel._mode,
          isTrial: AdminPanel._trial,
          isInternalTest: AdminPanel._internalTest
-        }, getTEMAuthId()); 
+        }, getTEMAuthId());
+    },
+
+    _setShowOnLandingPage: function(id, flag) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            showToast(flag ? 'Set as the headline election on the Landing Page.' : 'Removed from the Landing Page.');
+            AdminPanel.switchTab('elections');
+          } else {
+            showToast((res && res.message) || 'Failed to update.');
+          }
+        })
+        .withFailureHandler(function() { showToast('Error — please try again.'); })
+        .setShowOnLandingPage(App.token, id, flag, getTEMAuthId());
     },
 
     manageElection: function(id) {
@@ -768,6 +794,14 @@ _renderManageScreen: function(el) {
       '</div>'
     : '') +
 
+    // Revert-to-scrutiny card — only ever populated (by _loadVacancyCard)
+    // when status is candidates_published AND a mandatory post has become
+    // vacant since publication (e.g. an appeal upheld afterward). Empty/
+    // invisible otherwise — this is not a general "undo publication" button.
+    (isRO && el.status === 'candidates_published'
+      ? '<div id="vacancy-revert-card-' + escHtml(el.id) + '"></div>'
+      : '') +
+
     // Advance status — draft only
     (advance ?
       '<div class="panel-card" style="margin-bottom:12px;">' +
@@ -848,6 +882,11 @@ _renderManageScreen: function(el) {
     '<div class="panel-card" style="margin-bottom:12px;">' +
       '<div class="panel-card-header">Election Details</div>' +
       '<div class="panel-card-body">' +
+
+        '<label for="manage-title">Election Title</label>' +
+        '<input type="text" id="manage-title" ' +
+          'value="' + escHtml(el.title || '') + '" ' +
+          'style="margin-bottom:16px;" />' +
 
         '<label for="manage-desc">Description</label>' +
         '<textarea id="manage-desc" rows="3" ' +
@@ -1070,7 +1109,68 @@ _renderManageScreen: function(el) {
     setTimeout(function() {
       AdminPanel._loadAppealsPanelCard(el.id);
     }, 0);
+    if (el.status === 'candidates_published') {
+      setTimeout(function() {
+        AdminPanel._loadVacancyCard(el.id);
+      }, 0);
+    }
   }
+},
+
+_loadVacancyCard: function(elecId) {
+  var box = document.getElementById('vacancy-revert-card-' + elecId);
+  if (!box) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var box2 = document.getElementById('vacancy-revert-card-' + elecId);
+      if (!box2) return;
+      if (!res || !res.success || !res.vacantPosts || res.vacantPosts.length === 0) {
+        box2.innerHTML = ''; // nothing vacant — card stays invisible
+        return;
+      }
+      var vacantList = res.vacantPosts.join(', ');
+      box2.innerHTML =
+        '<div class="panel-card" style="margin-bottom:12px;border:1.5px solid #dc2626;">' +
+          '<div class="panel-card-header" style="background:#fef2f2;color:#991b1b;">' +
+            '⚠ Mandatory Post(s) Now Vacant: ' + escHtml(vacantList) +
+          '</div>' +
+          '<div class="panel-card-body">' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+              'This can happen if a candidate for a mandatory post was removed after the candidate list ' +
+              'was published (e.g. an appeal was upheld, or an acceptance was undone). Voting cannot be ' +
+              'activated in this state. Revert to scrutiny to trigger a Phase 2 extension and seek a new ' +
+              'nomination for this post.' +
+            '</div>' +
+            '<button onclick="AdminPanel._doRevertToScrutinyForVacancy(\'' + escHtml(elecId) + '\')" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#991b1b;border:1.5px solid #991b1b;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+              '↩ Revert to Scrutiny — Mandatory Post Vacant' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    })
+    .withFailureHandler(function() {
+      var box3 = document.getElementById('vacancy-revert-card-' + elecId);
+      if (box3) box3.innerHTML = '';
+    })
+    .getVacantMandatoryPosts(App.token, elecId);
+},
+
+_doRevertToScrutinyForVacancy: function(elecId) {
+  AdminPanel._showConfirmModal(
+    'Revert this election from candidates_published back to scrutiny?\n\n' +
+    'You will need to trigger a Phase 2 extension afterward (from the Nominations tab) to seek a new ' +
+    'nomination for the vacant post, then re-publish the candidate list once resolved.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
+          showToast('Reverted to scrutiny. Vacant post(s): ' + res.vacantPosts.join(', '));
+          AdminPanel.manageElection(elecId);
+        })
+        .withFailureHandler(function() { showToast('Error — please try again.', true); })
+        .revertToScrutinyForVacancy(App.token, elecId, getTEMAuthId());
+    }, 'Revert to Scrutiny', true);
 },
 
 _loadAppealsPanelCard: function(elecId) {
@@ -1208,18 +1308,19 @@ _submitAddAppealsPanelContact: function(elecId) {
 },
 
 _removeAppealsPanelContact: function(id, elecId) {
-  if (!confirm('Remove this Appeals Panel contact?')) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success) {
-        showToast('Contact removed.');
-        AdminPanel._loadAppealsPanelCard(elecId);
-      } else {
-        showToast((res && res.message) || 'Failed to remove contact.');
-      }
-    })
-    .withFailureHandler(function() { showToast('Error — please try again.'); })
-    .removeAppealsPanelContact(App.token, id, getTEMAuthId());
+  AdminPanel._showConfirmModal('Remove this Appeals Panel contact?', function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Contact removed.');
+          AdminPanel._loadAppealsPanelCard(elecId);
+        } else {
+          showToast((res && res.message) || 'Failed to remove contact.');
+        }
+      })
+      .withFailureHandler(function() { showToast('Error — please try again.'); })
+      .removeAppealsPanelContact(App.token, id, getTEMAuthId());
+  }, 'Remove', true);
 },
 
 _advanceStatusMsg: function(status) {
@@ -1253,93 +1354,99 @@ _advanceStatusMsg: function(status) {
 },
 
 _resendCandidatePublication: function(id) {
-  if (!confirm('Resend the candidate publication email to every accepted candidate for this election?\n\nThis sends to all accepted candidates again, including any who already received it successfully.')) return;
-  var btn = document.getElementById('btn-resend-cand-pub');
-  var resDiv = document.getElementById('resend-cand-pub-result');
-  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
-  if (resDiv) resDiv.innerHTML = '';
+  AdminPanel._showConfirmModal(
+    'Resend the candidate publication email to every accepted candidate for this election?\n\n' +
+    'This sends to all accepted candidates again, including any who already received it successfully.',
+    function() {
+      var btn = document.getElementById('btn-resend-cand-pub');
+      var resDiv = document.getElementById('resend-cand-pub-result');
+      if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+      if (resDiv) resDiv.innerHTML = '';
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
-      if (!resDiv) return;
-      if (res && res.success) {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
-          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
-          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
-          '</div>';
-      } else {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
-          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
-          escHtml((res && res.message) || 'Failed to send.') +
-          '</div>';
-      }
-    })
-    .withFailureHandler(function() {
-      if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
-      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
-    })
-    .publishCandidates(App.token, id, getTEMAuthId());
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
+          if (!resDiv) return;
+          if (res && res.success) {
+            resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+              'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+              '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+              '</div>';
+          } else {
+            resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+              'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+              escHtml((res && res.message) || 'Failed to send.') +
+              '</div>';
+          }
+        })
+        .withFailureHandler(function() {
+          if (btn) { btn.textContent = '✉ Resend Candidate Publication Emails'; btn.disabled = false; }
+          if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+        })
+        .publishCandidates(App.token, id, getTEMAuthId());
+    }, 'Resend');
 },
 
 _sendCandidateListPublishedNotice: function(id) {
-  if (!confirm('Send the candidate list published notice to every voter on the roll?')) return;
-  var btn = document.getElementById('btn-cand-list-notice');
-  var resDiv = document.getElementById('cand-list-notice-result');
-  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
-  if (resDiv) resDiv.innerHTML = '';
+  AdminPanel._showConfirmModal('Send the candidate list published notice to every voter on the roll?', function() {
+    var btn = document.getElementById('btn-cand-list-notice');
+    var resDiv = document.getElementById('cand-list-notice-result');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    if (resDiv) resDiv.innerHTML = '';
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
-      if (!resDiv) return;
-      if (res && res.success) {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
-          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
-          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
-          '</div>';
-      } else {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
-          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
-          escHtml((res && res.message) || 'Failed to send.') +
-          '</div>';
-      }
-    })
-    .withFailureHandler(function() {
-      if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
-      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
-    })
-    .sendCandidateListPublishedNotice(App.token, id, getTEMAuthId());
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
+        if (!resDiv) return;
+        if (res && res.success) {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+            'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+            '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+            '</div>';
+        } else {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+            'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+            escHtml((res && res.message) || 'Failed to send.') +
+            '</div>';
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = '✉ Send Candidate List Published Notice to All Members'; btn.disabled = false; }
+        if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+      })
+      .sendCandidateListPublishedNotice(App.token, id, getTEMAuthId());
+  }, 'Send');
 },
 
 _sendResultsDeclaredNotice: function(id) {
-  if (!confirm('Send the results declared notice to every voter on the roll?')) return;
-  var btn = document.getElementById('btn-results-notice');
-  var resDiv = document.getElementById('results-notice-result');
-  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
-  if (resDiv) resDiv.innerHTML = '';
+  AdminPanel._showConfirmModal('Send the results declared notice to every voter on the roll?', function() {
+    var btn = document.getElementById('btn-results-notice');
+    var resDiv = document.getElementById('results-notice-result');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    if (resDiv) resDiv.innerHTML = '';
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
-      if (!resDiv) return;
-      if (res && res.success) {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
-          'border-radius:4px;font-size:.8rem;color:#065f46;">' +
-          '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
-          '</div>';
-      } else {
-        resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
-          'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
-          escHtml((res && res.message) || 'Failed to send.') +
-          '</div>';
-      }
-    })
-    .withFailureHandler(function() {
-      if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
-      if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
-    })
-    .sendResultsDeclaredNotice(App.token, id, getTEMAuthId());
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
+        if (!resDiv) return;
+        if (res && res.success) {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+            'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+            '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+            '</div>';
+        } else {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+            'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+            escHtml((res && res.message) || 'Failed to send.') +
+            '</div>';
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = '✉ Send Results Declared Notice to All Members'; btn.disabled = false; }
+        if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+      })
+      .sendResultsDeclaredNotice(App.token, id, getTEMAuthId());
+  }, 'Send');
 },
 
 _advanceStatus: function(id, nextStatus, overrideNote) {
@@ -1407,6 +1514,35 @@ _advanceStatus: function(id, nextStatus, overrideNote) {
               'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
               'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
               'I have communicated this — Advance to Phase 2' +
+            '</button>' +
+          '</div>';
+      } else if (res && res.requiresVacancyConfirm) {
+        if (btn) { btn.textContent = '▶ Publish Candidate List'; btn.disabled = false; }
+        var vacPanel = document.getElementById('vacancy-confirm-panel');
+        if (!vacPanel) {
+          vacPanel = document.createElement('div');
+          vacPanel.id = 'vacancy-confirm-panel';
+          var errParentV = errEl ? errEl.parentNode : null;
+          if (errParentV) errParentV.insertBefore(vacPanel, errEl);
+        }
+        var vacantListPub = (res.vacantPosts || []).join(', ');
+        vacPanel.innerHTML =
+          '<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;' +
+          'padding:14px;margin-top:10px;">' +
+            '<div style="font-weight:700;color:#92400e;font-size:.9rem;margin-bottom:8px;">' +
+              '⚠ Mandatory Post(s) Vacant: ' + escHtml(vacantListPub) +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:12px;line-height:1.5;">' +
+              'Per SOP 4.9, the recommended action is to go to the <strong>Nominations</strong> tab and use ' +
+              '"Trigger Phase 2 Extension" now, while still in scrutiny — extension is no longer possible once ' +
+              'the candidate list is published. If you proceed anyway, you will still need a General Body ' +
+              'resolution before voting can open, at the later activation gate.' +
+            '</div>' +
+            '<button onclick="AdminPanel._advanceStatus(\'' + escHtml(id) + '\',\'candidates_published\',' +
+              '\'vacant_mandatory_post_confirmed:' + escHtml(vacantListPub) + '\')" ' +
+              'style="width:100%;padding:12px;background:#b45309;color:#fff;border:none;' +
+              'border-radius:4px;font-size:.9rem;font-weight:600;cursor:pointer;">' +
+              'Proceed Anyway — Publish With Vacant Post' +
             '</button>' +
           '</div>';
       } else if (res && res.requiresGBResolution) {
@@ -1968,9 +2104,17 @@ _saveElection: function(id) {
   var okEl  = document.getElementById('save-election-ok');
   errEl.style.display = 'none';
   okEl.style.display  = 'none';
+
+  var title = document.getElementById('manage-title').value.trim();
+  if (!title) {
+    errEl.textContent = 'Election title cannot be blank.';
+    errEl.style.display = 'block';
+    return;
+  }
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
 
   var data = {
+    title:              title,
     description:       document.getElementById('manage-desc').value.trim(),
     ecContact:         document.getElementById('manage-eccontact').value.trim(),
     vDay:              document.getElementById('manage-vday').value,
@@ -2477,35 +2621,40 @@ _recordNoTEM: function() {
     showToast('Select an election first from the Elections tab.', true);
     return;
   }
-  if (!confirm('Record that no TEM has been appointed for election ' + electionId + '?\n\nThis will be logged to AdminLog.')) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var el = document.getElementById('no-tem-result');
-      if (res && res.success) {
-        showToast('No-TEM declaration recorded in AdminLog.');
-        if (el) { el.textContent = 'Recorded successfully in AdminLog.'; el.style.display = 'block'; }
-      } else {
-        showToast((res && res.message) || 'Failed to record.', true);
-      }
-    })
-    .withFailureHandler(function() { showToast('Error recording declaration.', true); })
-    .recordNoTEMDeclaration(App.token, electionId);
+  AdminPanel._showConfirmModal(
+    'Record that no TEM has been appointed for election ' + electionId + '?\n\nThis will be logged to AdminLog.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var el = document.getElementById('no-tem-result');
+          if (res && res.success) {
+            showToast('No-TEM declaration recorded in AdminLog.');
+            if (el) { el.textContent = 'Recorded successfully in AdminLog.'; el.style.display = 'block'; }
+          } else {
+            showToast((res && res.message) || 'Failed to record.', true);
+          }
+        })
+        .withFailureHandler(function() { showToast('Error recording declaration.', true); })
+        .recordNoTEMDeclaration(App.token, electionId);
+    }, 'Record');
 },
 
 _lockECOfficers: function() {
-  if (!confirm('Lock all EC Officer accounts now?\n\nThis will disable all EC_OFFICER logins immediately. This action is logged to the audit record.')) return;
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success) {
-        showToast('EC Officer accounts locked (' + res.count + ' accounts disabled).');
-        AdminPanel._loadAdmins();
-      } else {
-        showToast((res && res.message) || 'Lock failed.');
-      }
-    })
-    .withFailureHandler(function() { showToast('Error — please try again.'); })
-    .lockECOfficers(App.token, getTEMAuthId());
+  AdminPanel._showConfirmModal(
+    'Lock all EC Officer accounts now?\n\nThis will disable all EC_OFFICER logins immediately. This action is logged to the audit record.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            showToast('EC Officer accounts locked (' + res.count + ' accounts disabled).');
+            AdminPanel._loadAdmins();
+          } else {
+            showToast((res && res.message) || 'Lock failed.');
+          }
+        })
+        .withFailureHandler(function() { showToast('Error — please try again.'); })
+        .lockECOfficers(App.token, getTEMAuthId());
+    }, 'Lock', true);
 },
 
 // ── VOTERS TAB ───────────────────────────────────────────────
@@ -2684,6 +2833,8 @@ _loadNominations: function() {
 },
 
 _nominationsSelectedElec: '',
+_nominationsRawList: [],
+_nominationsPostFilter: '',
 
 _renderNominationsShell: function(elections) {
   var c = document.getElementById('nominations-content');
@@ -2848,6 +2999,7 @@ _renderNominationsShell: function(elections) {
 
 _onNomElecChange: function(elecId) {
   AdminPanel._nominationsSelectedElec = elecId;
+  AdminPanel._nominationsPostFilter = '';
   AdminPanel._renderNominationsShell(AdminPanel._nominationsElections);
   AdminPanel._loadNominationsList(elecId);
 },
@@ -2870,7 +3022,7 @@ _schedDateRow: function(id, label, vRef) {
 _schedAutoCalc: function() {
   var vDay = document.getElementById('sched-vday').value;
   if (!vDay) {
-    alert('Please enter V-Day (AGM date) first.');
+    showToast('Please enter V-Day (AGM date) first.', true);
     return;
   }
   var anchor = new Date(vDay);
@@ -3002,23 +3154,24 @@ _saveSchedule: function(elecId) {
 
 // Publish schedule to Landing Page
 _publishSchedule: function(elecId) {
-  if (!confirm('Publish this schedule to the Landing Page? It will be visible to all members.')) return;
-  var errEl = document.getElementById('sched-error');
-  var okEl  = document.getElementById('sched-ok');
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        if (errEl) { errEl.innerHTML = escHtml(res && res.message ? res.message : 'Publish failed.'); errEl.style.display = 'block'; }
-        return;
-      }
-      if (okEl) { okEl.innerHTML = '🌐 Schedule published to Landing Page.'; okEl.style.display = 'block'; }
-      var btn = document.getElementById('btn-publish-sched');
-      if (btn) { btn.textContent = '✓ Published'; btn.disabled = true; }
-    })
-    .withFailureHandler(function() {
-      if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
-    })
-    .publishSchedule(App.token, elecId, getTEMAuthId());
+  AdminPanel._showConfirmModal('Publish this schedule to the Landing Page? It will be visible to all members.', function() {
+    var errEl = document.getElementById('sched-error');
+    var okEl  = document.getElementById('sched-ok');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          if (errEl) { errEl.innerHTML = escHtml(res && res.message ? res.message : 'Publish failed.'); errEl.style.display = 'block'; }
+          return;
+        }
+        if (okEl) { okEl.innerHTML = '🌐 Schedule published to Landing Page.'; okEl.style.display = 'block'; }
+        var btn = document.getElementById('btn-publish-sched');
+        if (btn) { btn.textContent = '✓ Published'; btn.disabled = true; }
+      })
+      .withFailureHandler(function() {
+        if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
+      })
+      .publishSchedule(App.token, elecId, getTEMAuthId());
+  }, 'Publish');
 },
 
 _previewMnPhoto: function(input) {
@@ -3189,12 +3342,48 @@ _loadNominationsList: function(elecId) {
     .getNominations(App.token, elecId);
 },
 
+_POST_ORDER_CANONICAL: [
+  'President','Vice President','General Secretary','Joint Secretary',
+  'Organising Secretary','Treasurer',
+  'Batch Representative 1965-70','Batch Representative 1971-75',
+  'Batch Representative 1976-80','Batch Representative 1981-85',
+  'Batch Representative 1986-90','Batch Representative 1991-95',
+  'Batch Representative 1996-00','Batch Representative 2001-05',
+  'Batch Representative 2006-10','Batch Representative 2011-15',
+  'Batch Representative 2016-20','Batch Representative 2021-25',
+  'Batch Representative 2026-30'
+],
+
+_sortPostOrder: function(postOrder) {
+  var CANON = AdminPanel._POST_ORDER_CANONICAL;
+  return postOrder.slice().sort(function(a, b) {
+    var ia = CANON.indexOf(a); if (ia === -1) ia = 999;
+    var ib = CANON.indexOf(b); if (ib === -1) ib = 999;
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b);
+  });
+},
+
+_groupNomsByPost: function(noms) {
+  var byPost = {};
+  var postOrder = [];
+  noms.forEach(function(n) {
+    if (!byPost[n.post]) { byPost[n.post] = []; postOrder.push(n.post); }
+    byPost[n.post].push(n);
+  });
+  return { byPost: byPost, postOrder: AdminPanel._sortPostOrder(postOrder) };
+},
+
+_onNomPostFilterChange: function(post) {
+  AdminPanel._nominationsPostFilter = post;
+  var groupsArea = document.getElementById('nom-list-groups');
+  if (!groupsArea) return;
+  var g = AdminPanel._groupNomsByPost(AdminPanel._nominationsRawList || []);
+  groupsArea.innerHTML = AdminPanel._renderNomGroups(post ? [post] : g.postOrder, g.byPost);
+},
+
 _renderNominationsList: function(noms) {
-  var role = (App.role || '').toUpperCase();
-  var curElec = (AdminPanel._nominationsElections || []).filter(function(e) {
-    return e.id === AdminPanel._nominationsSelectedElec;
-  })[0];
-  var defaultSendEmail = !(curElec && curElec.isTrial);
+  AdminPanel._nominationsRawList = noms;
 
   if (noms.length === 0) {
     return '<div class="panel-card"><div class="panel-card-body" ' +
@@ -3203,6 +3392,43 @@ _renderNominationsList: function(noms) {
       '<div style="font-weight:600;color:#374151;">No nominations yet</div>' +
       '</div></div>';
   }
+
+  var g = AdminPanel._groupNomsByPost(noms);
+  var byPost = g.byPost;
+  var postOrder = g.postOrder;
+
+  var selectedPost = AdminPanel._nominationsPostFilter || '';
+  if (selectedPost && !byPost[selectedPost]) selectedPost = AdminPanel._nominationsPostFilter = '';
+
+  var filterHtml = '<select id="nom-post-filter" ' +
+    'style="width:100%;box-sizing:border-box;padding:11px 10px;border:1px solid #d1d5db;' +
+    'border-radius:4px;font-size:.88rem;margin-bottom:12px;" ' +
+    'onchange="AdminPanel._onNomPostFilterChange(this.value)">' +
+    '<option value=""' + (selectedPost === '' ? ' selected' : '') + '>All Posts (' + noms.length + ')</option>' +
+    postOrder.map(function(post) {
+      return '<option value="' + escHtml(post) + '"' + (selectedPost === post ? ' selected' : '') + '>' +
+        escHtml(post) + ' (' + byPost[post].length + ')</option>';
+    }).join('') +
+  '</select>';
+
+  var html = '<div style="font-size:.82rem;color:#6b7280;margin-bottom:12px;">' +
+    '<strong style="color:#374151;">' + noms.length + '</strong> nomination' +
+    (noms.length !== 1 ? 's' : '') + ' across ' +
+    '<strong style="color:#374151;">' + postOrder.length + '</strong> post' +
+    (postOrder.length !== 1 ? 's' : '') +
+  '</div>';
+
+  return filterHtml + html + '<div id="nom-list-groups">' +
+    AdminPanel._renderNomGroups(selectedPost ? [selectedPost] : postOrder, byPost) +
+  '</div>';
+},
+
+_renderNomGroups: function(posts, byPost) {
+  var role = (App.role || '').toUpperCase();
+  var curElec = (AdminPanel._nominationsElections || []).filter(function(e) {
+    return e.id === AdminPanel._nominationsSelectedElec;
+  })[0];
+  var defaultSendEmail = !(curElec && curElec.isTrial);
 
   var statusBadge = {
     pending:    'badge-draft',
@@ -3213,22 +3439,9 @@ _renderNominationsList: function(noms) {
     declared:   'badge-declared'
   };
 
-  // Group by post
-  var byPost = {};
-  var postOrder = [];
-  noms.forEach(function(n) {
-    if (!byPost[n.post]) { byPost[n.post] = []; postOrder.push(n.post); }
-    byPost[n.post].push(n);
-  });
+  var html = '';
 
-  var html = '<div style="font-size:.82rem;color:#6b7280;margin-bottom:12px;">' +
-    '<strong style="color:#374151;">' + noms.length + '</strong> nomination' +
-    (noms.length !== 1 ? 's' : '') + ' across ' +
-    '<strong style="color:#374151;">' + postOrder.length + '</strong> post' +
-    (postOrder.length !== 1 ? 's' : '') +
-  '</div>';
-
-  postOrder.forEach(function(post) {
+  posts.forEach(function(post) {
     html += '<div style="font-size:.8rem;font-weight:700;color:#6b7280;' +
       'text-transform:uppercase;letter-spacing:.04em;' +
       'padding:10px 14px 4px;margin-top:8px;">' + escHtml(post) + '</div>';
@@ -3450,6 +3663,41 @@ _showLinkModal: function(intro, links) {
         'border-radius:4px;font-size:.88rem;cursor:pointer;margin-top:4px;">Close</button>' +
     '</div>';
   document.body.appendChild(overlay);
+},
+
+// Generic in-page confirm modal — replaces native confirm(). Native
+// confirm() dialogs render with browser-added chrome ("script.google.com
+// says") that reads as technical/alarming to non-technical users and
+// behaves inconsistently inside the Apps Script sandboxed iframe.
+// onConfirm fires only on the Confirm click; Cancel/backdrop-click does
+// nothing further (mirrors confirm()'s false-return behaviour).
+_showConfirmModal: function(message, onConfirm, confirmLabel, isDanger) {
+  var old = document.getElementById('confirm-modal-overlay');
+  if (old) old.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'confirm-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;';
+  var btnColor = isDanger ? '#c0392b' : '#1a3a5c';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:10px;padding:20px;max-width:420px;width:100%;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
+      '<div style="font-size:.92rem;color:#374151;margin-bottom:18px;line-height:1.5;white-space:pre-line;">' +
+        escHtml(message) +
+      '</div>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<button id="confirm-modal-cancel" style="flex:1;padding:11px;background:#fff;color:#6b7280;' +
+          'border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;cursor:pointer;">Cancel</button>' +
+        '<button id="confirm-modal-ok" style="flex:1;padding:11px;background:' + btnColor + ';color:#fff;' +
+          'border:none;border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;">' +
+          escHtml(confirmLabel || 'Confirm') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  document.getElementById('confirm-modal-cancel').onclick = function() { overlay.remove(); };
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.getElementById('confirm-modal-ok').onclick = function() { overlay.remove(); onConfirm(); };
 },
 
 _showInfoModal: function(message) {
@@ -3780,25 +4028,30 @@ _confirmP2Ext: function(elecId) {
       '<div class="panel-card" style="margin-bottom:12px;">' +
         '<div class="panel-card-header">Landing Page Content</div>' +
         '<div class="panel-card-body">' +
+          '<div style="font-size:.8rem;color:#6b7280;margin-bottom:12px;">' +
+            'Covers four separate things on the public Landing Page: Association Notices ' +
+            '(sgm_date, sgm_venue, sgm_notice, agm_notice, announcement — the AGM date itself ' +
+            'comes from the Schedule\'s V-Day, not a key here), the Voter Verification card ' +
+            '(vva_url, vva_json), and the Document Links card (sop_url, techspec_url).' +
+          '</div>' +
           '<div id="lpc-load-err" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
           '<div id="lpc-list"><div style="text-align:center;padding:16px;color:#6b7280;font-size:.85rem;">Loading…</div></div>' +
           '<div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:14px;">' +
             '<div style="font-size:.83rem;font-weight:600;color:#374151;margin-bottom:8px;">Update a value</div>' +
             '<div style="margin-bottom:8px;">' +
               '<label style="font-size:.78rem;color:#6b7280;display:block;margin-bottom:3px;">Key</label>' +
-              '<select id="lpc-key" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;background:#fff;">' +
+              '<select id="lpc-key" onchange="AdminPanel._onLPCKeyChange(this.value)" ' +
+                'style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;background:#fff;">' +
                 '<option value="">— select key —</option>' +
                 '<option value="sgm_date">sgm_date — SGM date</option>' +
                 '<option value="sgm_venue">sgm_venue — SGM venue</option>' +
                 '<option value="sgm_notice">sgm_notice — SGM notice text</option>' +
-                '<option value="agm_date">agm_date — AGM date</option>' +
-                '<option value="agm_notice">agm_notice — AGM notice text</option>' +
+                '<option value="agm_notice">agm_notice — AGM notice text (date comes from the Schedule\'s V-Day automatically)</option>' +
                 '<option value="announcement">announcement — Public announcement</option>' +
                 '<option value="vva_url">vva_url — Voter Verification App URL</option>' +
+                '<option value="vva_json">vva_json — Voter Verification count endpoint URL</option>' +
                 '<option value="sop_url">sop_url — Election SOP Document URL</option>' +
                 '<option value="techspec_url">techspec_url — Technical Specification Document URL</option>' +
-                '<option value="sop_url">sop_url — Election SOP Document URL</option>' +
-                '<option value="techspec_url">techspec_url — Tech Specification Document URL</option>' +
               '</select>' +
             '</div>' +
             '<div style="margin-bottom:8px;">' +
@@ -3826,6 +4079,17 @@ _confirmP2Ext: function(elecId) {
     return html;
   },
 
+  _lpcItems: [],
+
+  _onLPCKeyChange: function(key) {
+    var valEl = document.getElementById('lpc-value');
+    var pubEl = document.getElementById('lpc-public');
+    if (!valEl || !pubEl) return;
+    var match = (AdminPanel._lpcItems || []).filter(function(item) { return item.key === key; })[0];
+    valEl.value = match ? (match.value || '') : '';
+    pubEl.checked = match ? !!match.public : false;
+  },
+
   _loadLPCList: function() {
     google.script.run
       .withSuccessHandler(function(res) {
@@ -3837,6 +4101,7 @@ _confirmP2Ext: function(elecId) {
           listEl.innerHTML = '';
           return;
         }
+        AdminPanel._lpcItems = res.items || [];
         if (!res.items || res.items.length === 0) {
           listEl.innerHTML = '<div style="font-size:.83rem;color:#6b7280;">No content keys set yet.</div>';
           return;
@@ -3889,8 +4154,9 @@ _confirmP2Ext: function(elecId) {
     var isPublic = pubEl ? pubEl.checked : false;
     var labels = {
       sgm_date: 'SGM date', sgm_venue: 'SGM venue', sgm_notice: 'SGM notice text',
-      agm_date: 'AGM date', agm_notice: 'AGM notice text',
-      announcement: 'Public announcement', vva_url: 'Voter Verification App URL', sop_url: 'Election SOP URL', techspec_url: 'Tech Spec URL'
+      agm_notice: 'AGM notice text',
+      announcement: 'Public announcement', vva_url: 'Voter Verification App URL',
+      vva_json: 'Voter Verification count endpoint URL', sop_url: 'Election SOP URL', techspec_url: 'Tech Spec URL'
     };
     var label = labels[key] || key;
 
@@ -3917,75 +4183,81 @@ _confirmP2Ext: function(elecId) {
   },
 
   _confirmVersionVerified: function() {
-    if (!confirm('Confirm that you have checked the GitHub repository and the deployed code matches?\n\nThis will be recorded in the audit log.')) return;
+    AdminPanel._showConfirmModal(
+      'Confirm that you have checked the GitHub repository and the deployed code matches?\n\nThis will be recorded in the audit log.',
+      function() {
+        var btn   = document.getElementById('btn-version-verify');
+        var errEl = document.getElementById('version-verify-err');
+        if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
 
-    var btn   = document.getElementById('btn-version-verify');
-    var errEl = document.getElementById('version-verify-err');
-    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('Version verification recorded.');
-          AdminPanel._loadSettings();
-        } else {
-          if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
-          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
-        }
-      })
-      .withFailureHandler(function() {
-        if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
-        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
-      })
-      .recordVersionVerified(App.token, getTEMAuthId());
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) {
+              showToast('Version verification recorded.');
+              AdminPanel._loadSettings();
+            } else {
+              if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
+              if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+            }
+          })
+          .withFailureHandler(function() {
+            if (btn) { btn.textContent = 'Confirm Version Verified'; btn.disabled = false; }
+            if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+          })
+          .recordVersionVerified(App.token, getTEMAuthId());
+      }, 'Confirm');
   },
 
   _applySheetProtections: function() {
-    if (!confirm('Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.')) return;
+    AdminPanel._showConfirmModal(
+      'Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.',
+      function() {
+        var btn   = document.getElementById('btn-sheet-protect');
+        var errEl = document.getElementById('sheet-protect-err');
+        if (btn) { btn.textContent = 'Applying…'; btn.disabled = true; }
 
-    var btn   = document.getElementById('btn-sheet-protect');
-    var errEl = document.getElementById('sheet-protect-err');
-    if (btn) { btn.textContent = 'Applying…'; btn.disabled = true; }
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('Sheet protections applied.');
-          AdminPanel._loadSettings();
-        } else {
-          if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
-          if (errEl) { errEl.textContent = (res && res.message) || 'Failed to apply protections.'; errEl.style.display = 'block'; }
-        }
-      })
-      .withFailureHandler(function() {
-        if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
-        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
-      })
-      .applySheetProtections(App.token, getTEMAuthId());
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) {
+              showToast('Sheet protections applied.');
+              AdminPanel._loadSettings();
+            } else {
+              if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
+              if (errEl) { errEl.textContent = (res && res.message) || 'Failed to apply protections.'; errEl.style.display = 'block'; }
+            }
+          })
+          .withFailureHandler(function() {
+            if (btn) { btn.textContent = 'Apply Sheet Protections'; btn.disabled = false; }
+            if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+          })
+          .applySheetProtections(App.token, getTEMAuthId());
+      }, 'Apply');
   },
 
   _confirmGithubTransferred: function() {
-    if (!confirm('Confirm that you have been added as owner of the sskzmoba GitHub organisation and the outgoing custodian has been removed?\n\nThis will be recorded in the audit log.')) return;
+    AdminPanel._showConfirmModal(
+      'Confirm that you have been added as owner of the sskzmoba GitHub organisation and the outgoing custodian has been removed?\n\nThis will be recorded in the audit log.',
+      function() {
+        var btn   = document.getElementById('btn-github-transfer');
+        var errEl = document.getElementById('github-transfer-err');
+        if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
 
-    var btn   = document.getElementById('btn-github-transfer');
-    var errEl = document.getElementById('github-transfer-err');
-    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          showToast('GitHub transfer recorded.');
-          AdminPanel._loadSettings();
-        } else {
-          if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
-          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
-        }
-      })
-      .withFailureHandler(function() {
-        if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
-        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
-      })
-      .recordGithubTransferred(App.token, getTEMAuthId());
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) {
+              showToast('GitHub transfer recorded.');
+              AdminPanel._loadSettings();
+            } else {
+              if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
+              if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+            }
+          })
+          .withFailureHandler(function() {
+            if (btn) { btn.textContent = 'Confirm GitHub Transfer'; btn.disabled = false; }
+            if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+          })
+          .recordGithubTransferred(App.token, getTEMAuthId());
+      }, 'Confirm');
   },
 
 // ── HANDOVER TAB ─────────────────────────────────────────────
@@ -5032,8 +5304,9 @@ _loadVotedLogData: function(elecId) {
   },
 
   _confirmDeleteCandidate: function(candId, candName) {
-    if (!confirm('Delete candidate "' + candName + '"?\n\nThis will also return the nomination to Pending Scrutiny. This cannot be undone after the candidate list is published.')) return;
-    AdminPanel._deleteCandidate(candId);
+    AdminPanel._showConfirmModal(
+      'Delete candidate "' + candName + '"?\n\nThis will also return the nomination to Pending Scrutiny. This cannot be undone after the candidate list is published.',
+      function() { AdminPanel._deleteCandidate(candId); }, 'Delete', true);
   },
 
   _deleteCandidate: function(candId) {
@@ -6357,26 +6630,84 @@ _replyObservation: function(obsId) {
 
 // ── APPEALS TAB ───────────────────────────────────────────
 
+_appealsSelectedElec: '',
+_appealsElections: [],
+
 _loadAppeals: function() {
   var c = document.getElementById('appeals-content');
   if (!c) return;
 
   google.script.run
     .withSuccessHandler(function(res) {
-      var c = document.getElementById('appeals-content');
-      if (!c) return;
+      var c2 = document.getElementById('appeals-content');
+      if (!c2) return;
+      if (!res || !res.success || !res.elections || res.elections.length === 0) {
+        c2.innerHTML = '<div class="panel-card"><div class="panel-card-body" ' +
+          'style="text-align:center;padding:40px 16px;color:#6b7280;">' +
+          '<div style="font-size:1.5rem;margin-bottom:8px;">⚖</div>' +
+          '<div style="font-weight:600;color:#374151;">No elections found</div>' +
+          '<div style="font-size:.85rem;margin-top:4px;">Create an election first.</div>' +
+          '</div></div>';
+        return;
+      }
+      AdminPanel._appealsElections = res.elections;
+      // Keep the current selection if it's still valid, else default to first.
+      if (!AdminPanel._appealsSelectedElec ||
+          !res.elections.some(function(e) { return e.id === AdminPanel._appealsSelectedElec; })) {
+        AdminPanel._appealsSelectedElec = res.elections[0].id;
+      }
+      AdminPanel._renderAppealsShell();
+      AdminPanel._loadAppealsList(AdminPanel._appealsSelectedElec);
+    })
+    .withFailureHandler(function() {
+      var c2 = document.getElementById('appeals-content');
+      if (c2) c2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Error loading elections.</div>';
+    })
+    .getAllElections(App.token);
+},
+
+_renderAppealsShell: function() {
+  var c = document.getElementById('appeals-content');
+  if (!c) return;
+  var selHtml = '<select id="appeals-elec-select" ' +
+    'style="width:100%;box-sizing:border-box;padding:12px 10px;' +
+    'border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;margin-bottom:14px;" ' +
+    'onchange="AdminPanel._onAppealsElecChange(this.value)">';
+  AdminPanel._appealsElections.forEach(function(el) {
+    selHtml += '<option value="' + escHtml(el.id) + '"' +
+      (el.id === AdminPanel._appealsSelectedElec ? ' selected' : '') + '>' +
+      escHtml(el.title) + ' — ' + escHtml(el.status.replace(/_/g, ' ')) +
+      '</option>';
+  });
+  selHtml += '</select>';
+  c.innerHTML = selHtml + '<div id="appeals-list-area">' +
+    '<div style="text-align:center;padding:24px;color:#6b7280;"><div class="spinner"></div></div></div>';
+},
+
+_onAppealsElecChange: function(elecId) {
+  AdminPanel._appealsSelectedElec = elecId;
+  AdminPanel._loadAppealsList(elecId);
+},
+
+_loadAppealsList: function(elecId) {
+  var area = document.getElementById('appeals-list-area');
+  if (!area) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var area2 = document.getElementById('appeals-list-area');
+      if (!area2) return;
       if (!res || !res.success) {
-        c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
+        area2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">' +
           escHtml((res && res.message) || 'Failed to load appeals.') + '</div>';
         return;
       }
-      c.innerHTML = AdminPanel._renderAppeals(res.appeals || []);
+      area2.innerHTML = AdminPanel._renderAppeals(res.appeals || []);
     })
     .withFailureHandler(function() {
-      var c = document.getElementById('appeals-content');
-      if (c) c.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Connection error.</div>';
+      var area2 = document.getElementById('appeals-list-area');
+      if (area2) area2.innerHTML = '<div style="padding:16px;color:#c0392b;font-size:.9rem;">Connection error.</div>';
     })
-    .getAppeals(App.token, null);
+    .getAppeals(App.token, elecId);
 },
 
 _renderAppeals: function(appeals) {
@@ -6385,14 +6716,16 @@ _renderAppeals: function(appeals) {
     under_review:      'Under Review',
     upheld:            'Upheld',
     dismissed:         'Dismissed',
-    panel_no_response: 'Panel No Response'
+    panel_no_response: 'Panel No Response',
+    duplicate:         'Duplicate (voided)'
   };
   var statusColors = {
     filed:             '#fef3c7',
     under_review:      '#eff6ff',
     upheld:            '#d1fae5',
     dismissed:         '#f3f4f6',
-    panel_no_response: '#fce7f3'
+    panel_no_response: '#fce7f3',
+    duplicate:         '#f3f4f6'
   };
 
   var pendingCount = appeals.filter(function(a) {
@@ -6501,6 +6834,15 @@ _renderAppeals: function(appeals) {
           escHtml(apl.appealText) +
         '</div>' +
 
+        (apl.docs && apl.docs.length > 0
+          ? '<div style="font-size:.82rem;margin-bottom:12px;">' +
+            '<strong style="color:#374151;">Supporting document' + (apl.docs.length > 1 ? 's' : '') + ':</strong> ' +
+            apl.docs.map(function(d) {
+              return '<a href="' + escHtml(d.url) + '" target="_blank" style="color:#1d4ed8;">📎 ' + escHtml(d.filename) + '</a>';
+            }).join(' &nbsp;·&nbsp; ') +
+            '</div>'
+          : '') +
+
         (apl.roNotes ? '<div style="font-size:.82rem;color:#374151;margin-bottom:6px;">' +
           '<strong>RO Notes:</strong> ' + escHtml(apl.roNotes) + '</div>' : '') +
         (apl.decision ? '<div style="font-size:.82rem;color:#374151;margin-bottom:10px;">' +
@@ -6540,9 +6882,16 @@ _renderAppeals: function(appeals) {
           '</textarea>' +
           '<button onclick="AdminPanel._saveAppeal(\'' + escHtml(apl.id) + '\',' + i + ')" ' +
             'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;' +
-            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;">' +
+            'border-radius:4px;font-size:.9rem;cursor:pointer;min-height:44px;margin-bottom:8px;">' +
             'Save Decision' +
           '</button>' +
+          (apl.status === 'filed' || apl.status === 'under_review'
+            ? '<button onclick="AdminPanel._markAppealDuplicate(\'' + escHtml(apl.id) + '\')" ' +
+              'style="width:100%;padding:9px;background:#fff;color:#6b7280;border:1px solid #d1d5db;' +
+              'border-radius:4px;font-size:.78rem;cursor:pointer;">' +
+              'Mark as Duplicate (retry/double-click — no candidate email, not a Panel ruling)' +
+              '</button>'
+            : '') +
         '</div>' +
 
       '</div>';
@@ -6550,21 +6899,37 @@ _renderAppeals: function(appeals) {
   return html;
 },
 
-_sendObjSummary: function() {
-  var electionId = AdminPanel._currentElectionId;
-  if (!electionId) { showToast('No election selected.', true); return; }
-  if (!confirm('Send consolidated objection summary to the Appeals Panel now?\n\nOnly do this after the 48-hour filing window has closed.')) return;
-  showToast('Sending…');
+_markAppealDuplicate: function(appealId) {
+  var note = prompt('Optional note (e.g. "superseded by APL-...")', '');
+  if (note === null) return;
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
-      showToast('Sent. Candidates with objections: ' + res.candidatesWithObjections +
-        ' | Total objections: ' + res.totalObjections +
-        ' | Panel recipients: ' + res.panelRecipients);
-      AdminPanel._loadAppeals();
+      showToast('Marked as duplicate.');
+      AdminPanel._loadAppealsList(AdminPanel._appealsSelectedElec);
     })
-    .withFailureHandler(function(e) { showToast('Error: ' + e.message, true); })
-    .sendConsolidatedObjectionSummary(SharedState.token, electionId, getTEMAuthId());
+    .withFailureHandler(function() { showToast('Error — please try again.', true); })
+    .markAppealDuplicate(App.token, appealId, note, getTEMAuthId());
+},
+
+_sendObjSummary: function() {
+  var electionId = AdminPanel._appealsSelectedElec;
+  if (!electionId) { showToast('No election selected.', true); return; }
+  AdminPanel._showConfirmModal(
+    'Send consolidated objection summary to the Appeals Panel now?\n\nOnly do this after the 48-hour filing window has closed.',
+    function() {
+      showToast('Sending…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
+          showToast('Sent. Candidates with objections: ' + res.candidatesWithObjections +
+            ' | Total objections: ' + res.totalObjections +
+            ' | Panel recipients: ' + res.panelRecipients);
+          AdminPanel._loadAppealsList(electionId);
+        })
+        .withFailureHandler(function(e) { showToast('Error: ' + e.message, true); })
+        .sendConsolidatedObjectionSummary(App.token, electionId, getTEMAuthId());
+    }, 'Send');
 },
 
 _doPurgeTrial: function(electionId) {
@@ -6630,29 +6995,35 @@ _saveAppeal: function(appealId, idx) {
     return;
   }
 
-  if (decision === 'upheld') {
-    if (!confirm('Record this appeal as UPHELD?\n\nThis will:\n' +
-        '• Reinstate the nomination to pending scrutiny\n' +
-        '• Roll the election back from candidates_published to scrutiny\n' +
-        '• Clear the candidate list publication timestamp\n' +
-        '• Notify the candidate by email\n\nThis cannot be undone.')) return;
-  }
+  var doSave = function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          showToast((res && res.message) || 'Update failed.', true);
+          return;
+        }
+        if (res.rolledBack) {
+          showToast('Appeal upheld. Nomination reinstated. Election rolled back to scrutiny.');
+        } else {
+          showToast('Appeal decision saved.');
+        }
+        AdminPanel._loadAppealsList(AdminPanel._appealsSelectedElec);
+      })
+      .withFailureHandler(function() { showToast('Connection error.', true); })
+      .updateAppealDecision(App.token, appealId, decision, notes, decText, getTEMAuthId());
+  };
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        showToast((res && res.message) || 'Update failed.', true);
-        return;
-      }
-      if (res.rolledBack) {
-        showToast('Appeal upheld. Nomination reinstated. Election rolled back to scrutiny.');
-      } else {
-        showToast('Appeal decision saved.');
-      }
-      AdminPanel._loadAppeals();
-    })
-    .withFailureHandler(function() { showToast('Connection error.', true); })
-    .updateAppealDecision(App.token, appealId, decision, notes, decText, getTEMAuthId());
+  if (decision === 'upheld') {
+    AdminPanel._showConfirmModal(
+      'Record this appeal as UPHELD?\n\nThis will:\n' +
+      '• Reinstate the nomination to pending scrutiny\n' +
+      '• Roll the election back from candidates_published to scrutiny\n' +
+      '• Clear the candidate list publication timestamp\n' +
+      '• Notify the candidate by email\n\nThis cannot be undone.',
+      doSave, 'Record as Upheld', true);
+  } else {
+    doSave();
+  }
 },
 
   // ============================================================
@@ -7009,21 +7380,23 @@ _saveVrdEdit: function(rollNo, idx) {
 },
 
 _certifyRoll: function() {
-  if (!confirm('Certify the voter roll? This will copy all retained rows to the live ' +
-      'Voters sheet. This action is logged and cannot be undone.')) return;
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        showToast((res && res.message) || 'Certification failed.', true);
-        return;
-      }
-      showToast('Voter roll certified. ' + res.certified + ' voters, ' +
-        res.removed + ' removed.');
-      AdminPanel._loadVoterRollDraft('all', '');
-    })
-    .withFailureHandler(function() { showToast('Connection error.', true); })
-    .certifyVoterRoll(App.token, AdminPanel._currentElectionId || '', getTEMAuthId());
+  AdminPanel._showConfirmModal(
+    'Certify the voter roll? This will copy all retained rows to the live Voters sheet. ' +
+    'This action is logged and cannot be undone.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Certification failed.', true);
+            return;
+          }
+          showToast('Voter roll certified. ' + res.certified + ' voters, ' +
+            res.removed + ' removed.');
+          AdminPanel._loadVoterRollDraft('all', '');
+        })
+        .withFailureHandler(function() { showToast('Connection error.', true); })
+        .certifyVoterRoll(App.token, AdminPanel._currentElectionId || '', getTEMAuthId());
+    }, 'Certify', true);
 },
 
 _sendVoterRollNotice: function() {
@@ -7228,17 +7601,20 @@ _uploadDoc: function(elecId, category, containerId, nomRef) {
 },
 
 _deleteDoc: function(docId, elecId, category, containerId, nomRef) {
-  if (!confirm('Delete this document? It will be removed from the list (the Drive file is retained).')) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        showToast((res && res.message) || 'Delete failed.', true); return;
-      }
-      showToast('Document deleted.');
-      AdminPanel._loadDocuments(elecId, category, containerId, nomRef);
-    })
-    .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
-    .deleteDocument(App.token, docId, getTEMAuthId());
+  AdminPanel._showConfirmModal(
+    'Delete this document? It will be removed from the list (the Drive file is retained).',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Delete failed.', true); return;
+          }
+          showToast('Document deleted.');
+          AdminPanel._loadDocuments(elecId, category, containerId, nomRef);
+        })
+        .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
+        .deleteDocument(App.token, docId, getTEMAuthId());
+    }, 'Delete', true);
 },
 
   // ── DOCUMENTS TAB ─────────────────────────────────────────
@@ -7396,18 +7772,21 @@ _buildDocList: function(elecId, docs) {
 },
 
 _deleteDocFromTab: function(docId, elecId) {
-  if (!confirm('Delete this document? The record will be removed from the list. ' +
-      'The file is retained in Google Drive as an audit trail.')) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        showToast((res && res.message) || 'Delete failed.', true); return;
-      }
-      showToast('Document deleted.');
-      AdminPanel._renderDocTabListAsync(elecId);
-    })
-    .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
-    .deleteDocument(App.token, docId, getTEMAuthId());
+  AdminPanel._showConfirmModal(
+    'Delete this document? The record will be removed from the list. ' +
+    'The file is retained in Google Drive as an audit trail.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Delete failed.', true); return;
+          }
+          showToast('Document deleted.');
+          AdminPanel._renderDocTabListAsync(elecId);
+        })
+        .withFailureHandler(function() { showToast('Delete failed — connection error.', true); })
+        .deleteDocument(App.token, docId, getTEMAuthId());
+    }, 'Delete', true);
 },
 
   };
@@ -7682,7 +8061,7 @@ function _temActionCheckboxes(systemActions, electionActions) {
       'Handover':            ['lockECOfficers','recordVersionVerified','recordGithubTransferred']
     },
     '— ELECTION LEVEL —': {
-      'Election Management': ['updateElectionStatus','updateElectionSettings','deleteElection','setElectionSchedule','publishSchedule'],
+      'Election Management': ['updateElectionStatus','updateElectionSettings','deleteElection','setElectionSchedule','publishSchedule','setShowOnLandingPage'],
       'Nominations':         ['acceptNomination','rejectNomination','undoAcceptNomination','undoRejectNomination','submitNominationManual','uploadNominationPhotoAdmin','publishCandidates','triggerPhase2Extension','resendConfirmationEmail'],
       'Candidates':          ['deleteCandidate'],
       'Voter Roll':          ['uploadVoterRollDraft','updateObjectionStatus','certifyVoterRoll','addVoterToDraft','updateVoterDraftRow'],
@@ -7784,15 +8163,16 @@ AdminPanel._issueTEMAuth = function() {
 };
 
 AdminPanel._revokeTEMAuth = function(authId) {
-  if (!confirm('Revoke AuthID ' + authId + '? This cannot be undone.')) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { alert(res.message); return; }
-      showToast('AuthorisationID revoked.');
-      AdminPanel._loadTEMAuthTable();
-    })
-    .withFailureHandler(function(e) { alert('Error: ' + e.message); })
-    .revokeROAuthorisation(App.token, authId);
+  AdminPanel._showConfirmModal('Revoke AuthID ' + authId + '? This cannot be undone.', function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) { showToast(res.message, true); return; }
+        showToast('AuthorisationID revoked.');
+        AdminPanel._loadTEMAuthTable();
+      })
+      .withFailureHandler(function(e) { showToast('Error: ' + e.message, true); })
+      .revokeROAuthorisation(App.token, authId);
+  }, 'Revoke', true);
 };
 
 </script>

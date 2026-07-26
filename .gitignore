@@ -3,3 +3,8 @@ node_modules/
 *.csv
 *backup*.json
 .DS_Store
+
+# Internal working docs — not required for trust-architecture verification
+# (that only needs the deployed code to match a public commit). Kept locally
+# (BRIDGE_NOTE.md is read every session per CLAUDE.md) but not on the public repo.
+docs/
