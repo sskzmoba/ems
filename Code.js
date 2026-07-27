@@ -5544,7 +5544,14 @@ function initSystemBSheets() {
     ],   // 7 cols ✓
     'AppealsPanel': [
       'ID','Name','RollNo','Batch','Email','IsChair','AddedAt','AddedBy'
-    ]    // 8 cols ✓
+    ],   // 8 cols ✓
+    'PreSecChecklist': [
+      'ID','ElectionID','ItemCode','CompletedBy','CompletedRole','CompletedAt',
+      'SC1By','SC1At','SC2By','SC2At','Notes'
+    ],   // 11 cols ✓
+    'ECHistory': [
+      'Year','RollNo','Name','Post'
+    ]    // 4 cols ✓
   };
 
   // ── Process each tab in order ─────────────────────────────────
@@ -5554,7 +5561,7 @@ function initSystemBSheets() {
     'ScrutinyLog','NomQueries','DocStore',
     'VoterRollDraft','Complaints','Appeals','Observations','Messages',
     'ECOfficerBoardDatabase','ElectionSchedule','TEMAuth','ROPanelLog','LandingPageContent',
-    'AppealsPanel'
+    'AppealsPanel','PreSecChecklist','ECHistory'
   ];
 
   tabOrder.forEach(function(tabName) {
