@@ -649,6 +649,35 @@ function checkScheduleFloors(sched) {
     }
   }
 
+  // Warn if any computed milestone has already passed. The checks above only
+  // validate spacing BETWEEN dates, not against today, so a schedule can be
+  // internally consistent yet already stale (e.g. a distant V-Day producing a
+  // Voter Roll Cutoff date weeks in the past). Warning, not a block — the RO
+  // may have a legitimate reason (e.g. backdated record-keeping).
+  var dateFields = [
+    { key: 'vDay',                 label: 'AGM Day (V-Day)' },
+    { key: 'voterRollCutoff',      label: 'Voter Roll Cutoff' },
+    { key: 'nomOpenDate',          label: 'Nominations Open' },
+    { key: 'voterRollPubDate',     label: 'Voter Roll Published' },
+    { key: 'phase1CloseDate',      label: 'Phase 1 Close' },
+    { key: 'voterRollObjDeadline', label: 'Voter Roll Objection Closes' },
+    { key: 'nomCloseDate',         label: 'Nominations Close' },
+    { key: 'voterRollCertDate',    label: 'Voter Roll Certified' },
+    { key: 'candidatesPubDate',    label: 'Candidates Published' },
+    { key: 'withdrawalDeadline',   label: 'Withdrawal Deadline' },
+    { key: 'votingOpenDate',       label: 'Voting Opens' },
+    { key: 'votingCloseDate',      label: 'Voting Closes' },
+    { key: 'declarationDate',      label: 'Results Declared' }
+  ];
+  dateFields.forEach(function(f) {
+    var dt = d(sched[f.key]);
+    if (dt && dt.getTime() < today.getTime()) {
+      warnings.push({ field: f.key, severity: 'warn',
+        label: f.label,
+        message: f.label + ' (' + sched[f.key] + ') has already passed — this schedule may need a later AGM date.' });
+    }
+  });
+
   return warnings;
 }
 // ============================================================

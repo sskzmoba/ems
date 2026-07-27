@@ -780,6 +780,12 @@ _renderManageScreen: function(el) {
       '</div>' +
     '</div>' +
 
+    // Schedule reminders — flags any milestone whose scheduled date has
+    // already passed while the election hasn't reached the corresponding
+    // stage yet. Populated async once the schedule loads (_loadScheduleIntoForm).
+    // Empty/invisible when nothing is overdue.
+    '<div id="sched-reminders-' + escHtml(el.id) + '" style="display:none;"></div>' +
+
     // Appeals Panel Contacts — visible to RO/DEPUTY_RO/TEM from the moment
     // they open the election, not buried in Settings. SOP 2A.12: the Appeals
     // Panel should be constituted simultaneously with Scrutineer appointments,
@@ -3119,9 +3125,63 @@ _loadScheduleIntoForm: function(elecId) {
           okEl.style.display = 'block';
         }
       }
+      AdminPanel._renderScheduleReminders(elecId, res);
     })
     .withFailureHandler(function() {})
     .getElectionSchedule(App.token, elecId);
+},
+
+// Flags any schedule milestone whose date has already passed while the
+// election hasn't reached the corresponding stage yet (e.g. Voting Closes
+// date gone by but status is still 'active'). Informational only — nothing
+// here blocks anything, matching the RO-driven manual-action design of every
+// other stage transition in this app.
+_renderScheduleReminders: function(elecId, sched) {
+  var box = document.getElementById('sched-reminders-' + elecId);
+  if (!box) return;
+  var elec = (AdminPanel._nominationsElections || []).filter(function(e) { return e.id === elecId; })[0];
+  if (!elec || !sched) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  var statusOrder = ['draft', 'nominations_open', 'nominations_open_phase2', 'scrutiny',
+    'candidates_published', 'active', 'paused', 'closed', 'declared'];
+  var curIdx = statusOrder.indexOf(elec.status);
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  function passed(dateStr) {
+    if (!dateStr) return false;
+    var d = new Date(dateStr);
+    return !isNaN(d.getTime()) && d.getTime() < today.getTime();
+  }
+  function notYetAt(status) {
+    var idx = statusOrder.indexOf(status);
+    return idx !== -1 && curIdx !== -1 && curIdx < idx;
+  }
+
+  var checks = [
+    { date: sched.nomOpenDate,       label: 'Nominations Open (V-38)',     status: 'nominations_open' },
+    { date: sched.nomCloseDate,      label: 'Nominations Close (V-24)',    status: 'scrutiny' },
+    { date: sched.candidatesPubDate, label: 'Candidates Published (V-19)', status: 'candidates_published' },
+    { date: sched.votingOpenDate,    label: 'Voting Opens (V-16)',         status: 'active' },
+    { date: sched.votingCloseDate,   label: 'Voting Closes (V-9)',         status: 'closed' },
+    { date: sched.declarationDate,   label: 'Results Declared (V-7)',      status: 'declared' }
+  ];
+
+  var overdue = checks.filter(function(c) { return passed(c.date) && notYetAt(c.status); });
+  if (overdue.length === 0) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  var html = '<div class="panel-card" style="margin-bottom:12px;border:1.5px solid #f59e0b;">' +
+    '<div class="panel-card-header" style="background:#fef3c7;color:#92400e;">⚠ Overdue Per Schedule</div>' +
+    '<div class="panel-card-body">';
+  overdue.forEach(function(c) {
+    html += '<div style="font-size:.85rem;color:#92400e;margin-bottom:6px;">' +
+      escHtml(c.label) + ' was scheduled for <strong>' + escHtml(c.date) + '</strong> — ' +
+      'this date has passed and the election hasn\'t reached that stage yet.' +
+      '</div>';
+  });
+  html += '</div></div>';
+  box.innerHTML = html;
+  box.style.display = 'block';
 },
 
 // Collect form values and save schedule
