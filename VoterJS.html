@@ -98,7 +98,7 @@ var VoterPanel = (function() {
       var html = _renderTab(tabId);
       c.innerHTML = html;
     });
-    setMain('<div id="voter-content"></div>' + _eligibilityModalHtml());
+    setMain('<div id="switch-election-bar"></div><div id="voter-content"></div>' + _eligibilityModalHtml());
     _currentTab = TABS[0].id;
     var c = document.getElementById('voter-content');
     if (c) c.innerHTML = _renderTab(TABS[0].id);
@@ -151,8 +151,11 @@ var VoterPanel = (function() {
         // More than one election is currently visible and the voter hasn't
         // chosen yet — show the picker instead of guessing which one they
         // want. Once chosen, _selectedElectionId sticks for the rest of the
-        // session (My Ballot, Nominations, Receipts, Complaints all follow it).
+        // session (My Ballot, Nominations, Receipts, Complaints all follow it) —
+        // the switch-election bar below is the escape hatch out of that.
         if (res.multiple && !_selectedElectionId) {
+          var bar0 = document.getElementById('switch-election-bar');
+          if (bar0) bar0.innerHTML = '';
           c.innerHTML = _electionPickerCard(_allElections);
           return;
         }
@@ -160,6 +163,7 @@ var VoterPanel = (function() {
         _voterBatch        = res.voterBatch || '';
         _orgSecyBatch      = res.election ? (res.election.orgSecyBatch      || '') : '';
         _orgSecyRestricted = res.election ? (res.election.orgSecyRestricted || false) : false;
+        _renderSwitchElectionBar();
         if (!_election) { c.innerHTML = _noElectionCard(); return; }
         _renderBallotForStatus(c, _election.status);
       })
@@ -177,6 +181,40 @@ var VoterPanel = (function() {
     _loadBallot();
   }
 
+  // Persistent escape hatch \u2014 visible whenever more than one election is
+  // visible to this voter and one has already been chosen, since the choice
+  // otherwise sticks for the whole session with no other way to change it.
+  function _renderSwitchElectionBar() {
+    var bar = document.getElementById('switch-election-bar');
+    if (!bar) return;
+    if (_allElections.length > 1 && _selectedElectionId) {
+      var isTrial = _election && _election.isTrial;
+      var bg = isTrial ? '#fff8f0' : '#fef3c7';
+      var border = isTrial ? '#c2410c' : '#fde68a';
+      var fg = isTrial ? '#7c2d12' : '#92400e';
+      var viewingLabel = isTrial
+        ? '\u26a0 TEST RUN: <strong>' + escHtml(_election.title || '') + '</strong>'
+        : 'Viewing: <strong>' + escHtml((_election && _election.title) || '') + '</strong>';
+      bar.innerHTML =
+        '<div style="padding:8px 16px;background:' + bg + ';border-bottom:2px solid ' + border + ';' +
+        'font-size:.78rem;color:' + fg + ';text-align:center;font-weight:' + (isTrial ? '700' : '400') + ';">' +
+        viewingLabel + ' &nbsp;\u00b7&nbsp; ' +
+        '<a href="#" onclick="VoterPanel._switchElection();return false;" ' +
+          'style="color:' + fg + ';font-weight:700;text-decoration:underline;">\ud83d\udd00 Switch Election</a>' +
+        '</div>';
+    } else {
+      bar.innerHTML = '';
+    }
+  }
+
+  function _switchElection() {
+    _selectedElectionId = null;
+    _election = null;
+    var bar = document.getElementById('switch-election-bar');
+    if (bar) bar.innerHTML = '';
+    NavMenu._select('ballot');
+  }
+
   function _electionPickerCard(elections) {
     var statusLabel = {
       nominations_open: 'Nominations Open', nominations_open_phase2: 'Nominations Open \u2014 Phase 2',
@@ -184,19 +222,35 @@ var VoterPanel = (function() {
       active: 'Voting in Progress', paused: 'Voting Paused',
       closed: 'Voting Closed', declared: 'Results Declared'
     };
+    var hasTrial = elections.some(function(el) { return el.isTrial; });
     var cards = elections.map(function(el) {
       var label = statusLabel[el.status] || el.status;
-      var trialTag = el.isTrial
-        ? '<span style="font-size:.7rem;background:#fff3cd;color:#856404;padding:2px 8px;' +
-          'border-radius:10px;margin-left:6px;">TRIAL</span>' : '';
+      if (!el.isTrial) {
+        return (
+          '<button onclick="VoterPanel._selectElection(\'' + escHtml(el.id) + '\')" ' +
+          'style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;' +
+          'border-radius:8px;padding:14px 16px;margin-bottom:10px;cursor:pointer;min-height:44px;">' +
+            '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">' +
+              escHtml(el.title) +
+            '</div>' +
+            '<div style="font-size:.8rem;color:#6b7280;">' + escHtml(label) + '</div>' +
+          '</button>'
+        );
+      }
+      // Trial elections get a deliberately loud, distinct treatment \u2014 a
+      // rushed voter must not be able to mistake this for their real ballot.
       return (
         '<button onclick="VoterPanel._selectElection(\'' + escHtml(el.id) + '\')" ' +
-        'style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;' +
+        'style="width:100%;text-align:left;background:#fff8f0;border:2px solid #c2410c;' +
         'border-radius:8px;padding:14px 16px;margin-bottom:10px;cursor:pointer;min-height:44px;">' +
-          '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">' +
-            escHtml(el.title) + trialTag +
+          '<div style="font-size:.72rem;font-weight:800;color:#fff;background:#c2410c;' +
+            'display:inline-block;padding:2px 8px;border-radius:4px;margin-bottom:6px;letter-spacing:.03em;">' +
+            '\u26a0 TEST RUN \u2014 NOT YOUR REAL BALLOT' +
           '</div>' +
-          '<div style="font-size:.8rem;color:#6b7280;">' + escHtml(label) + '</div>' +
+          '<div style="font-weight:700;color:#7c2d12;font-size:.95rem;margin-bottom:4px;">' +
+            escHtml(el.title) +
+          '</div>' +
+          '<div style="font-size:.8rem;color:#9a3412;">' + escHtml(label) + '</div>' +
         '</button>'
       );
     }).join('');
@@ -205,6 +259,9 @@ var VoterPanel = (function() {
         '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">More Than One Election</div>' +
         '<div style="font-size:.82rem;color:#6b7280;margin-bottom:16px;">' +
           'There is more than one election currently open. Please choose which one you want to view.' +
+          (hasTrial
+            ? ' <strong style="color:#c2410c;">One of these is a test run only</strong> \u2014 look for the \u26a0 TEST RUN label before you do anything.'
+            : '') +
         '</div>' +
         cards +
       '</div>'
@@ -586,6 +643,12 @@ var VoterPanel = (function() {
               post.turnout + ' voted</div>' : '') +
           '</div>';
 
+      if (post.tieUnresolved) {
+        html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:6px;' +
+          'padding:8px 12px;margin-bottom:8px;font-size:.8rem;color:#9a3412;">' +
+          '⚠ Tied — pending a formal draw of lots (SOP 8.4) to determine the winner.</div>';
+      }
+
       var cands = post.candidates || [];
       if (cands.length === 0) {
         html += '<div style="padding:9px 0;font-size:.82rem;color:#9ca3af;font-style:italic;">' +
@@ -595,18 +658,26 @@ var VoterPanel = (function() {
       for (var j = 0; j < cands.length; j++) {
         var cand = cands[j];
         var isElected = cand.elected;
+        var isTied    = cand.tied;
+        var rowColor  = isElected ? '#065f46' : (isTied ? '#9a3412' : '#374151');
+        var icon      = isElected ? '✅' : (isTied ? '⏳' : '<span style="color:#d1d5db;">o</span>');
+        var badge     = isElected
+          ? ' <span style="font-size:.75rem;background:#d1fae5;color:#065f46;' +
+            'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>'
+          : (isTied
+            ? ' <span style="font-size:.75rem;background:#fff7ed;color:#9a3412;' +
+              'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Tied — Pending</span>'
+            : '');
         html +=
           '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
           (j < cands.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + '">' +
             '<div style="width:26px;text-align:center;font-size:1rem;flex-shrink:0;">' +
-              (isElected ? '✅' : '<span style="color:#d1d5db;">o</span>') +
+              icon +
             '</div>' +
             '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:.9rem;font-weight:' + (isElected ? '700' : '400') + ';' +
-              'color:' + (isElected ? '#065f46' : '#374151') + ';">' +
-                escHtml(cand.name) +
-                (isElected ? ' <span style="font-size:.75rem;background:#d1fae5;color:#065f46;' +
-                'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>' : '') +
+              'color:' + rowColor + ';">' +
+                escHtml(cand.name) + badge +
               '</div>' +
               '<div style="font-size:.75rem;color:#6b7280;">Batch ' + escHtml(cand.batch) + '</div>' +
             '</div>' +
@@ -2388,6 +2459,7 @@ var VoterPanel = (function() {
     _submitComplaint: _submitComplaint,
     _showObjModal: _showObjModal,
     _onNomBoardPostFilterChange: _onNomBoardPostFilterChange,
+    _switchElection: _switchElection,
     _closeObjModal: _closeObjModal,
     _submitObjection: _submitObjection,
     _showEligibilityModal: _showEligibilityModal,

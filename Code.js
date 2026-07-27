@@ -12,6 +12,7 @@ var DEPLOY_URL        = 'https://script.google.com/macros/s/AKfycbxLGxL0GiKfExlq
 var RO_CONTACT_EMAIL  = PropertiesService.getScriptProperties().getProperty('RO_CONTACT_EMAIL') || 'admin@sskzmoba.org';
 var ELECTIONS_EMAIL   = 'elections.sskzmoba@gmail.com';
 var ELECTIONS_NAME    = 'SSKZM OBA Elections';
+var EC_OFFICIAL_EMAIL = 'sskzmobakazak@gmail.com'; // official EC mailbox — CC'd on mass voter notices for visibility
 var GDRIVE_ROOT_FOLDER = '';                   // set when System B GDrive folder is created
 
 // ── SYSTEM CONSTANTS ─────────────────────────────────────────
@@ -385,6 +386,7 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'sendNominationCall',
     'sendVoterRollPublicationNotice',
     'sendCandidateListPublishedNotice',
+    'sendVotingOpenNotice',
     'sendResultsDeclaredNotice',
     'sendECReferral',
     'recordChecklistItem',
@@ -658,10 +660,14 @@ function checkScheduleFloors(sched) {
 // Appendix A: nominations open V-31, certification at V-24).
 // ============================================================
 function getVoterRollRows(electionId) {
-  // Check if Voters sheet has data (certified roll uploaded)
-  var certRows = sheetData(SHEETS.VOTERS);
-  if (certRows && certRows.length > 0) {
-    return { rows: certRows, source: 'certified' };
+  // Only trust the (global, shared) Voters sheet as "certified" if THIS
+  // election is the one that certified it — not just because the sheet
+  // happens to hold data left over from a different election's certification.
+  if (isVoterRollCertified(electionId)) {
+    var certRows = sheetData(SHEETS.VOTERS);
+    if (certRows && certRows.length > 0) {
+      return { rows: certRows, source: 'certified' };
+    }
   }
   // Fall back to VoterRollDraft — map VRD cols to VOTER col positions
   var draftRows = sheetData(SHEETS.VOTER_ROLL_DRAFT);
@@ -1888,6 +1894,14 @@ function recordChecklistItem(token, electionId, itemCode, notes, authId) {
   }
   if (!validItem) return { success: false, message: 'Unknown checklist item: ' + itemCode };
 
+  // D1 ("Voter roll certified and row count verified") is the one item this
+  // checklist can actually verify programmatically instead of trusting a
+  // self-attested note — SOP 3.6 requires certification before this point,
+  // so don't let the RO tick it if isVoterRollCertified() says otherwise.
+  if (itemCode === 'D1' && !isVoterRollCertified(electionId)) {
+    return { success: false, message: 'Cannot mark D1 complete — the voter roll for this election has not been certified yet.' };
+  }
+
   var sh   = getSheet(SHEETS.PRESEC_CHECKLIST);
   var rows = sh.getDataRange().getValues();
   var now  = new Date();
@@ -2868,7 +2882,7 @@ function getVoterRollDraft(token, page, search) {
 // Blocked if RO objection window is open (status = nominations_open
 // or later AND voter roll has been published)
 // ============================================================
-function uploadVoterRollDraft(token, rows, authId) {
+function uploadVoterRollDraft(token, rows, authId, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'EC_OFFICER' && sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
@@ -2877,7 +2891,7 @@ function uploadVoterRollDraft(token, rows, authId) {
   var temCheck = requiresTEMAuth(sess, authId, 'uploadVoterRollDraft', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
-  if (isVoterRollCertified()) {
+  if (isVoterRollCertified(electionId)) {
     return { success: false, message: 'Cannot modify the voter roll draft — the roll has already been certified.' };
   }
 
@@ -4013,6 +4027,13 @@ function buildResultsPage(electionId) {
               : '') +
           '</div>';
 
+      if (post.tieUnresolved) {
+        html +=
+          '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:6px;' +
+          'padding:8px 12px;margin-bottom:8px;font-size:.8rem;color:#9a3412;">' +
+          '⚠ Tied — pending a formal draw of lots (SOP 8.4) to determine the winner.</div>';
+      }
+
       var cands = post.candidates || [];
       if (cands.length === 0) {
         html +=
@@ -4024,20 +4045,26 @@ function buildResultsPage(electionId) {
       for (var j = 0; j < cands.length; j++) {
         var cand      = cands[j];
         var isElected = cand.elected;
+        var isTied    = cand.tied;
+        var rowColor  = isElected ? '#065f46' : (isTied ? '#9a3412' : '#374151');
+        var icon      = isElected ? '✅' : (isTied ? '⏳' : '<span style="color:#d1d5db;">○</span>');
+        var badge     = isElected
+          ? ' <span style="font-size:.72rem;background:#d1fae5;color:#065f46;' +
+            'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>'
+          : (isTied
+            ? ' <span style="font-size:.72rem;background:#fff7ed;color:#9a3412;' +
+              'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Tied — Pending</span>'
+            : '');
         html +=
           '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
           (j < cands.length - 1 ? 'border-bottom:1px solid #f3f4f6;' : '') + '">' +
             '<div style="width:26px;text-align:center;font-size:1rem;flex-shrink:0;">' +
-              (isElected ? '✅' : '<span style="color:#d1d5db;">○</span>') +
+              icon +
             '</div>' +
             '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:.9rem;font-weight:' + (isElected ? '700' : '400') + ';' +
-              'color:' + (isElected ? '#065f46' : '#374151') + ';">' +
-                escHtml(cand.name) +
-                (isElected
-                  ? ' <span style="font-size:.72rem;background:#d1fae5;color:#065f46;' +
-                    'padding:2px 7px;border-radius:8px;font-weight:600;margin-left:4px;">Elected</span>'
-                  : '') +
+              'color:' + rowColor + ';">' +
+                escHtml(cand.name) + badge +
               '</div>' +
               '<div style="font-size:.75rem;color:#6b7280;">Batch ' + escHtml(cand.batch.toString()) + '</div>' +
             '</div>' +
@@ -4653,18 +4680,36 @@ function logout(token) {
 
 // Returns voter object or null. Roll No comparison is case-insensitive.
 // ============================================================
-// isVoterRollCertified — true if the currently-relevant election's
-// voter roll has been certified (ELEC_CERTIFIED_AT set). Gates the
-// findVoter() draft fallback and all VoterRollDraft mutations, per
-// SOP 3.6 — no changes to the roll after certification, ever.
+// isVoterRollCertified — true if the roll has been certified.
+// Pass electionId to check that SPECIFIC election's own ELEC_CERTIFIED_AT
+// field — each election certifies its own roll snapshot independently
+// (confirmed intent: a fresh certification is expected per real election
+// cycle, e.g. a byelection re-certifying after membership changes since
+// the last one). Certifying one election must never lock another.
+// If electionId is omitted (only findVoter()'s login-time lookup does
+// this, which has no election context yet to scope to), falls back to
+// the previous priority-scan guess across all elections.
+// Gates the findVoter() draft fallback and all VoterRollDraft mutations,
+// per SOP 3.6 — no changes to the roll after certification, ever.
 // ============================================================
-function isVoterRollCertified() {
+function isVoterRollCertified(electionId) {
+  var elections = sheetData(SHEETS.ELECTIONS);
+  if (electionId) {
+    for (var i = 0; i < elections.length; i++) {
+      if (elections[i][COL.ELEC_ID].toString() === electionId.toString()) {
+        return elections[i][COL.ELEC_CERTIFIED_AT].toString().trim() !== '';
+      }
+    }
+    return false; // election not found — treat as not certified
+  }
+  // 'declared' deliberately excluded — a concluded election must never be
+  // picked as "current" here, or its stale certification status would
+  // wrongly govern login/draft-fallback for whatever election comes next.
   var priority = [
     'active', 'paused', 'candidates_published',
     'scrutiny', 'nominations_open_phase2', 'nominations_open',
-    'closed', 'declared', 'draft'
+    'closed', 'draft'
   ];
-  var elections = sheetData(SHEETS.ELECTIONS);
   var current = null, bestP = priority.length;
   for (var e = 0; e < elections.length; e++) {
     var p = priority.indexOf(elections[e][COL.ELEC_STATUS].toString());
@@ -4676,23 +4721,29 @@ function isVoterRollCertified() {
 function findVoter(rollNo) {
   if (!rollNo) return null;
   var roll = rollNo.toString().trim().toUpperCase();
-  var rows = sheetData(SHEETS.VOTERS);
-  for (var i = 0; i < rows.length; i++) {
-    if (rows[i][COL.VOTER_ROLL].toString().toUpperCase() === roll) {
-      return {
-        roll:       rows[i][COL.VOTER_ROLL].toString(),
-        name:       rows[i][COL.VOTER_NAME].toString(),
-        surname:    rows[i][COL.VOTER_SURNAME].toString(),
-        batch:      rows[i][COL.VOTER_BATCH].toString(),
-        email:      rows[i][COL.VOTER_EMAIL].toString().toLowerCase(),
-        lifeMember: rows[i][COL.VOTER_LIFE_MEMBER].toString().toLowerCase() === 'true'
-      };
-    }
-  }
 
-  // Fallback to draft roll — only before certification. Once certified,
-  // Voters is the sole source of truth (SOP 3.6).
-  if (isVoterRollCertified()) return null;
+  // Decide which sheet is authoritative FIRST (mirrors getVoterRollRows),
+  // then look up the roll number in only that one sheet. Previously this
+  // checked Voters unconditionally before ever considering the draft, so
+  // someone removed from the current cycle's draft but still lingering in
+  // a previous (superseded but not-yet-overwritten) certified Voters sheet
+  // would still be found and allowed to log in.
+  if (isVoterRollCertified()) {
+    var rows = sheetData(SHEETS.VOTERS);
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i][COL.VOTER_ROLL].toString().toUpperCase() === roll) {
+        return {
+          roll:       rows[i][COL.VOTER_ROLL].toString(),
+          name:       rows[i][COL.VOTER_NAME].toString(),
+          surname:    rows[i][COL.VOTER_SURNAME].toString(),
+          batch:      rows[i][COL.VOTER_BATCH].toString(),
+          email:      rows[i][COL.VOTER_EMAIL].toString().toLowerCase(),
+          lifeMember: rows[i][COL.VOTER_LIFE_MEMBER].toString().toLowerCase() === 'true'
+        };
+      }
+    }
+    return null;
+  }
 
   var draftRows = sheetData(SHEETS.VOTER_ROLL_DRAFT);
   for (var j = 0; j < draftRows.length; j++) {
@@ -5820,9 +5871,9 @@ function sendNominationCall(token, electionId, customNote, authId) {
   if (!voterRows || voterRows.length === 0) {
     return { success: false, message: 'No voter roll available. Upload draft voter roll first.' };
   }
+  var rollDescriptor = vrResult.source === 'certified' ? 'certified' : 'draft';
 
   var nomDeadline = elec[COL.ELEC_NOM_DEADLINE] ? elec[COL.ELEC_NOM_DEADLINE].toString() : '';
-  var ecContact   = elec[COL.ELEC_EC_CONTACT] ? elec[COL.ELEC_EC_CONTACT].toString() : '';
   var sent = 0; var failed = 0;
 
   for (var v = 0; v < voterRows.length; v++) {
@@ -5834,13 +5885,13 @@ function sendNominationCall(token, electionId, customNote, authId) {
     var body =
       '<p>Dear ' + (name || 'Member') + ',</p>' +
       '<p>Nominations are now open for the <strong>' + elecTitle + '</strong>.</p>' +
-      '<p>All Life Members on the certified voter roll are eligible to nominate, ' +
+      '<p>All Life Members on the ' + rollDescriptor + ' voter roll are eligible to nominate, ' +
       'propose, or second a candidate for any post of the Executive Committee.</p>' +
       (nomDeadline ? '<p><strong>Nomination deadline:</strong> ' + nomDeadline + '</p>' : '') +
       '<p>Please log in to the election portal to submit or support a nomination:</p>' +
       '<p><a href="' + DEPLOY_URL + '">' + DEPLOY_URL + '</a></p>' +
       (customNote ? '<p>' + customNote + '</p>' : '') +
-      (ecContact ? '<p>For queries, contact: ' + ecContact + '</p>' : '') +
+      '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
       '<p>SSKZM OBA Elections</p>';
     try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) { failed++; }
   }
@@ -5848,6 +5899,13 @@ function sendNominationCall(token, electionId, customNote, authId) {
   appendAdminLog(sess.identity, 'nomination_call_sent',
     'Nomination call sent to ' + sent + ' voters. Failed: ' + failed + '. Election: ' + electionId,
     '', electionId);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Nomination Call Sent: ' + elecTitle,
+      '<p>The nomination call notice was sent to ' + sent + ' voter(s) for <strong>' + elecTitle + '</strong>.' +
+      (failed > 0 ? ' ' + failed + ' failed to send.' : '') + '</p>' +
+      (customNote ? '<p>Note included: ' + customNote + '</p>' : ''));
+  } catch (e) {}
 
   return { success: true,
     message: 'Nomination call sent to ' + sent + ' voters.' + (failed > 0 ? ' ' + failed + ' failed.' : '') };
@@ -5879,7 +5937,6 @@ function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, au
     return { success: false, message: 'No voter roll to notify. Upload draft voter roll first.' };
   }
 
-  var ecContact = elec[COL.ELEC_EC_CONTACT] ? elec[COL.ELEC_EC_CONTACT].toString() : '';
   var sent = 0; var failed = 0;
 
   for (var v = 0; v < voterRows.length; v++) {
@@ -5887,13 +5944,15 @@ function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, au
     var name  = (voterRows[v][COL.VOTER_NAME].toString() + ' ' +
                  voterRows[v][COL.VOTER_SURNAME].toString()).trim();
     var roll  = voterRows[v][COL.VOTER_ROLL].toString().trim();
+    var batch = voterRows[v][COL.VOTER_BATCH].toString().trim();
     if (!email) { failed++; continue; }
     var subject = 'SSKZM OBA — Draft Voter Roll Published: Verify Your Inclusion';
     var body =
       '<p>Dear ' + (name || 'Member') + ',</p>' +
       '<p>The draft voter roll for the <strong>' + elecTitle + '</strong> has been published.</p>' +
       '<p>Your details on the roll are:</p>' +
-      '<p>Name: <strong>' + name + '</strong><br>Roll No: <strong>' + roll + '</strong></p>' +
+      '<p>Name: <strong>' + name + '</strong><br>Roll No: <strong>' + roll +
+      '</strong><br>Batch: <strong>' + batch + '</strong></p>' +
       '<p>Please verify that your details are correct. If you find an error, or if you believe ' +
       'you should be on the voter roll but are not listed, please raise an objection through ' +
       'the election portal immediately.</p>' +
@@ -5901,7 +5960,7 @@ function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, au
       '<p>A member who does not raise an objection during this window may not claim ' +
       'an error in their inclusion or exclusion after the voter roll is certified.</p>' +
       '<p>Log in to verify: <a href="' + DEPLOY_URL + '">' + DEPLOY_URL + '</a></p>' +
-      (ecContact ? '<p>For queries, contact: ' + ecContact + '</p>' : '') +
+      '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
       '<p>SSKZM OBA Elections</p>';
     try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) { failed++; }
   }
@@ -5910,6 +5969,13 @@ function sendVoterRollPublicationNotice(token, electionId, objectionDeadline, au
     'Voter roll publication notice sent to ' + sent + ' voters. Failed: ' + failed +
     '. Objection deadline: ' + (objectionDeadline || 'not specified'),
     '', electionId);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Voter Roll Publication Notice Sent: ' + elecTitle,
+      '<p>The draft voter roll publication notice was sent to ' + sent + ' voter(s) for <strong>' + elecTitle + '</strong>.' +
+      (failed > 0 ? ' ' + failed + ' failed to send.' : '') + '</p>' +
+      (objectionDeadline ? '<p>Objection deadline communicated: ' + objectionDeadline + '</p>' : ''));
+  } catch (e) {}
 
   return { success: true,
     message: 'Publication notice sent to ' + sent + ' voters.' + (failed > 0 ? ' ' + failed + ' failed.' : '') };
@@ -5952,7 +6018,6 @@ function sendCandidateListPublishedNotice(token, electionId, authId) {
 
   var pubAt      = elec[COL.ELEC_CAND_PUB_AT] ? elec[COL.ELEC_CAND_PUB_AT].toString() : '';
   var withdrawDl = pubAt ? formatISTDeadline(pubAt) : '';
-  var ecContact  = elec[COL.ELEC_EC_CONTACT] ? elec[COL.ELEC_EC_CONTACT].toString() : '';
   var sent = 0; var failed = 0;
 
   for (var v = 0; v < voterRows.length; v++) {
@@ -5967,7 +6032,7 @@ function sendCandidateListPublishedNotice(token, electionId, authId) {
       (withdrawDl ? '<p><strong>Candidature withdrawal deadline:</strong> ' + withdrawDl + '</p>' : '') +
       '<p>Please log in to the election portal to view the full candidate list:</p>' +
       '<p><a href="' + DEPLOY_URL + '">' + DEPLOY_URL + '</a></p>' +
-      (ecContact ? '<p>For queries, contact: ' + ecContact + '</p>' : '') +
+      '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
       '<p>SSKZM OBA Elections</p>';
     try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) { failed++; }
   }
@@ -5976,8 +6041,83 @@ function sendCandidateListPublishedNotice(token, electionId, authId) {
     'Candidate list published notice sent to ' + sent + ' voters. Failed: ' + failed + '. Election: ' + electionId,
     '', electionId);
 
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Candidate List Published Notice Sent: ' + elecTitle,
+      '<p>The candidate list published notice was sent to ' + sent + ' voter(s) for <strong>' + elecTitle + '</strong>.' +
+      (failed > 0 ? ' ' + failed + ' failed to send.' : '') + '</p>');
+  } catch (e) {}
+
   return { success: true, sent: sent, failed: failed,
     message: 'Candidate list notice sent to ' + sent + ' voters.' + (failed > 0 ? ' ' + failed + ' failed.' : '') };
+}
+
+// ============================================================
+// sendVotingOpenNotice — notifies all voters that voting has opened.
+// Was a gap — no notice existed for the candidates_published -> active
+// transition; the candidate-list-published notice covers the withdrawal
+// deadline but never mentions a voting link or date. RO-triggered, not
+// automatic, matching every other lifecycle notice in this file.
+// Access: RO_ADMIN, TEM (TEM-gated)
+// ============================================================
+function sendVotingOpenNotice(token, electionId, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
+  var temCheck = requiresTEMAuth(sess, authId, 'sendVotingOpenNotice', electionId);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var i = 0; i < elecRows.length; i++) {
+    if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) { elec = elecRows[i]; break; }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  var elecTitle  = elec[COL.ELEC_TITLE].toString();
+  var elecStatus = elec[COL.ELEC_STATUS].toString();
+  var atOrAfterActive = ['active', 'paused', 'closed', 'declared'];
+  if (atOrAfterActive.indexOf(elecStatus) === -1) {
+    return { success: false, message: 'Voting open notice can only be sent once voting is active. Current status: ' + elecStatus + '.' };
+  }
+
+  var vrResult = getVoterRollRows(electionId);
+  var voterRows = vrResult.rows;
+  if (!voterRows || voterRows.length === 0) {
+    return { success: false, message: 'No voter roll available.' };
+  }
+
+  var voteClose    = elec[COL.ELEC_VOTE_CLOSE] ? elec[COL.ELEC_VOTE_CLOSE].toString() : '';
+  var voteCloseFmt = voteClose ? formatISTDeadline(voteClose) : '';
+  var sent = 0; var failed = 0;
+
+  for (var v = 0; v < voterRows.length; v++) {
+    var email = voterRows[v][COL.VOTER_EMAIL].toString().trim();
+    var name  = (voterRows[v][COL.VOTER_NAME].toString() + ' ' +
+                 voterRows[v][COL.VOTER_SURNAME].toString()).trim();
+    if (!email) { failed++; continue; }
+    var subject = 'SSKZM OBA — Voting is Now Open: ' + elecTitle;
+    var body =
+      '<p>Dear ' + (name || 'Member') + ',</p>' +
+      '<p>Voting is now open for the <strong>' + elecTitle + '</strong>.</p>' +
+      (voteCloseFmt ? '<p><strong>Voting closes:</strong> ' + voteCloseFmt + '</p>' : '') +
+      '<p>Please log in to the election portal to cast your vote:</p>' +
+      '<p><a href="' + DEPLOY_URL + '">' + DEPLOY_URL + '</a></p>' +
+      '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
+      '<p>SSKZM OBA Elections</p>';
+    try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) { failed++; }
+  }
+
+  appendAdminLog(sess.identity, 'voting_open_notice_sent',
+    'Voting open notice sent to ' + sent + ' voters. Failed: ' + failed + '. Election: ' + electionId,
+    '', electionId);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Voting Open Notice Sent: ' + elecTitle,
+      '<p>The voting open notice was sent to ' + sent + ' voter(s) for <strong>' + elecTitle + '</strong>.' +
+      (failed > 0 ? ' ' + failed + ' failed to send.' : '') + '</p>');
+  } catch (e) {}
+
+  return { success: true, sent: sent, failed: failed,
+    message: 'Voting open notice sent to ' + sent + ' voters.' + (failed > 0 ? ' ' + failed + ' failed.' : '') };
 }
 
 // ============================================================
@@ -6014,7 +6154,6 @@ function sendResultsDeclaredNotice(token, electionId, authId) {
     return { success: false, message: 'No voter roll available.' };
   }
 
-  var ecContact = elec[COL.ELEC_EC_CONTACT] ? elec[COL.ELEC_EC_CONTACT].toString() : '';
   var sent = 0; var failed = 0;
 
   for (var v = 0; v < voterRows.length; v++) {
@@ -6029,7 +6168,7 @@ function sendResultsDeclaredNotice(token, electionId, authId) {
       '<p>Please log in to the election portal to view the full results:</p>' +
       '<p><a href="' + DEPLOY_URL + '">' + DEPLOY_URL + '</a></p>' +
       '<p>If you cast a vote, your receipt token can be used on this page to confirm it was recorded.</p>' +
-      (ecContact ? '<p>For queries, contact: ' + ecContact + '</p>' : '') +
+      '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
       '<p>SSKZM OBA Elections</p>';
     try { sendEmailViaSendGrid(email, subject, body); sent++; } catch(e) { failed++; }
   }
@@ -6037,6 +6176,12 @@ function sendResultsDeclaredNotice(token, electionId, authId) {
   appendAdminLog(sess.identity, 'results_declared_notice_sent',
     'Results declared notice sent to ' + sent + ' voters. Failed: ' + failed + '. Election: ' + electionId,
     '', electionId);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Results Declared Notice Sent: ' + elecTitle,
+      '<p>The results declared notice was sent to ' + sent + ' voter(s) for <strong>' + elecTitle + '</strong>.' +
+      (failed > 0 ? ' ' + failed + ' failed to send.' : '') + '</p>');
+  } catch (e) {}
 
   return { success: true, sent: sent, failed: failed,
     message: 'Results declared notice sent to ' + sent + ' voters.' + (failed > 0 ? ' ' + failed + ' failed.' : '') };
@@ -6918,6 +7063,87 @@ function saveScrutinyItem(token, nomId, checkItem, checkResult, notes, authId) {
 }
 
 // ============================================================
+// _persistAutoAssessedScrutinyItems — writes a permanent ScrutinyLog row
+// for each of the 6 standard checklist items not already saved for this
+// nomination, using the exact same auto-assessment logic already used
+// for display (getScrutinyData) and the acceptance gate (acceptNomination)
+// — so accepting/rejecting a nomination always leaves a complete audit
+// trail (SOP 8.6 item 2), regardless of whether the reviewer stepped
+// through each checklist button individually beforehand. Never overwrites
+// an already-saved (possibly manually overridden) item.
+// ============================================================
+function _persistAutoAssessedScrutinyItems(nom, adminId) {
+  var nomId    = nom[COL.NOM_ID].toString();
+  var elecId   = nom[COL.NOM_ELEC_ID].toString();
+  var candRoll = nom[COL.NOM_CAND_ROLL].toString();
+  var post     = nom[COL.NOM_POST].toString();
+  var isBatchRep = post.toLowerCase().indexOf('batch') !== -1;
+
+  var scSh   = getSheet(SHEETS.SCRUTINY_LOG);
+  var scData = scSh.getDataRange().getValues();
+  var saved  = {};
+  for (var j = 1; j < scData.length; j++) {
+    if (scData[j][COL.SCLOG_NOM_ID].toString() === nomId) {
+      saved[scData[j][COL.SCLOG_CHECK_ITEM].toString()] = true;
+    }
+  }
+
+  var toSave = [];
+
+  if (!saved['post_eligibility']) {
+    var autoPE = _autoAssessPostEligibility(nom);
+    if (autoPE.result !== 'Pending') {
+      toSave.push({ item: 'post_eligibility', result: autoPE.result, notes: autoPE.notes });
+    }
+  }
+
+  if (!saved['tenure_bar']) {
+    var t1r = checkT1TenureBar(candRoll, post);
+    var t2r = isBatchRep
+      ? { eligible: true, reason: 'Batch Representative — T2 consecutive tenure bar does not apply.' }
+      : checkTenureBar(candRoll);
+    var tenureEligible = t1r.eligible && t2r.eligible;
+    var tenureNotes = '';
+    if (!t1r.eligible) tenureNotes += '[AUTO — T1 BAR] ' + t1r.reason;
+    if (!t2r.eligible) tenureNotes += (tenureNotes ? ' | ' : '') + '[AUTO — T2 BAR] ' + t2r.reason;
+    if (tenureEligible) tenureNotes = '[AUTO] ' + t1r.reason + ' | ' + t2r.reason;
+    tenureNotes += ' | To override: save a manual Yes/No with explanatory notes.';
+    toSave.push({ item: 'tenure_bar', result: tenureEligible ? 'Yes' : 'No', notes: tenureNotes });
+  }
+
+  if (!saved['one_post']) {
+    toSave.push({ item: 'one_post', result: 'Yes', notes: '' });
+  }
+  if (!saved['proposer']) {
+    toSave.push({ item: 'proposer', result: nom[COL.NOM_PROP_CONFIRMED].toString() === 'true' ? 'Yes' : 'No', notes: '' });
+  }
+  if (!saved['seconder']) {
+    toSave.push({ item: 'seconder', result: nom[COL.NOM_SEC_CONFIRMED].toString() === 'true' ? 'Yes' : 'No', notes: '' });
+  }
+  if (!saved['consent']) {
+    var consentStatus = nom[COL.NOM_CONSENT_STATUS].toString();
+    var consentResult = consentStatus === 'accepted' ? 'Yes' : (consentStatus === '' ? 'N/A' : 'No');
+    toSave.push({ item: 'consent', result: consentResult, notes: '' });
+  }
+
+  var ts = now().toISOString();
+  toSave.forEach(function(entry) {
+    var newRow = new Array(18).fill('');
+    newRow[COL.SCLOG_ID]           = generateId();
+    newRow[COL.SCLOG_NOM_ID]       = nomId;
+    newRow[COL.SCLOG_ELEC_ID]      = elecId;
+    newRow[COL.SCLOG_CAND_ROLL]    = candRoll;
+    newRow[COL.SCLOG_POST]         = post;
+    newRow[COL.SCLOG_CHECK_ITEM]   = entry.item;
+    newRow[COL.SCLOG_CHECK_RESULT] = entry.result;
+    newRow[COL.SCLOG_NOTES]        = entry.notes;
+    newRow[COL.SCLOG_LOGGED_AT]    = ts;
+    newRow[COL.SCLOG_LOGGED_BY]    = adminId;
+    scSh.appendRow(newRow);
+  });
+}
+
+// ============================================================
 // sendECReferral — RO refers a scrutiny matter of institutional
 // record to the Executive Committee (bylaw Clause g: "may seek
 // clarification from any candidate or from the Executive Committee
@@ -7184,6 +7410,8 @@ if (!tenureBarOk) {
   newCand[COL.CAND_NOM_ID]      = nomId;
   candSh.appendRow(newCand);
 
+  _persistAutoAssessedScrutinyItems(nom, sess.identity);
+
   appendAdminLog(sess.identity, 'scrutiny_decision',
     'Nomination accepted: ' + nom[COL.NOM_CAND_NAME].toString() + ' for ' + thisPost,
     'confirmed', 'accepted');
@@ -7337,6 +7565,8 @@ function rejectNomination(token, nomId, reason, authId) {
       break;
     }
   }
+
+  _persistAutoAssessedScrutinyItems(nom, sess.identity);
 
   appendAdminLog(sess.identity, 'scrutiny_decision',
     'Nomination rejected: ' + nom[COL.NOM_CAND_NAME].toString() +
@@ -7696,17 +7926,45 @@ function getLiveTally(token, electionId) {
       };
     });
 
-    // Sort by votes descending (only when not blackout)
+    var seats = group.seatCount || 1;
+    var tieUnresolved = false;
+
+    // Sort by votes descending (only when not blackout). Tie detection is
+    // resolved only by an actual recorded draw of lots — same logic as
+    // _computeElectionResults — kept separate here since this function also
+    // serves live/blackout tally monitoring, not just declared results.
     if (!blackout) {
       cands.sort(function(a, b) { return b.votes - a.votes; });
+
+      var cutoffVotes   = cands.length > 0 ? cands[Math.min(seats, cands.length) - 1].votes : 0;
+      var aboveCutoff   = cands.filter(function(cd) { return cd.votes > cutoffVotes; }).length;
+      var seatsAtCutoff = seats - aboveCutoff;
+      var tiedAtCutoff  = cands.filter(function(cd) { return cd.votes === cutoffVotes; });
+      var isTie = cands.length > 0 && seatsAtCutoff > 0 && tiedAtCutoff.length > seatsAtCutoff;
+      var resolvedWinner = isTie ? _findRecordedDrawWinner(electionId.toString(), postName) : null;
+      var normResolvedWinner = resolvedWinner ? resolvedWinner.trim().toLowerCase() : null;
+      tieUnresolved = isTie && !resolvedWinner;
+
+      for (var ci = 0; ci < cands.length; ci++) {
+        var cd = cands[ci];
+        if (cd.votes > cutoffVotes) {
+          cd.elected = true; cd.tied = false;
+        } else if (isTie && cd.votes === cutoffVotes) {
+          if (normResolvedWinner) { cd.elected = (cd.name.trim().toLowerCase() === normResolvedWinner); cd.tied = false; }
+          else { cd.elected = false; cd.tied = true; }
+        } else {
+          cd.elected = (ci < seats); cd.tied = false;
+        }
+      }
     }
 
     return {
       post:          postName,
       order:         group.order,
-      seatCount:     group.seatCount || 1,
+      seatCount:     seats,
       participated:  participated,
       nota:          blackout ? null : nota,
+      tieUnresolved: tieUnresolved,
       candidates:    cands,
       candCount:     cands.length
     };
@@ -8245,9 +8503,18 @@ function getElectionsForVoter(token, preferredElectionId) {
     var st = elections[i][COL.ELEC_STATUS].toString();
     if (st === 'draft') continue;
     var p = priority.indexOf(st);
-    visible.push({ row: elections[i], p: (p === -1 ? priority.length : p) });
+    var trial = elections[i][COL.ELEC_TRIAL].toString() === 'true';
+    visible.push({ row: elections[i], p: (p === -1 ? priority.length : p), trial: trial });
   }
-  visible.sort(function(a, b) { return a.p - b.p; });
+  // Real (non-trial) elections always sort ahead of trial ones, regardless
+  // of status — a live trial run being 'active' must never outrank or become
+  // the default over a real election still at an earlier stage, since a
+  // confused voter could otherwise land on the trial ballot by default and
+  // believe they've cast their real vote when they haven't.
+  visible.sort(function(a, b) {
+    if (a.trial !== b.trial) return a.trial ? 1 : -1;
+    return a.p - b.p;
+  });
 
   if (visible.length === 0) return { success: true, election: null, elections: [], multiple: false };
 
@@ -11083,184 +11350,12 @@ function candidateAddSeconder(token, nomId, secRoll) {
 }
 
 // ============================================================
-// getDeclaredResults — public results for declared election
-// Access: any authenticated session
+// _computeElectionResults(elec) — shared tally + tie-resolution core.
+// Previously duplicated near-identically in getPublicResults and
+// getDeclaredResults, which is how the draw-of-lots tie fix almost only
+// landed in one of the two. Now there is exactly one implementation.
 // ============================================================
-function getDeclaredResults(token, electionId) {
-  var sess = getSession(token);
-  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
-
-  // Find the election — use provided ID or find most recent declared election
-  var elecRows = sheetData(SHEETS.ELECTIONS);
-  var elec = null;
-  if (electionId) {
-    for (var i = 0; i < elecRows.length; i++) {
-      if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
-        elec = elecRows[i]; break;
-      }
-    }
-  } else {
-    // Find most recently declared election
-    for (var i = 0; i < elecRows.length; i++) {
-      if (elecRows[i][COL.ELEC_STATUS].toString() === 'declared') {
-        if (!elec || elecRows[i][COL.ELEC_CREATED_AT] > elec[COL.ELEC_CREATED_AT]) {
-          elec = elecRows[i];
-        }
-      }
-    }
-  }
-
-  if (!elec) return { success: false, message: 'No declared election found.' };
-  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
-    return { success: false, message: 'Results have not yet been declared.' };
-  }
-
-  var resultVis = 'full_tally';
-  var showCounts = true;
-  var showAll    = true;
-
-  // Load candidates for this election
-  var candRows = sheetData(SHEETS.CANDIDATES);
-  var postMap  = {}; // postName -> { order, seatCount, candidates: [] }
-  EC_POSTS.forEach(function(p) {
-    postMap[p.name] = { order: p.order, seatCount: p.seats, candidates: [] };
-  });
-  for (var c = 0; c < candRows.length; c++) {
-    var cr = candRows[c];
-    if (cr[COL.CAND_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
-    var post  = cr[COL.CAND_POST].toString();
-    var seats = parseInt(cr[COL.CAND_SEAT_COUNT].toString()) || 1;
-    if (!postMap[post]) {
-      postMap[post] = {
-        order:     parseInt(cr[COL.CAND_POST_ORDER] || 999),
-        seatCount: seats,
-        candidates: []
-      };
-    }
-    postMap[post].candidates.push({
-      id:    cr[COL.CAND_ID].toString(),
-      name:  cr[COL.CAND_NAME].toString(),
-      batch: cr[COL.CAND_BATCH].toString(),
-      votes: 0
-    });
-  }
-
-  // Count votes
-  var voteRows = sheetData(SHEETS.VOTES);
-  var postNota = {};
-  for (var v = 0; v < voteRows.length; v++) {
-    var vr = voteRows[v];
-    if (vr[COL.VOTE_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
-    var vcid  = vr[COL.VOTE_CAND_ID].toString();
-    var vpost = vr[COL.VOTE_POST].toString();
-    if (vcid === 'NOTA') {
-      postNota[vpost] = (postNota[vpost] || 0) + 1;
-    } else {
-      for (var post2 in postMap) {
-        for (var k = 0; k < postMap[post2].candidates.length; k++) {
-          if (postMap[post2].candidates[k].id === vcid) {
-            postMap[post2].candidates[k].votes++;
-          }
-        }
-      }
-    }
-  }
-
-  // Participation per post from VotedLog
-  var vlogRows = sheetData(SHEETS.VOTED_LOG);
-  var postVoters = {};
-  for (var l = 0; l < vlogRows.length; l++) {
-    var lr = vlogRows[l];
-    if (lr[COL.LOG_ELEC_ID].toString() !== elec[COL.ELEC_ID].toString()) continue;
-    var lpost = lr[COL.LOG_POST].toString();
-    var lroll = lr[COL.LOG_ROLL].toString();
-    if (!postVoters[lpost]) postVoters[lpost] = {};
-    postVoters[lpost][lroll] = true;
-  }
-
-  // Build result posts
-  var posts = Object.keys(postMap).sort(function(a, b) {
-    return postMap[a].order - postMap[b].order;
-  });
-
-  var postResults = posts.map(function(postName) {
-    var group    = postMap[postName];
-    var seats    = group.seatCount || 1;
-    var nota     = postNota[postName] || 0;
-    var turnout  = postVoters[postName] ? Object.keys(postVoters[postName]).length : 0;
-
-    // Sort candidates by votes descending
-    var cands = group.candidates.slice().sort(function(a, b) { return b.votes - a.votes; });
-
-    // Mark elected (top N by seat count, unless NOTA wins)
-    for (var ci = 0; ci < cands.length; ci++) {
-      cands[ci].elected = (ci < seats);
-    }
-
-    return {
-      post:      postName,
-      seatCount: seats,
-      turnout:   turnout,
-      nota:      nota,
-      candidates: cands.map(function(cd) {
-        return {
-          name:    cd.name,
-          batch:   cd.batch,
-          votes:   cd.votes,
-          elected: cd.elected
-        };
-      })
-    };
-  });
-
-  return {
-    success:      true,
-    electionId:   elec[COL.ELEC_ID].toString(),
-    electionTitle: elec[COL.ELEC_TITLE].toString(),
-    resultVis:    resultVis,
-    posts:        postResults
-  };
-}
-
-// ============================================================
-// getPublicResults — unauthenticated results for declared election
-// Access: PUBLIC — no session required
-// Only returns data when election status = 'declared'
-// electionId optional — omit to get most recent declared election
-// ============================================================
-function getPublicResults(electionId) {
-  // Find the election
-  var elecRows = sheetData(SHEETS.ELECTIONS);
-  var elec = null;
-  if (electionId) {
-    for (var i = 0; i < elecRows.length; i++) {
-      if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) {
-        elec = elecRows[i]; break;
-      }
-    }
-    // Public, unauthenticated endpoint — internal scratch test elections must
-    // never be reachable here even by direct/guessed electionId.
-    if (elec && elec[COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') {
-      elec = null;
-    }
-  } else {
-    // Most recently created declared election (excluding internal scratch tests)
-    for (var i = 0; i < elecRows.length; i++) {
-      if (elecRows[i][COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') continue;
-      if (elecRows[i][COL.ELEC_STATUS].toString() === 'declared') {
-        if (!elec || elecRows[i][COL.ELEC_CREATED_AT] > elec[COL.ELEC_CREATED_AT]) {
-          elec = elecRows[i];
-        }
-      }
-    }
-  }
-
-  if (!elec) return { success: false, message: 'No declared election found.' };
-  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
-    return { success: false, message: 'Results have not yet been declared for this election.' };
-  }
-
-  // Load candidates
+function _computeElectionResults(elec) {
   var candRows = sheetData(SHEETS.CANDIDATES);
   var postMap = {};
   EC_POSTS.forEach(function(p) {
@@ -11315,31 +11410,120 @@ function getPublicResults(electionId) {
     return postMap[a].order - postMap[b].order;
   });
 
-  var postResults = posts.map(function(postName) {
+  return posts.map(function(postName) {
     var group   = postMap[postName];
     var seats   = group.seatCount || 1;
     var nota    = postNota[postName] || 0;
     var turnout = postVoters[postName] ? Object.keys(postVoters[postName]).length : 0;
     var cands   = group.candidates.slice().sort(function(a, b) { return b.votes - a.votes; });
-    for (var ci = 0; ci < cands.length; ci++) { cands[ci].elected = (ci < seats); }
+
+    // Detect a genuine tie at the seat cutoff — JS sort is stable, so
+    // "whoever sorts first" on equal votes is just insertion order, never
+    // a real decision. Only an actual recorded draw of lots resolves it.
+    var cutoffVotes   = cands.length > 0 ? cands[Math.min(seats, cands.length) - 1].votes : 0;
+    var aboveCutoff   = cands.filter(function(cd) { return cd.votes > cutoffVotes; }).length;
+    var seatsAtCutoff = seats - aboveCutoff;
+    var tiedAtCutoff  = cands.filter(function(cd) { return cd.votes === cutoffVotes; });
+    var isTie = cands.length > 0 && seatsAtCutoff > 0 && tiedAtCutoff.length > seatsAtCutoff;
+    var resolvedWinner = isTie ? _findRecordedDrawWinner(elec[COL.ELEC_ID].toString(), postName) : null;
+    var normResolvedWinner = resolvedWinner ? resolvedWinner.trim().toLowerCase() : null;
+
+    for (var ci = 0; ci < cands.length; ci++) {
+      var cd = cands[ci];
+      if (cd.votes > cutoffVotes) {
+        cd.elected = true; cd.tied = false;
+      } else if (isTie && cd.votes === cutoffVotes) {
+        if (normResolvedWinner) { cd.elected = (cd.name.trim().toLowerCase() === normResolvedWinner); cd.tied = false; }
+        else { cd.elected = false; cd.tied = true; }
+      } else {
+        cd.elected = (ci < seats); cd.tied = false;
+      }
+    }
+
     return {
       post:      postName,
       seatCount: seats,
       turnout:   turnout,
       nota:      nota,
+      tieUnresolved: isTie && !resolvedWinner,
       candidates: cands.map(function(cd) {
-        return { name: cd.name, batch: cd.batch, votes: cd.votes, elected: cd.elected };
+        return { name: cd.name, batch: cd.batch, votes: cd.votes, elected: cd.elected, tied: cd.tied };
       })
     };
   });
+}
+
+// ============================================================
+// _findResultsElection(electionId, excludeInternalTest) — shared election
+// lookup for the two results endpoints below: use the given ID if
+// provided, else the most recently created 'declared' election.
+// ============================================================
+function _findResultsElection(electionId) {
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  if (electionId) {
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_ID].toString() === electionId.toString()) { elec = elecRows[i]; break; }
+    }
+    // Internal-test scratch elections must never be reachable through
+    // either results endpoint, even by direct/guessed electionId.
+    if (elec && elec[COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') elec = null;
+  } else {
+    for (var i = 0; i < elecRows.length; i++) {
+      if (elecRows[i][COL.ELEC_INTERNAL_TEST].toString().toLowerCase() === 'true') continue;
+      if (elecRows[i][COL.ELEC_STATUS].toString() === 'declared') {
+        if (!elec || elecRows[i][COL.ELEC_CREATED_AT] > elec[COL.ELEC_CREATED_AT]) elec = elecRows[i];
+      }
+    }
+  }
+  return elec;
+}
+
+// ============================================================
+// getDeclaredResults — results for declared election, for a logged-in
+// voter (My Receipts → View Full Results).
+// Access: any authenticated session
+// ============================================================
+function getDeclaredResults(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var elec = _findResultsElection(electionId);
+  if (!elec) return { success: false, message: 'No declared election found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
+    return { success: false, message: 'Results have not yet been declared.' };
+  }
 
   return {
     success:       true,
     electionId:    elec[COL.ELEC_ID].toString(),
     electionTitle: elec[COL.ELEC_TITLE].toString(),
-    posts:         postResults
+    resultVis:     'full_tally',
+    posts:         _computeElectionResults(elec)
   };
 }
+
+// ============================================================
+// getPublicResults — unauthenticated results for declared election
+// Access: PUBLIC — no session required
+// Only returns data when election status = 'declared'
+// electionId optional — omit to get most recent declared election
+// ============================================================
+function getPublicResults(electionId) {
+  var elec = _findResultsElection(electionId);
+  if (!elec) return { success: false, message: 'No declared election found.' };
+  if (elec[COL.ELEC_STATUS].toString() !== 'declared') {
+    return { success: false, message: 'Results have not yet been declared for this election.' };
+  }
+
+  return {
+    success:       true,
+    electionId:    elec[COL.ELEC_ID].toString(),
+    electionTitle: elec[COL.ELEC_TITLE].toString(),
+    posts:         _computeElectionResults(elec)
+  };
+}
+
 
 // ============================================================
 // _getFlaggedElectionRow — returns the full row of whichever election
@@ -11454,14 +11638,25 @@ function purgeTrialData(token, electionId, confirmPhrase, authId) {
   }
 
   var counts = {};
+  // elecCol is each sheet's ElectionId column index — not uniformly 1
+  // (e.g. NomQueries stores it at index 2). Scoping strictly to this
+  // electionId is essential: several of these sheets (Votes/VotedLog,
+  // PreSecChecklist, DocStore, NomQueries, Observations, Messages) are
+  // shared across all elections, so an unfiltered wipe here would destroy
+  // real data from any other election sharing the same sheet.
   var sheetsToPurge = [
-    { key: 'Candidates',  name: SHEETS.CANDIDATES  },
-    { key: 'Votes',       name: SHEETS.VOTES        },
-    { key: 'VotedLog',    name: SHEETS.VOTED_LOG    },
-    { key: 'Nominations', name: SHEETS.NOMINATIONS  },
-    { key: 'ScrutinyLog', name: SHEETS.SCRUTINY_LOG },
-    { key: 'Complaints',  name: SHEETS.COMPLAINTS   },
-    { key: 'Appeals',     name: SHEETS.APPEALS      }
+    { key: 'Candidates',      name: SHEETS.CANDIDATES,       elecCol: 1 },
+    { key: 'Votes',           name: SHEETS.VOTES,            elecCol: 1 },
+    { key: 'VotedLog',        name: SHEETS.VOTED_LOG,        elecCol: 1 },
+    { key: 'Nominations',     name: SHEETS.NOMINATIONS,      elecCol: 1 },
+    { key: 'ScrutinyLog',     name: SHEETS.SCRUTINY_LOG,     elecCol: 1 },
+    { key: 'Complaints',      name: SHEETS.COMPLAINTS,       elecCol: 1 },
+    { key: 'Appeals',         name: SHEETS.APPEALS,          elecCol: 1 },
+    { key: 'PreSecChecklist', name: SHEETS.PRESEC_CHECKLIST, elecCol: COL_PRESEC.ELEC_ID },
+    { key: 'DocStore',        name: SHEETS.DOC_STORE,        elecCol: COL.DOC_ELEC_ID },
+    { key: 'NomQueries',      name: SHEETS.NOM_QUERIES,      elecCol: COL.QRY_ELEC_ID },
+    { key: 'Observations',    name: SHEETS.OBSERVATIONS,     elecCol: COL_OBS.ELEC_ID },
+    { key: 'Messages',        name: SHEETS.MESSAGES,         elecCol: COL_MSG.ELEC_ID }
   ];
 
   for (var s = 0; s < sheetsToPurge.length; s++) {
@@ -11469,13 +11664,9 @@ function purgeTrialData(token, electionId, confirmPhrase, authId) {
     if (!sh) { counts[sheetsToPurge[s].key] = 0; continue; }
     var data = sh.getDataRange().getValues();
     var rowsToDelete = [];
+    var elecCol = sheetsToPurge[s].elecCol;
     for (var r = 1; r < data.length; r++) {
-      // Check electionId in col 1 (index 1 for all purged sheets, including
-      // Votes and VotedLog — both store electionId at this index). Scoping
-      // strictly to this electionId is essential: Votes/VotedLog are shared
-      // across all elections, so an unfiltered wipe here would destroy real
-      // ballot data from any other election sharing the same sheet.
-      var rowElecId = data[r][1] ? data[r][1].toString() : '';
+      var rowElecId = data[r][elecCol] ? data[r][elecCol].toString() : '';
       if (rowElecId === electionId.toString()) rowsToDelete.push(r + 1);
     }
     // Delete rows bottom-up to preserve row indices
@@ -11531,14 +11722,14 @@ function purgeTrialData(token, electionId, confirmPhrase, authId) {
 // Access: RO_ADMIN only
 // Valid status: objected | resolved_retained | resolved_removed | none
 // ============================================================
-function updateObjectionStatus(token, rollNo, status, notes, authId) {
+function updateObjectionStatus(token, rollNo, status, notes, authId, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') return { success: false, message: 'Access denied.' };
   var temCheck = requiresTEMAuth(sess, authId, 'updateObjectionStatus', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
-  if (isVoterRollCertified()) {
+  if (isVoterRollCertified(electionId)) {
     return { success: false, message: 'Cannot modify the voter roll draft — the roll has already been certified.' };
   }
 
@@ -11580,7 +11771,7 @@ function updateObjectionStatus(token, rollNo, status, notes, authId) {
 // Prevents duplicate roll numbers.
 // Access: RO_ADMIN, TEM (with AuthID)
 // ============================================================
-function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, authId) {
+function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, authId, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
@@ -11589,7 +11780,7 @@ function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, auth
   var temCheck = requiresTEMAuth(sess, authId, 'addVoterToDraft', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
-  if (isVoterRollCertified()) {
+  if (isVoterRollCertified(electionId)) {
     return { success: false, message: 'Cannot modify the voter roll draft — the roll has already been certified.' };
   }
 
@@ -11638,7 +11829,7 @@ function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, auth
 // which would otherwise wipe all recorded objection decisions.
 // Access: RO_ADMIN, TEM (with AuthID)
 // ============================================================
-function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId) {
+function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId, electionId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
@@ -11647,7 +11838,7 @@ function updateVoterDraftRow(token, rollNo, name, surname, batch, email, authId)
   var temCheck = requiresTEMAuth(sess, authId, 'updateVoterDraftRow', null);
   if (!temCheck.pass) return { success: false, message: temCheck.message };
 
-  if (isVoterRollCertified()) {
+  if (isVoterRollCertified(electionId)) {
     return { success: false, message: 'Cannot modify the voter roll draft — the roll has already been certified.' };
   }
 
@@ -12100,7 +12291,7 @@ function deleteDocument(token, docId, authId) {
 //   records what happened, with full attribution.
 // Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
 // ============================================================
-function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, personsPresent, outcome, authId) {
+function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, personsPresent, outcome, winnerName, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
@@ -12121,15 +12312,39 @@ function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, p
   if (!outcome || outcome.trim() === '') {
     return { success: false, message: 'Outcome of the draw is required.' };
   }
+  if (!winnerName || winnerName.toString().trim() === '') {
+    return { success: false, message: 'Winner name is required — must exactly match one of the tied candidates, so the results page can reflect this draw.' };
+  }
+
+  // Validate the winner against the actual candidates for this post, so a
+  // typo can't silently fail to resolve the tie on the results page later.
+  var candRows = sheetData(SHEETS.CANDIDATES);
+  var matchedWinner = null;
+  for (var c = 0; c < candRows.length; c++) {
+    if (candRows[c][COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (candRows[c][COL.CAND_POST].toString().trim().toLowerCase() !== postName.trim().toLowerCase()) continue;
+    if (candRows[c][COL.CAND_NAME].toString().trim().toLowerCase() === winnerName.toString().trim().toLowerCase()) {
+      matchedWinner = candRows[c][COL.CAND_NAME].toString().trim();
+      break;
+    }
+  }
+  if (!matchedWinner) {
+    return { success: false, message: 'Winner name does not match any candidate on record for this post. Check spelling exactly matches the candidate list.' };
+  }
 
   var summary =
     'Post: ' + postName.trim() +
     ' | Tied candidates: ' + (tiedCandidates || '').toString().trim() +
     ' | Method: ' + method.trim() +
     ' | Persons present: ' + personsPresent.trim() +
-    ' | Outcome: ' + outcome.trim();
+    ' | Outcome: ' + outcome.trim() +
+    ' | Winner: ' + matchedWinner;
 
-  appendAdminLog(sess.identity, 'draw_of_lots', summary, '', electionId.toString());
+  // Structured winner/post pair in OLD_VALUE (parsed by getPublicResults to
+  // resolve ties), electionId in NEW_VALUE — same flexible-field convention
+  // already used by draw_of_lots_conducted/tally_cosign.
+  appendAdminLog(sess.identity, 'draw_of_lots', summary,
+    JSON.stringify({ post: postName.trim(), winner: matchedWinner }), electionId.toString());
 
   return { success: true };
 }
@@ -12240,6 +12455,66 @@ function confirmDrawOfLotsScrutineer(token, electionId, drawId) {
 }
 
 // ============================================================
+// _findRecordedDrawWinner — looks up whether a tie for this exact
+// election+post has actually been resolved by a real draw of lots,
+// checking both mechanisms:
+//   - conductDrawOfLots (in-system random draw) — only counts once
+//     witnessed by 2 Scrutineers, per SOP 2A.8.
+//   - recordDrawOfLots (manual/physical draw) — the personsPresent
+//     field IS its witnessing record, already required non-blank.
+// Returns the winning candidate's name, or null if no resolved draw
+// exists for this post — used by getPublicResults to avoid ever
+// silently declaring a "winner" that was just sort-order luck.
+// ============================================================
+function _findRecordedDrawWinner(electionId, postName) {
+  var logRows = sheetData(SHEETS.ADMIN_LOG);
+  var inSystemDraws = {}; // drawId -> { winner, post, confirmed }
+  var manualWinner = null;
+  var normPost = postName.toString().trim().toLowerCase();
+
+  for (var i = 0; i < logRows.length; i++) {
+    var action = logRows[i][COL.ALOG_ACTION_TYPE].toString();
+    var nv = logRows[i][COL.ALOG_NEW_VALUE].toString();
+    if (nv !== electionId.toString()) continue;
+
+    if (action === 'draw_of_lots_conducted') {
+      try {
+        var rec = JSON.parse(logRows[i][COL.ALOG_DESCRIPTION].toString());
+        if (rec.post && rec.post.toString().trim().toLowerCase() === normPost) {
+          var drawId = logRows[i][COL.ALOG_OLD_VALUE].toString();
+          inSystemDraws[drawId] = { winner: rec.winner, confirmed: 0 };
+        }
+      } catch (e) { /* not a recognisable record — ignore */ }
+    } else if (action === 'draw_of_lots_scrutineer_confirmed') {
+      var did = logRows[i][COL.ALOG_OLD_VALUE].toString();
+      if (inSystemDraws[did]) inSystemDraws[did].confirmed++;
+    } else if (action === 'draw_of_lots') {
+      try {
+        var rec2 = JSON.parse(logRows[i][COL.ALOG_OLD_VALUE].toString());
+        if (rec2.post && rec2.winner &&
+            rec2.post.toString().trim().toLowerCase() === normPost) {
+          manualWinner = rec2.winner.toString();
+        }
+      } catch (e) { /* pre-fix record with no structured winner — ignore */ }
+    }
+  }
+
+  // Among all fully-witnessed in-system draws for this post, use the most
+  // recently CONDUCTED one — a drawId embeds its own conduct timestamp
+  // ("DRAW-<ms epoch>"), so a fresh redo always takes priority over an
+  // older, stale resolved draw for the same post instead of whichever
+  // happened to be encountered first.
+  var latestDrawId = null, latestTs = -1;
+  for (var d in inSystemDraws) {
+    if (inSystemDraws[d].confirmed < 2) continue;
+    var ts = parseInt(d.replace('DRAW-', ''), 10) || 0;
+    if (ts > latestTs) { latestTs = ts; latestDrawId = d; }
+  }
+  if (latestDrawId) return inSystemDraws[latestDrawId].winner;
+  return manualWinner;
+}
+
+// ============================================================
 // getDrawOfLotsRecords — list all in-system draws for an election,
 // with witnessing status, for display in the admin panel.
 // Access: RO_ADMIN, DEPUTY_RO, TEM, SCRUTINEER
@@ -12269,14 +12544,15 @@ function getDrawOfLotsRecords(token, electionId) {
       draws[drawId].winner         = rec.winner || '';
       draws[drawId].randomValue    = rec.randomValue;
       draws[drawId].conductedBy    = logRows[i][COL.ALOG_ADMIN_ID].toString();
-      draws[drawId].conductedAt    = logRows[i][COL.ALOG_TIMESTAMP] ? new Date(logRows[i][COL.ALOG_TIMESTAMP]).toISOString() : '';
+      draws[drawId].conductedAtRaw = logRows[i][COL.ALOG_TIMESTAMP] ? new Date(logRows[i][COL.ALOG_TIMESTAMP]).toISOString() : '';
+      draws[drawId].conductedAt    = logRows[i][COL.ALOG_TIMESTAMP] ? fmtIST(logRows[i][COL.ALOG_TIMESTAMP]) : '';
     } else {
       draws[drawId].confirmedBy.push(logRows[i][COL.ALOG_ADMIN_ID].toString());
     }
   }
 
   var list = Object.keys(draws).map(function(k) { return draws[k]; })
-    .sort(function(a, b) { return (a.conductedAt < b.conductedAt) ? 1 : -1; });
+    .sort(function(a, b) { return (a.conductedAtRaw < b.conductedAtRaw) ? 1 : -1; });
 
   return { success: true, draws: list };
 }

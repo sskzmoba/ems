@@ -853,6 +853,17 @@ _renderManageScreen: function(el) {
             '</button>' +
             '<div id="cand-list-notice-result" style="margin-bottom:8px;"></div>'
           : '') +
+          // Voting open notice — mass email to all voters, announcing that
+          // voting has started (no other notice mentions a voting link/date).
+          (['active','paused','closed','declared'].indexOf(el.status) !== -1 ?
+            '<button onclick="AdminPanel._sendVotingOpenNotice(\'' + escHtml(el.id) + '\')" ' +
+              'id="btn-voting-open-notice" ' +
+              'style="width:100%;padding:12px;background:#fff;color:#1a3a5c;border:1.5px solid #1a3a5c;' +
+              'border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;margin-bottom:8px;">' +
+              '✉ Send Voting Open Notice to All Members' +
+            '</button>' +
+            '<div id="voting-open-notice-result" style="margin-bottom:8px;"></div>'
+          : '') +
           // Results declared notice — mass email to all voters, announcing
           // results are out (SOP Appendix A "V-7").
           (el.status === 'declared' ?
@@ -1065,18 +1076,18 @@ _renderManageScreen: function(el) {
               'for this trial election, and resets status to Draft. ' +
               '<strong>This cannot be undone.</strong>' +
             '</p>' +
-            '<div id="purge-confirm-box" style="display:none;margin-bottom:12px;' +
+            '<div id="purge-confirm-box-' + escHtml(el.id) + '" style="display:none;margin-bottom:12px;' +
               'background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:12px;">' +
               '<p style="font-size:.85rem;color:#92400e;margin-bottom:8px;">' +
                 'Type <strong>CONFIRM PURGE</strong> to proceed:' +
               '</p>' +
-              '<input type="text" id="purge-phrase" placeholder="CONFIRM PURGE" ' +
+              '<input type="text" id="purge-phrase-' + escHtml(el.id) + '" placeholder="CONFIRM PURGE" ' +
                 'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #fde68a;' +
                 'border-radius:4px;margin-bottom:10px;box-sizing:border-box;" />' +
               '<div style="display:flex;gap:10px;">' +
                 '<button class="btn btn-outline" ' +
-                  'onclick="document.getElementById(\'purge-confirm-box\').style.display=\'none\';' +
-                  'document.getElementById(\'btn-purge-trial\').style.display=\'block\';" ' +
+                  'onclick="document.getElementById(\'purge-confirm-box-' + escHtml(el.id) + '\').style.display=\'none\';' +
+                  'document.getElementById(\'btn-purge-trial-' + escHtml(el.id) + '\').style.display=\'block\';" ' +
                   'style="flex:1;padding:12px;">Cancel</button>' +
                 '<button ' +
                   'onclick="AdminPanel._doPurgeTrial(\'' + escHtml(el.id) + '\')" ' +
@@ -1086,8 +1097,8 @@ _renderManageScreen: function(el) {
                 '</button>' +
               '</div>' +
             '</div>' +
-            '<button id="btn-purge-trial" ' +
-              'onclick="document.getElementById(\'purge-confirm-box\').style.display=\'block\';' +
+            '<button id="btn-purge-trial-' + escHtml(el.id) + '" ' +
+              'onclick="document.getElementById(\'purge-confirm-box-' + escHtml(el.id) + '\').style.display=\'block\';' +
               'this.style.display=\'none\';" ' +
               'style="width:100%;padding:14px;font-size:1rem;background:#fff;color:#d97706;' +
               'border:2px solid #d97706;border-radius:4px;cursor:pointer;">' +
@@ -1415,6 +1426,37 @@ _sendCandidateListPublishedNotice: function(id) {
         if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
       })
       .sendCandidateListPublishedNotice(App.token, id, getTEMAuthId());
+  }, 'Send');
+},
+
+_sendVotingOpenNotice: function(id) {
+  AdminPanel._showConfirmModal('Send the voting open notice to every voter on the roll?', function() {
+    var btn = document.getElementById('btn-voting-open-notice');
+    var resDiv = document.getElementById('voting-open-notice-result');
+    if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+    if (resDiv) resDiv.innerHTML = '';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = '✉ Send Voting Open Notice to All Members'; btn.disabled = false; }
+        if (!resDiv) return;
+        if (res && res.success) {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#ecfdf5;border:1px solid #86efac;' +
+            'border-radius:4px;font-size:.8rem;color:#065f46;">' +
+            '✓ ' + res.sent + ' sent' + (res.failed > 0 ? ', ' + res.failed + ' failed (no email on record)' : '') +
+            '</div>';
+        } else {
+          resDiv.innerHTML = '<div style="padding:8px 10px;background:#fef2f2;border:1px solid #fca5a5;' +
+            'border-radius:4px;font-size:.8rem;color:#991b1b;">' +
+            escHtml((res && res.message) || 'Failed to send.') +
+            '</div>';
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = '✉ Send Voting Open Notice to All Members'; btn.disabled = false; }
+        if (resDiv) resDiv.innerHTML = '<div style="color:#c0392b;font-size:.8rem;">Connection error. Please try again.</div>';
+      })
+      .sendVotingOpenNotice(App.token, id, getTEMAuthId());
   }, 'Send');
 },
 
@@ -3700,6 +3742,50 @@ _showConfirmModal: function(message, onConfirm, confirmLabel, isDanger) {
   document.getElementById('confirm-modal-ok').onclick = function() { overlay.remove(); onConfirm(); };
 },
 
+// Generic in-page prompt modal — replaces native prompt(). Native prompt()
+// carries the same browser chrome as confirm() and, being a blocking
+// dialog, freezes the page (including any pending toast auto-hide timer)
+// until dismissed. onSubmit fires only on Submit click, with the entered
+// value; Cancel/backdrop-click does nothing further (mirrors prompt()'s
+// null-return behaviour, but callers here already treat '' as "no note").
+_showPromptModal: function(message, onSubmit, opts) {
+  opts = opts || {};
+  var old = document.getElementById('prompt-modal-overlay');
+  if (old) old.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'prompt-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;' +
+    'display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML =
+    '<div style="background:#fff;border-radius:10px;padding:20px;max-width:420px;width:100%;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.25);">' +
+      '<div style="font-size:.92rem;color:#374151;margin-bottom:12px;line-height:1.5;white-space:pre-line;">' +
+        escHtml(message) +
+      '</div>' +
+      '<input id="prompt-modal-input" type="text" placeholder="' + escHtml(opts.placeholder || '') + '" ' +
+        'value="' + escHtml(opts.defaultValue || '') + '" ' +
+        'style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:.9rem;' +
+        'margin-bottom:16px;box-sizing:border-box;">' +
+      '<div style="display:flex;gap:10px;">' +
+        '<button id="prompt-modal-cancel" style="flex:1;padding:11px;background:#fff;color:#6b7280;' +
+          'border:1px solid #d1d5db;border-radius:4px;font-size:.88rem;cursor:pointer;">Cancel</button>' +
+        '<button id="prompt-modal-ok" style="flex:1;padding:11px;background:#1a3a5c;color:#fff;' +
+          'border:none;border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;">' +
+          escHtml(opts.submitLabel || 'OK') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  var input = document.getElementById('prompt-modal-input');
+  input.focus();
+  input.select();
+  var submit = function() { var val = input.value; overlay.remove(); onSubmit(val); };
+  document.getElementById('prompt-modal-cancel').onclick = function() { overlay.remove(); };
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  document.getElementById('prompt-modal-ok').onclick = submit;
+  input.onkeydown = function(e) { if (e.key === 'Enter') submit(); };
+},
+
 _showInfoModal: function(message) {
   var old = document.getElementById('link-modal-overlay');
   if (old) old.remove();
@@ -4344,6 +4430,7 @@ _confirmP2Ext: function(elecId) {
 // ── DRAW OF LOTS + ELECTION RECORD (SOP 8.4 / 8.6) ─────────────
 
   _renderElectionRecordSection: function(elecId, status) {
+    var isRO = (App.role === 'RO_ADMIN' || App.role === 'DEPUTY_RO' || App.role === 'TEM');
     var html = '<div class="panel-card" style="margin-top:18px;margin-bottom:10px;">' +
       '<div class="panel-card-body" style="padding:14px 16px;">' +
       '<div style="font-weight:700;color:#1a3a5c;font-size:.95rem;margin-bottom:4px;">Draw of Lots</div>' +
@@ -4358,7 +4445,12 @@ _confirmP2Ext: function(elecId) {
       return html + AdminPanel._renderElectionRecordCompileBlock(elecId, status);
     }
 
-    html +=
+    html += !isRO ?
+      '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:12px 14px;margin-bottom:14px;' +
+        'font-size:.82rem;color:#6b7280;font-style:italic;">' +
+        'Only the RO/TEM can conduct or record a draw of lots. Any draw will appear below for you to confirm as a witness.' +
+      '</div>'
+    :
       '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;margin-bottom:14px;">' +
         '<div style="font-size:.88rem;font-weight:600;color:#1e40af;margin-bottom:6px;">' +
           '\u26a1 Conduct Draw In-System' +
@@ -4368,9 +4460,12 @@ _confirmP2Ext: function(elecId) {
           'The result is logged automatically \u2014 no need to fill in method/outcome by hand. ' +
           'Prefer a physical draw (coin, chits)? Use the manual form below instead \u2014 both are SOP-compliant.' +
         '</div>' +
-        '<input id="idol-post" placeholder="Post name" style="width:100%;padding:9px;font-size:.85rem;' +
-        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
-        '<textarea id="idol-candidates" rows="2" placeholder="Tied candidate names, one per line" ' +
+        '<select id="idol-post" onchange="AdminPanel._onDrawPostSelect(\'idol\', this.value)" ' +
+        'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
+        'box-sizing:border-box;margin-bottom:6px;background:#fff;">' +
+        '<option value="">— Select tied post —</option>' +
+        '</select>' +
+        '<textarea id="idol-candidates" rows="2" placeholder="Tied candidate names, one per line — auto-filled once you pick a post above" ' +
         'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
         'box-sizing:border-box;margin-bottom:6px;resize:vertical;"></textarea>' +
         '<div id="idol-err" style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
@@ -4378,7 +4473,9 @@ _confirmP2Ext: function(elecId) {
         'style="width:100%;padding:11px;font-size:.88rem;background:#1e40af;color:#fff;' +
         'border:none;border-radius:4px;cursor:pointer;font-weight:600;">\u26a1 Draw Now</button>' +
         '<div id="idol-result" style="margin-top:10px;"></div>' +
-      '</div>' +
+      '</div>';
+
+    html +=
       '<div style="margin-bottom:14px;">' +
         '<button onclick="AdminPanel._loadDrawOfLotsRecords(\'' + escHtml(elecId) + '\')" ' +
         'style="width:100%;padding:9px;font-size:.82rem;background:#fff;color:#1a3a5c;' +
@@ -4386,12 +4483,16 @@ _confirmP2Ext: function(elecId) {
         '<div id="idol-list"></div>' +
       '</div>';
 
-    html +=
+    html += isRO ?
       '<div style="margin-bottom:8px;">' +
-        '<input id="dol-post" placeholder="Post name" style="width:100%;padding:9px;font-size:.85rem;' +
-        'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
-        '<input id="dol-tied" placeholder="Tied candidates (names/roll nos.)" style="width:100%;padding:9px;' +
-        'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+        '<select id="dol-post" onchange="AdminPanel._onDrawPostSelect(\'dol\', this.value)" ' +
+        'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
+        'box-sizing:border-box;margin-bottom:6px;background:#fff;">' +
+        '<option value="">— Select tied post —</option>' +
+        '</select>' +
+        '<input id="dol-tied" placeholder="Tied candidates (names/roll nos.) — auto-filled once you pick a post above" ' +
+        'style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;' +
+        'box-sizing:border-box;margin-bottom:6px;">' +
         '<input id="dol-method" placeholder="Method of draw" style="width:100%;padding:9px;font-size:.85rem;' +
         'border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
         '<input id="dol-persons" placeholder="Persons present" style="width:100%;padding:9px;font-size:.85rem;' +
@@ -4399,14 +4500,71 @@ _confirmP2Ext: function(elecId) {
         '<textarea id="dol-outcome" rows="2" placeholder="Outcome of the draw" style="width:100%;padding:9px;' +
         'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;' +
         'resize:vertical;"></textarea>' +
+        '<select id="dol-winner" style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;' +
+        'border-radius:4px;box-sizing:border-box;margin-bottom:6px;background:#fff;">' +
+        '<option value="">— Select post above first —</option>' +
+        '</select>' +
+        '<div style="font-size:.76rem;color:#6b7280;margin-bottom:6px;">Required — this is what lets the ' +
+        'results page actually show the resolved winner instead of a pending tie.</div>' +
         '<div id="dol-err" style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
         '<button id="btn-dol" onclick="AdminPanel._recordDrawOfLots(\'' + escHtml(elecId) + '\')" ' +
         'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
         'border:none;border-radius:4px;cursor:pointer;font-weight:600;">Record Draw of Lots</button>' +
-      '</div>' +
-      '</div></div>';
+      '</div>'
+    : '';
+
+    html += '</div></div>';
+
+    if (isRO) setTimeout(function() { AdminPanel._loadTiedPostsForDraw(elecId); }, 0);
 
     return html + AdminPanel._renderElectionRecordCompileBlock(elecId, status);
+  },
+
+  // Populates the Post dropdowns on both draw-of-lots forms with the
+  // election's currently-tied posts (from getLiveTally's own tie
+  // detection), instead of a free-text field the RO had to type an exact
+  // match into — that mismatch (e.g. "Batch Rep" vs "Batch Representative")
+  // is exactly what silently broke tie resolution before this fix.
+  _tiedPostsForDraw: {},
+
+  _loadTiedPostsForDraw: function(elecId) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) return;
+        var tiedPosts = (res.posts || []).filter(function(p) { return p.tieUnresolved; });
+        AdminPanel._tiedPostsForDraw = {};
+        tiedPosts.forEach(function(p) {
+          AdminPanel._tiedPostsForDraw[p.post] = (p.candidates || []).filter(function(c) { return c.tied; });
+        });
+        ['idol-post', 'dol-post'].forEach(function(selId) {
+          var sel = document.getElementById(selId);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— Select tied post —</option>' +
+            (tiedPosts.length === 0
+              ? '<option value="" disabled>No unresolved ties found</option>'
+              : tiedPosts.map(function(p) {
+                  return '<option value="' + escHtml(p.post) + '">' + escHtml(p.post) + '</option>';
+                }).join(''));
+        });
+      })
+      .withFailureHandler(function() {})
+      .getLiveTally(App.token, elecId);
+  },
+
+  _onDrawPostSelect: function(prefix, postName) {
+    var cands = AdminPanel._tiedPostsForDraw[postName] || [];
+    if (prefix === 'idol') {
+      var ta = document.getElementById('idol-candidates');
+      if (ta) ta.value = cands.map(function(c) { return c.name; }).join('\n');
+    } else {
+      var tiedInput = document.getElementById('dol-tied');
+      if (tiedInput) tiedInput.value = cands.map(function(c) { return c.name; }).join(', ');
+      var winnerSel = document.getElementById('dol-winner');
+      if (winnerSel) {
+        winnerSel.innerHTML = '<option value="">— Select winner —</option>' +
+          cands.map(function(c) { return '<option value="' + escHtml(c.name) + '">' + escHtml(c.name) + '</option>'; }).join('');
+      }
+    }
   },
 
   _recordDrawOfLots: function(elecId) {
@@ -4415,12 +4573,13 @@ _confirmP2Ext: function(elecId) {
     var method   = (document.getElementById('dol-method')  || {}).value || '';
     var persons  = (document.getElementById('dol-persons') || {}).value || '';
     var outcome  = (document.getElementById('dol-outcome') || {}).value || '';
+    var winner   = (document.getElementById('dol-winner')  || {}).value || '';
     var errEl    = document.getElementById('dol-err');
     var btn      = document.getElementById('btn-dol');
 
-    if (!post.trim() || !method.trim() || !persons.trim() || !outcome.trim()) {
+    if (!post.trim() || !method.trim() || !persons.trim() || !outcome.trim() || !winner.trim()) {
       if (errEl) {
-        errEl.textContent = 'Post, method, persons present, and outcome are all required.';
+        errEl.textContent = 'Post, method, persons present, outcome, and winner are all required.';
         errEl.style.display = 'block';
       }
       return;
@@ -4442,7 +4601,7 @@ _confirmP2Ext: function(elecId) {
         if (btn) { btn.textContent = 'Record Draw of Lots'; btn.disabled = false; }
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
-      .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), getTEMAuthId());
+      .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), winner.trim(), getTEMAuthId());
   },
 
   _conductDrawOfLots: function(elecId) {
@@ -4495,13 +4654,22 @@ _confirmP2Ext: function(elecId) {
       .conductDrawOfLots(App.token, elecId, post.trim(), candidates, getTEMAuthId());
   },
 
+  _drawHistoryReqId: 0,
+
   _loadDrawOfLotsRecords: function(elecId) {
     var listEl = document.getElementById('idol-list');
     if (!listEl) return;
     listEl.innerHTML = '<div style="text-align:center;padding:12px;color:#6b7280;font-size:.82rem;">Loading\u2026</div>';
 
+    // Guard against an older, slower-arriving response overwriting a newer
+    // one if this gets clicked more than once in quick succession \u2014 each
+    // call captures its own request number and only applies its result if
+    // it's still the latest one by the time the response comes back.
+    var reqId = ++AdminPanel._drawHistoryReqId;
+
     google.script.run
       .withSuccessHandler(function(res) {
+        if (reqId !== AdminPanel._drawHistoryReqId) return; // superseded by a newer request
         if (!res || !res.success) {
           listEl.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">' +
             escHtml((res && res.message) || 'Failed to load.') + '</div>';
@@ -4523,7 +4691,7 @@ _confirmP2Ext: function(elecId) {
               '<div style="font-size:.8rem;color:#059669;margin:4px 0;">Winner: ' + escHtml(d.winner) + '</div>' +
               '<div style="font-size:.74rem;color:#9ca3af;">' +
                 'Tied: ' + escHtml((d.tiedCandidates || []).join(', ')) + ' \u2014 ' +
-                'by ' + escHtml(d.conductedBy) + ' at ' + escHtml((d.conductedAt || '').replace('T',' ').substring(0,16)) +
+                'by ' + escHtml(d.conductedBy) + ' at ' + escHtml(d.conductedAt || '') +
               '</div>' +
               '<div style="font-size:.78rem;margin-top:6px;color:' + (sc1 ? '#059669' : '#6b7280') + ';">' +
                 (sc1 ? '\u2713 Witnessed by ' + escHtml(sc1) : 'Awaiting first Scrutineer confirmation') +
@@ -4541,6 +4709,7 @@ _confirmP2Ext: function(elecId) {
         }).join('');
       })
       .withFailureHandler(function() {
+        if (reqId !== AdminPanel._drawHistoryReqId) return;
         listEl.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error.</div>';
       })
       .getDrawOfLotsRecords(App.token, elecId);
@@ -4983,10 +5152,19 @@ _loadVotedLogData: function(elecId) {
         post.candidates.forEach(function(c) { postTotal += (c.votes || 0); });
         postTotal += (post.nota || 0);
 
+        if (post.tieUnresolved && (res.elecStatus === 'closed' || res.elecStatus === 'declared')) {
+          html +=
+            '<div style="padding:8px 16px;background:#fff7ed;border-bottom:1px solid #fdba74;' +
+            'font-size:.8rem;color:#9a3412;">' +
+            '⚠ Tied — pending a formal draw of lots (SOP 8.4) to determine the winner.</div>';
+        }
+
         post.candidates.forEach(function(cand, idx) {
-          var votes   = cand.votes || 0;
-          var pct     = postTotal > 0 ? Math.round((votes / postTotal) * 1000) / 10 : 0;
-          var isWinner = (idx < (post.seatCount || 1) && votes > 0);
+          var votes    = cand.votes || 0;
+          var pct      = postTotal > 0 ? Math.round((votes / postTotal) * 1000) / 10 : 0;
+          var isFinalStatus = (res.elecStatus === 'closed' || res.elecStatus === 'declared');
+          var isWinner = isFinalStatus && !!cand.elected;
+          var isTied   = isFinalStatus && !!cand.tied;
           var barWidth = postTotal > 0 ? Math.round((votes / postTotal) * 100) : 0;
 
           html +=
@@ -4997,10 +5175,13 @@ _loadVotedLogData: function(elecId) {
                   '<span style="font-weight:600;color:#1a3a5c;font-size:.88rem;">' +
                     escHtml(cand.name) +
                   '</span>' +
-                  (isWinner && (res.elecStatus === 'closed' || res.elecStatus === 'declared') ?
-                    ' <span style="font-size:.72rem;background:#dcfce7;color:#166534;' +
-                    'padding:2px 7px;border-radius:10px;font-weight:700;margin-left:4px;">✓ Winner</span>'
-                  : '') +
+                  (isWinner
+                    ? ' <span style="font-size:.72rem;background:#dcfce7;color:#166534;' +
+                      'padding:2px 7px;border-radius:10px;font-weight:700;margin-left:4px;">✓ Winner</span>'
+                    : (isTied
+                      ? ' <span style="font-size:.72rem;background:#fff7ed;color:#9a3412;' +
+                        'padding:2px 7px;border-radius:10px;font-weight:700;margin-left:4px;">⏳ Tied — Pending</span>'
+                      : '')) +
                   '<div style="font-size:.75rem;color:#9ca3af;margin-top:1px;">Roll: ' +
                     escHtml(cand.roll) + '</div>' +
                 '</div>' +
@@ -6900,16 +7081,16 @@ _renderAppeals: function(appeals) {
 },
 
 _markAppealDuplicate: function(appealId) {
-  var note = prompt('Optional note (e.g. "superseded by APL-...")', '');
-  if (note === null) return;
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
-      showToast('Marked as duplicate.');
-      AdminPanel._loadAppealsList(AdminPanel._appealsSelectedElec);
-    })
-    .withFailureHandler(function() { showToast('Error — please try again.', true); })
-    .markAppealDuplicate(App.token, appealId, note, getTEMAuthId());
+  AdminPanel._showPromptModal('Optional note (e.g. "superseded by APL-...")', function(note) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) { showToast((res && res.message) || 'Failed.', true); return; }
+        showToast('Marked as duplicate.');
+        AdminPanel._loadAppealsList(AdminPanel._appealsSelectedElec);
+      })
+      .withFailureHandler(function() { showToast('Error — please try again.', true); })
+      .markAppealDuplicate(App.token, appealId, note, getTEMAuthId());
+  }, { submitLabel: 'Mark Duplicate' });
 },
 
 _sendObjSummary: function() {
@@ -6933,7 +7114,7 @@ _sendObjSummary: function() {
 },
 
 _doPurgeTrial: function(electionId) {
-  var phraseEl = document.getElementById('purge-phrase');
+  var phraseEl = document.getElementById('purge-phrase-' + electionId);
   var phrase   = phraseEl ? phraseEl.value.trim() : '';
 
   google.script.run
@@ -7049,6 +7230,18 @@ _loadVoterRollDraft: function(filter, search) {
 },
 
 _renderVoterRollDraft: function(rows, filter, search) {
+  var currentElecId = AdminPanel._currentElectionId || '';
+  var currentElec = (AdminPanel._nominationsElections || []).filter(function(e) { return e.id === currentElecId; })[0];
+  var electionBanner = currentElecId
+    ? '<div style="padding:10px 16px;background:#eff6ff;border-bottom:1px solid #bfdbfe;' +
+      'font-size:.82rem;color:#1e40af;">' +
+      'Certification/edits below apply to: <strong>' + escHtml(currentElec ? currentElec.title : currentElecId) + '</strong>' +
+      ' — go to the Elections tab and click Manage to switch.</div>'
+    : '<div style="padding:10px 16px;background:#fef2f2;border-bottom:1px solid #fca5a5;' +
+      'font-size:.82rem;color:#991b1b;">' +
+      '⚠ No election selected — go to the Elections tab and click Manage on an election first, ' +
+      'otherwise Certify/Add/Edit actions below cannot be correctly scoped.</div>';
+
   // Apply client-side filter
   var filtered = rows.filter(function(r) {
     var status = (r[10] || '').toString();
@@ -7079,7 +7272,7 @@ _renderVoterRollDraft: function(rows, filter, search) {
       v[2] + '</span>';
   }
 
-  var html = '';
+  var html = electionBanner;
 
   // Summary bar
   html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:16px;' +
@@ -7339,7 +7532,7 @@ _saveObjectionStatus: function(rollNo, idx) {
       );
     })
     .withFailureHandler(function() { showToast('Connection error.', true); })
-    .updateObjectionStatus(App.token, rollNo, status, notes, getTEMAuthId());
+    .updateObjectionStatus(App.token, rollNo, status, notes, getTEMAuthId(), AdminPanel._currentElectionId || '');
 },
 
 _toggleVrdEdit: function(idx) {
@@ -7375,7 +7568,8 @@ _saveVrdEdit: function(rollNo, idx) {
       surname ? surname.value : '',
       batch   ? batch.value   : '',
       email   ? email.value   : '',
-      getTEMAuthId()
+      getTEMAuthId(),
+      AdminPanel._currentElectionId || ''
     );
 },
 
@@ -7402,43 +7596,70 @@ _certifyRoll: function() {
 _sendVoterRollNotice: function() {
   var electionId = AdminPanel._currentElectionId || '';
   if (!electionId) { showToast('Select an election first from the Elections tab.', true); return; }
-  var deadline = prompt('Enter the objection window closing date/time for the notification email\n(e.g. "5 July 2026, 11:59 PM IST"):\n\nLeave blank to omit deadline from email.');
-  if (deadline === null) return; // cancelled
-  var btn = document.querySelector('[onclick*="_sendVoterRollNotice"]');
-  if (btn) btn.disabled = true;
+
+  // Pre-fill the deadline from the Schedule tab's "Voter Roll Objection
+  // Closes" date instead of making the RO retype a value that's already
+  // stored there — same duplicate-entry pattern already fixed for the
+  // Landing Page's AGM date. Still editable (e.g. to add a time of day).
+  var openPrompt = function(defaultDeadline) {
+    AdminPanel._showPromptModal(
+      'Enter the objection window closing date/time for the notification email\n(e.g. "5 July 2026, 11:59 PM IST"):\n\nPre-filled from the Schedule tab — edit to add a time, or clear to omit the deadline from the email.',
+      function(deadline) {
+        var btn = document.querySelector('[onclick*="_sendVoterRollNotice"]');
+        if (btn) btn.disabled = true;
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (btn) btn.disabled = false;
+            var el = document.getElementById('vr-notice-result');
+            if (res && res.success) {
+              showToast(res.message);
+              if (el) { el.textContent = res.message; el.style.display = 'block'; }
+            } else {
+              showToast((res && res.message) || 'Send failed.', true);
+            }
+          })
+          .withFailureHandler(function() {
+            if (btn) btn.disabled = false;
+            showToast('Connection error.', true);
+          })
+          .sendVoterRollPublicationNotice(App.token, electionId, deadline || '', getTEMAuthId());
+      }, { submitLabel: 'Send', defaultValue: defaultDeadline || '' }
+    );
+  };
+
   google.script.run
-    .withSuccessHandler(function(res) {
-      if (btn) btn.disabled = false;
-      var el = document.getElementById('vr-notice-result');
-      if (res && res.success) {
-        showToast(res.message);
-        if (el) { el.textContent = res.message; el.style.display = 'block'; }
-      } else {
-        showToast((res && res.message) || 'Send failed.', true);
+    .withSuccessHandler(function(schedRes) {
+      var defaultDeadline = '';
+      if (schedRes && schedRes.success && schedRes.voterRollObjDeadline) {
+        var d = new Date(schedRes.voterRollObjDeadline);
+        if (!isNaN(d.getTime())) {
+          defaultDeadline = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
       }
+      openPrompt(defaultDeadline);
     })
-    .withFailureHandler(function() {
-      if (btn) btn.disabled = false;
-      showToast('Connection error.', true);
-    })
-    .sendVoterRollPublicationNotice(App.token, electionId, deadline || '', getTEMAuthId());
+    .withFailureHandler(function() { openPrompt(''); })
+    .getElectionSchedule(App.token, electionId);
 },
 
 _sendNominationCall: function() {
   var electionId = AdminPanel._currentElectionId || '';
   if (!electionId) { showToast('Select an election first from the Elections tab.', true); return; }
-  var note = prompt('Optional: Enter any additional note to include in the nomination call email\n(leave blank for none):');
-  if (note === null) return; // cancelled
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success) {
-        showToast(res.message);
-      } else {
-        showToast((res && res.message) || 'Send failed.', true);
-      }
-    })
-    .withFailureHandler(function() { showToast('Connection error.', true); })
-    .sendNominationCall(App.token, electionId, note || '', getTEMAuthId());
+  AdminPanel._showPromptModal(
+    'Optional: Enter any additional note to include in the nomination call email\n(leave blank for none):',
+    function(note) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            showToast(res.message);
+          } else {
+            showToast((res && res.message) || 'Send failed.', true);
+          }
+        })
+        .withFailureHandler(function() { showToast('Connection error.', true); })
+        .sendNominationCall(App.token, electionId, note || '', getTEMAuthId());
+    }, { submitLabel: 'Send' }
+  );
 },
 
 _addMemberToDraft: function() {
@@ -7473,7 +7694,8 @@ _addMemberToDraft: function() {
       if (errEl) { errEl.textContent = 'Connection error — please try again.'; errEl.style.display = 'block'; }
     })
     .addVoterToDraft(App.token, rollNo.trim(), name.trim(), surname.trim(),
-                     batch.trim(), email.trim(), notes.trim(), getTEMAuthId());
+                     batch.trim(), email.trim(), notes.trim(), getTEMAuthId(),
+                     AdminPanel._currentElectionId || '');
 },
 
   // ── DOCUMENT UPLOADER — reusable component ─────────────────
@@ -8072,7 +8294,7 @@ function _temActionCheckboxes(systemActions, electionActions) {
       'Backup':              ['createPreVoteBackup'],
       'Purge':               ['purgeTrialData'],
       'PreSec Checklist':    ['recordChecklistItem','resetChecklistItem'],
-      'Communications':      ['sendNominationCall','sendVoterRollPublicationNotice','sendCandidateListPublishedNotice','sendResultsDeclaredNotice','replyObservation','sendECReferral']
+      'Communications':      ['sendNominationCall','sendVoterRollPublicationNotice','sendCandidateListPublishedNotice','sendVotingOpenNotice','sendResultsDeclaredNotice','replyObservation','sendECReferral']
     }
   };
 
