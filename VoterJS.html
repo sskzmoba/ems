@@ -87,6 +87,8 @@ var VoterPanel = (function() {
     { id: 'nominations', label: 'Nominations' },
     { id: 'receipts',    label: 'My Receipts' },
     { id: 'complaints',  label: 'Complaints'  },
+    { id: 'ropanel',     label: 'RO Panel'    },
+    { id: 'objections',  label: 'Objections'  },
     { id: 'help',        label: 'Help'        }
   ];
 
@@ -120,6 +122,14 @@ var VoterPanel = (function() {
     if (tabId === 'complaints') {
       setTimeout(function() { _loadComplaints(); }, 0);
       return _spinner('Loading complaints\u2026');
+    }
+    if (tabId === 'ropanel') {
+      setTimeout(function() { _loadROPanel(); }, 0);
+      return _spinner('Loading RO Panel\u2026');
+    }
+    if (tabId === 'objections') {
+      setTimeout(function() { _loadObjectionsTab(); }, 0);
+      return _spinner('Loading\u2026');
     }
     if (tabId === 'help') {
       return _renderHelp();
@@ -2431,6 +2441,341 @@ var VoterPanel = (function() {
       .fileComplaint(App.token, elecId, text, against, againstRoll, channel);
   }
 
+  // ── RO PANEL (SOP 2.3) — independent of any election; election-agnostic
+  // login (same roll+email+OTP every voter already has) is all that's needed.
+  var _roPanel = null;
+
+  function _loadROPanel() {
+    var c = document.getElementById('voter-content');
+    if (!c || _currentTab !== 'ropanel') return;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c || _currentTab !== 'ropanel') return;
+        _roPanel = (res && res.success) ? res : null;
+        c.innerHTML = _renderROPanelTab(res);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c) c.innerHTML = _errorCard('Connection error.');
+      })
+      .getPublicROPanel();
+  }
+
+  function _renderROPanelTab(res) {
+    var html =
+      '<div style="padding:4px 0 14px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">RO Panel</div>' +
+        '<div style="font-size:.82rem;color:#6b7280;line-height:1.5;">Panel of senior-most, willing, eligible members ' +
+        'under consideration as Returning Officer, per SOP 2.3.</div>' +
+      '</div>';
+
+    if (!res || !res.success) {
+      html += '<div style="text-align:center;padding:24px 16px;color:#6b7280;">' +
+        '<div style="font-size:1.5rem;margin-bottom:8px;">🗳️</div>' +
+        '<div style="font-size:.9rem;">' + escHtml((res && res.message) || 'No RO Panel has been published yet.') + '</div>' +
+      '</div>';
+      return html;
+    }
+
+    var statusLine = res.finalizedRoll
+      ? '<div style="font-size:.82rem;color:#059669;font-weight:600;">Finalized — ' + escHtml(res.finalizedName) + ' (' + escHtml(res.finalizedRoll) + ') confirmed as Returning Officer designate</div>'
+      : res.windowOpen
+        ? '<div style="font-size:.82rem;color:#92400e;font-weight:600;">Objection window open until ' + escHtml(res.objDeadline) + '</div>'
+        : '<div style="font-size:.82rem;color:#6b7280;font-weight:600;">Objection window closed ' + escHtml(res.objDeadline) + '</div>';
+
+    html +=
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:14px;">' +
+        '<div style="font-size:.85rem;font-weight:600;color:#1a3a5c;margin-bottom:4px;">AGM ' + escHtml(res.agmYear) + ' — Iteration ' + res.iteration + '</div>' +
+        statusLine +
+      '</div>';
+
+    html += '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:8px;">' + res.count + ' panelist(s), in seniority order</div>';
+    res.rows.forEach(function(r) {
+      html +=
+        '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+          '<div style="width:70px;flex-shrink:0;font-size:.82rem;color:#374151;">' + escHtml(r.roll) + '</div>' +
+          '<div style="flex:1;min-width:0;font-size:.85rem;color:#1a3a5c;">' + escHtml(r.name) +
+            (r.finalized ? ' <span style="color:#059669;font-weight:600;">✓ Confirmed RO</span>' : '') + '</div>' +
+          '<div style="width:60px;flex-shrink:0;text-align:right;font-size:.8rem;color:#6b7280;">' + escHtml(r.batch) + '</div>' +
+        '</div>';
+    });
+
+    if (res.windowOpen) {
+      var options = res.rows
+        .filter(function(r) { return r.roll !== App.identity; })
+        .map(function(r) { return '<option value="' + escHtml(r.roll) + '">' + escHtml(r.name) + ' (' + escHtml(r.roll) + ')</option>'; })
+        .join('');
+      html +=
+        '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-top:14px;">' +
+          '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:12px;">File an Objection</div>' +
+          '<div style="margin-bottom:10px;">' +
+            '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Against</label>' +
+            '<select id="ropanel-obj-target" ' +
+              'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">' +
+              options +
+            '</select>' +
+          '</div>' +
+          '<div style="margin-bottom:14px;">' +
+            '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Grounds <span style="color:#b91c1c;">*</span></label>' +
+            '<textarea id="ropanel-obj-text" rows="4" maxlength="1000" placeholder="Describe your grounds for objection." ' +
+              'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;resize:vertical;"></textarea>' +
+          '</div>' +
+          '<div style="margin-bottom:14px;">' +
+            '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Supporting Document (optional)</label>' +
+            '<input type="file" id="ropanel-obj-doc" ' +
+              'style="width:100%;font-size:.85rem;" />' +
+          '</div>' +
+          '<button onclick="VoterPanel._submitROPanelObjection()" ' +
+            'style="width:100%;padding:13px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+            'font-size:.95rem;font-weight:600;cursor:pointer;min-height:48px;">Submit Objection</button>' +
+        '</div>';
+    }
+
+    return html;
+  }
+
+  function _submitROPanelObjection() {
+    var targetEl = document.getElementById('ropanel-obj-target');
+    var textEl   = document.getElementById('ropanel-obj-text');
+    var docEl    = document.getElementById('ropanel-obj-doc');
+    if (!targetEl || !textEl) return;
+    var target = targetEl.value;
+    var text   = textEl.value.trim();
+    if (!target) { showToast('Please select who you are objecting to.', true); return; }
+    if (!text)   { showToast('Please provide your grounds for objection.', true); return; }
+
+    var docFile = docEl && docEl.files && docEl.files[0] ? docEl.files[0] : null;
+    if (docFile && docFile.size > 5242880) {
+      showToast('Supporting document too large. Maximum size is 5MB.', true);
+      return;
+    }
+
+    var btn = document.querySelector('button[onclick="VoterPanel._submitROPanelObjection()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    function doSubmit(docFilename, docB64, docMime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Submission failed.', true);
+            return;
+          }
+          showToast(res.docUploaded ? 'Objection filed with supporting document.' : 'Objection filed.');
+          _loadROPanel();
+        })
+        .withFailureHandler(function() {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Objection'; }
+          showToast('Connection error.', true);
+        })
+        .fileROPanelObjection(App.token, target, text, docFilename, docB64, docMime);
+    }
+
+    if (docFile) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var b64 = e.target.result.substring(e.target.result.indexOf(',') + 1);
+        doSubmit(docFile.name, b64, docFile.type);
+      };
+      reader.readAsDataURL(docFile);
+    } else {
+      doSubmit('', '', '');
+    }
+  }
+
+  // ── OBJECTIONS TAB — TEM appointment (SOP 2A.5) + Voter Roll (SOP 3.5) ──
+  // Two independent sections on one tab: TEM objections aren't tied to the
+  // voter's currently-selected election (there's exactly one "current" TEM
+  // appointment system-wide, same reasoning as RO Panel), Voter Roll
+  // objections are (uses _selectedElectionId, same as Complaints).
+
+  function _loadObjectionsTab() {
+    var c = document.getElementById('voter-content');
+    if (!c || _currentTab !== 'objections') return;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        var c = document.getElementById('voter-content');
+        if (!c || _currentTab !== 'objections') return;
+        c.innerHTML = _renderObjectionsTab(res);
+      })
+      .withFailureHandler(function() {
+        var c = document.getElementById('voter-content');
+        if (c && _currentTab === 'objections') c.innerHTML = _renderObjectionsTab({ success: false });
+      })
+      .getPublicTemAppointmentNotice(App.token);
+  }
+
+  function _renderObjectionsTab(temRes) {
+    var html =
+      '<div style="padding:4px 0 14px;">' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:4px;">Objections</div>' +
+        '<div style="font-size:.82rem;color:#6b7280;line-height:1.5;">File a formal objection to a TEM appointment ' +
+        'or to the voter roll, per the election SOP.</div>' +
+      '</div>';
+
+    // ── TEM Appointment Objection ──
+    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:18px;">' +
+      '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:10px;">TEM Appointment Objection</div>';
+
+    if (!temRes || !temRes.success) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">Could not load TEM appointment status.</div></div>';
+    } else if (!temRes.announced) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">No TEM appointment is currently under objection.</div></div>';
+    } else if (temRes.isSelf) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">You cannot object to your own appointment.</div></div>';
+    } else if (!temRes.windowOpen) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">The objection window for ' + escHtml(temRes.temName) +
+        '’s appointment closed ' + escHtml(temRes.deadline) + '.</div></div>';
+    } else {
+      html +=
+        '<div style="font-size:.82rem;color:#92400e;margin-bottom:10px;">' +
+          escHtml(temRes.temName) + ' has been appointed Technical Election Manager. Objection window closes ' +
+          escHtml(temRes.deadline) + '.' +
+        '</div>' +
+        '<textarea id="tem-obj-text" rows="3" maxlength="1000" placeholder="Grounds for your objection." ' +
+          'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;resize:vertical;margin-bottom:10px;"></textarea>' +
+        '<input type="file" id="tem-obj-doc" style="width:100%;font-size:.85rem;margin-bottom:10px;" />' +
+        '<button onclick="VoterPanel._submitTemObjection()" ' +
+          'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+          'font-size:.9rem;font-weight:600;cursor:pointer;min-height:44px;">Submit TEM Objection</button>' +
+        '</div>';
+    }
+
+    // ── Voter Roll Objection ──
+    var elecId = _election ? _election.id : (_selectedElectionId || '');
+    html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">' +
+      '<div style="font-size:.9rem;font-weight:600;color:#1a3a5c;margin-bottom:10px;">Voter Roll Objection</div>';
+
+    if (!elecId) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">No election selected.</div></div>';
+      return html;
+    }
+
+    html +=
+      '<div style="margin-bottom:10px;">' +
+        '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Objection Type</label>' +
+        '<select id="vr-obj-type" onchange="VoterPanel._onVrObjTypeChange()" ' +
+          'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;">' +
+          '<option value="inclusion">Inclusion — this person shouldn’t be on the roll</option>' +
+          '<option value="exclusion">Exclusion — someone is missing from the roll</option>' +
+        '</select>' +
+      '</div>' +
+      '<div style="margin-bottom:10px;">' +
+        '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Roll No</label>' +
+        '<input type="text" id="vr-obj-roll" maxlength="20" ' +
+          'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+      '</div>' +
+      '<div id="vr-obj-name-row" style="margin-bottom:10px;display:none;">' +
+        '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Name</label>' +
+        '<input type="text" id="vr-obj-name" maxlength="100" placeholder="Name of the member who should be included" ' +
+          'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+      '</div>' +
+      '<div style="margin-bottom:10px;">' +
+        '<label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:4px;">Grounds</label>' +
+        '<textarea id="vr-obj-text" rows="3" maxlength="1000" placeholder="Describe your grounds for objection." ' +
+          'style="width:100%;padding:10px;font-size:.9rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;resize:vertical;"></textarea>' +
+      '</div>' +
+      '<input type="file" id="vr-obj-doc" style="width:100%;font-size:.85rem;margin-bottom:10px;" />' +
+      '<button onclick="VoterPanel._submitVoterRollObjection()" ' +
+        'style="width:100%;padding:12px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;' +
+        'font-size:.9rem;font-weight:600;cursor:pointer;min-height:44px;">Submit Voter Roll Objection</button>' +
+      '</div>';
+
+    return html;
+  }
+
+  function _onVrObjTypeChange() {
+    var type = (document.getElementById('vr-obj-type') || {}).value;
+    var row  = document.getElementById('vr-obj-name-row');
+    if (row) row.style.display = (type === 'exclusion') ? 'block' : 'none';
+  }
+
+  function _submitTemObjection() {
+    var textEl = document.getElementById('tem-obj-text');
+    var docEl  = document.getElementById('tem-obj-doc');
+    if (!textEl) return;
+    var text = textEl.value.trim();
+    if (!text) { showToast('Please provide your grounds for objection.', true); return; }
+
+    var docFile = docEl && docEl.files && docEl.files[0] ? docEl.files[0] : null;
+    if (docFile && docFile.size > 5242880) { showToast('Supporting document too large. Maximum size is 5MB.', true); return; }
+
+    var btn = document.querySelector('button[onclick="VoterPanel._submitTemObjection()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    function doSubmit(docFilename, docB64, docMime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit TEM Objection'; }
+          if (!res || !res.success) { showToast((res && res.message) || 'Submission failed.', true); return; }
+          showToast(res.docUploaded ? 'Objection filed with supporting document.' : 'Objection filed.');
+          _loadObjectionsTab();
+        })
+        .withFailureHandler(function() {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit TEM Objection'; }
+          showToast('Connection error.', true);
+        })
+        .fileTEMAppointmentObjection(App.token, text, docFilename, docB64, docMime);
+    }
+
+    if (docFile) {
+      var reader = new FileReader();
+      reader.onload = function(e) { doSubmit(docFile.name, e.target.result.substring(e.target.result.indexOf(',') + 1), docFile.type); };
+      reader.readAsDataURL(docFile);
+    } else {
+      doSubmit('', '', '');
+    }
+  }
+
+  function _submitVoterRollObjection() {
+    var typeEl = document.getElementById('vr-obj-type');
+    var rollEl = document.getElementById('vr-obj-roll');
+    var nameEl = document.getElementById('vr-obj-name');
+    var textEl = document.getElementById('vr-obj-text');
+    var docEl  = document.getElementById('vr-obj-doc');
+    if (!typeEl || !rollEl || !textEl) return;
+
+    var type = typeEl.value;
+    var roll = rollEl.value.trim();
+    var name = nameEl ? nameEl.value.trim() : '';
+    var text = textEl.value.trim();
+    var elecId = _election ? _election.id : (_selectedElectionId || '');
+
+    if (!roll) { showToast('Please enter a roll number.', true); return; }
+    if (type === 'exclusion' && !name) { showToast('Please provide the name of the missing member.', true); return; }
+    if (!text) { showToast('Please provide your grounds for objection.', true); return; }
+
+    var docFile = docEl && docEl.files && docEl.files[0] ? docEl.files[0] : null;
+    if (docFile && docFile.size > 5242880) { showToast('Supporting document too large. Maximum size is 5MB.', true); return; }
+
+    var btn = document.querySelector('button[onclick="VoterPanel._submitVoterRollObjection()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+    function doSubmit(docFilename, docB64, docMime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Voter Roll Objection'; }
+          if (!res || !res.success) { showToast((res && res.message) || 'Submission failed.', true); return; }
+          showToast(res.docUploaded ? 'Objection filed with supporting document.' : 'Objection filed.');
+          _loadObjectionsTab();
+        })
+        .withFailureHandler(function() {
+          if (btn) { btn.disabled = false; btn.textContent = 'Submit Voter Roll Objection'; }
+          showToast('Connection error.', true);
+        })
+        .fileVoterRollObjection(App.token, elecId, type, roll, name, text, docFilename, docB64, docMime);
+    }
+
+    if (docFile) {
+      var reader = new FileReader();
+      reader.onload = function(e) { doSubmit(docFile.name, e.target.result.substring(e.target.result.indexOf(',') + 1), docFile.type); };
+      reader.readAsDataURL(docFile);
+    } else {
+      doSubmit('', '', '');
+    }
+  }
+
   return {
     init: init,
     submitVote: submitVote,
@@ -2464,7 +2809,11 @@ var VoterPanel = (function() {
     _submitObjection: _submitObjection,
     _showEligibilityModal: _showEligibilityModal,
     _closeEligibilityModal: _closeEligibilityModal,
-    _selectElection: _selectElection
+    _selectElection: _selectElection,
+    _submitROPanelObjection: _submitROPanelObjection,
+    _onVrObjTypeChange: _onVrObjTypeChange,
+    _submitTemObjection: _submitTemObjection,
+    _submitVoterRollObjection: _submitVoterRollObjection
   };
 
 })();

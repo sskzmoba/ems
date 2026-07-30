@@ -5888,10 +5888,11 @@ _renderScrutinyDetail: function(nom, checklist) {
         : '#fff';
       var border = isActive ? col : '#d1d5db';
       var onclickArgs = '\'' + escHtml(nom.id) + '\',\'' + escHtml(item.key) + '\',\'' + r + '\'';
+      var canDecideScrutiny = isEditable && App.role !== 'SCRUTINEER';
       btnHtml +=
         '<button onclick="AdminPanel._setCheckResult(' + onclickArgs + ')" ' +
           'id="chkbtn-' + escHtml(nom.id) + '-' + item.key + '-' + r + '" ' +
-          (isEditable ? '' : 'disabled ') +
+          (canDecideScrutiny ? '' : 'disabled ') +
           'style="padding:7px 12px;font-size:.78rem;border-radius:4px;' +
           'border:1.5px solid ' + border + ';background:' + bg + ';color:' + col + ';' +
           'cursor:' + (isEditable ? 'pointer' : 'default') + ';white-space:nowrap;">' +
@@ -6015,7 +6016,10 @@ _renderScrutinyDetail: function(nom, checklist) {
     }, 0);
   }
 
-  if (isEditable) {
+  if (isEditable && App.role === 'SCRUTINEER') {
+    html += '<div class="note" style="margin-bottom:16px;">Scrutineers witness the scrutiny record — ' +
+      'accepting or rejecting a nomination is an RO/TEM decision.</div>';
+  } else if (isEditable) {
     html +=
       '<div id="scrutiny-action-err" ' +
         'style="color:#c0392b;font-size:.87rem;margin-bottom:6px;display:none;"></div>' +
@@ -7282,6 +7286,7 @@ _loadVoterRollDraft: function(filter, search) {
         return;
       }
       c.innerHTML = AdminPanel._renderVoterRollDraft(res.rows || [], filter, search || '');
+      AdminPanel._loadVoterRollMemberObjections();
     })
     .withFailureHandler(function() {
       c.innerHTML = '<div style="padding:24px;color:#b91c1c;">Connection error.</div>';
@@ -7333,6 +7338,11 @@ _renderVoterRollDraft: function(rows, filter, search) {
   }
 
   var html = electionBanner;
+
+  html += '<div style="padding:16px;border-bottom:1px solid #e5e7eb;">' +
+    '<div style="font-weight:600;font-size:.95rem;margin-bottom:8px;">Member-Filed Voter Roll Objections</div>' +
+    '<div id="vr-obj-list"><div style="font-size:.85rem;color:#6b7280;">Loading…</div></div>' +
+  '</div>';
 
   // Summary bar
   html += '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:16px;' +
@@ -8196,10 +8206,28 @@ AdminPanel._loadTEMAuth = function() {
           '<div id="tem-issue-result" style="margin-top:10px;font-size:.9rem;"></div>' +
         '</div>';
 
+      var appointmentCard =
+        '<div style="margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">' +
+          '<div style="font-weight:600;font-size:.95rem;margin-bottom:6px;">TEM Appointment Announcement (SOP 2A.5)</div>' +
+          '<p style="font-size:.82rem;color:#6b7280;margin-bottom:12px;">Announces the TEM appointment on the public ' +
+          'Landing Page and starts the 3-day member objection window. Uses the election selected above.</p>' +
+          '<label style="font-size:.85rem;color:#374151;display:block;margin-bottom:4px;">TEM Admin ID</label>' +
+          '<input id="tem-appt-admin-id" type="text" placeholder="AdminID of the TEM account" ' +
+            'style="font-size:.9rem;padding:8px;border:1px solid #d1d5db;border-radius:6px;width:100%;box-sizing:border-box;margin-bottom:10px;" />' +
+          '<button onclick="AdminPanel._announceTemAppointment()" ' +
+            'style="background:#1a3a5c;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:.9rem;cursor:pointer;width:100%;">' +
+            'Announce TEM Appointment</button>' +
+          '<div id="tem-appt-announce-result" style="margin-top:10px;font-size:.85rem;"></div>' +
+          '<div style="margin-top:16px;">' +
+            '<div style="font-weight:600;font-size:.9rem;margin-bottom:8px;">Objections to Current Appointment</div>' +
+            '<div id="tem-appt-objections"><div style="font-size:.85rem;color:#6b7280;">Loading…</div></div>' +
+          '</div>' +
+        '</div>';
+
       var html =
         '<div style="padding:16px;">' +
           '<div style="font-weight:700;font-size:1rem;margin-bottom:12px;">TEM Authorisations</div>' +
-          selHtml + issueForm +
+          selHtml + issueForm + appointmentCard +
           '<div style="margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
               '<div style="font-weight:600;font-size:.95rem;">All Issued Authorisations</div>' +
@@ -8216,6 +8244,7 @@ AdminPanel._loadTEMAuth = function() {
 
       AdminPanel._loadTEMAuthTable();
       AdminPanel._loadTemActionCheckboxes();
+      AdminPanel._loadTemAppointmentObjections();
     })
     .withFailureHandler(function(e) {
       document.getElementById('tem-auth-content').innerHTML = '<p style="padding:16px;color:red;">Error loading elections.</p>';
@@ -8303,6 +8332,156 @@ AdminPanel._loadTEMAuthTable = function() {
       if (tbl2) tbl2.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Error loading authorisations.</p>';
     })
     .getTEMAuthorisations(App.token, '');
+};
+
+AdminPanel._announceTemAppointment = function() {
+  var elSel   = document.getElementById('tem-auth-elec-sel');
+  var idEl    = document.getElementById('tem-appt-admin-id');
+  var resEl   = document.getElementById('tem-appt-announce-result');
+  var elecId  = elSel ? elSel.value : '';
+  var adminId = idEl ? idEl.value.trim() : '';
+  if (resEl) { resEl.style.display = 'block'; resEl.style.color = '#374151'; resEl.textContent = ''; }
+
+  if (!elecId) {
+    if (resEl) { resEl.style.color = '#c0392b'; resEl.textContent = 'Select an election above first.'; }
+    return;
+  }
+  if (!adminId) {
+    if (resEl) { resEl.style.color = '#c0392b'; resEl.textContent = 'TEM Admin ID is required.'; }
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (resEl) { resEl.style.color = '#c0392b'; resEl.textContent = (res && res.message) || 'Failed to announce.'; }
+        return;
+      }
+      if (resEl) { resEl.style.color = '#059669'; resEl.textContent = '✓ Announced — ' + res.temName + '. Objection window open for 3 days.'; }
+      showToast('TEM appointment announced.');
+      AdminPanel._loadTemAppointmentObjections();
+    })
+    .withFailureHandler(function() {
+      if (resEl) { resEl.style.color = '#c0392b'; resEl.textContent = 'Connection error.'; }
+    })
+    .announceTemAppointment(App.token, elecId, adminId, getTEMAuthId());
+};
+
+AdminPanel._loadTemAppointmentObjections = function() {
+  var box = document.getElementById('tem-appt-objections');
+  if (!box) return;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var box = document.getElementById('tem-appt-objections');
+      if (!box) return;
+      if (!res || !res.success) { box.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Error loading objections.</p>'; return; }
+      if (!res.temName) { box.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">No TEM appointment currently announced.</p>'; return; }
+      if (res.objections.length === 0) {
+        box.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">No objections filed against ' + escHtml(res.temName) + '’s appointment.</p>';
+        return;
+      }
+      var html = '';
+      res.objections.forEach(function(o) {
+        var isReviewed = o.decision === 'reviewed';
+        html +=
+          '<div style="padding:10px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+              '<div style="font-size:.82rem;color:#6b7280;">Filed by ' + escHtml(o.filedBy) + '</div>' +
+              '<span style="font-size:.75rem;color:' + (isReviewed ? '#059669' : '#92400e') + ';font-weight:600;">' +
+                (isReviewed ? 'Reviewed' : 'Pending') + '</span>' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:6px;">' + escHtml(o.objectionText) + '</div>' +
+            (o.docUrl ? '<div style="margin-bottom:6px;"><a href="' + escHtml(o.docUrl) + '" target="_blank" style="font-size:.8rem;color:#1a3a5c;">📎 View Document</a></div>' : '') +
+            (isReviewed
+              ? (o.decisionNotes ? '<div style="font-size:.78rem;color:#6b7280;">Notes: ' + escHtml(o.decisionNotes) + '</div>' : '')
+              : ('<textarea id="tem-obj-notes-' + escHtml(o.id) + '" rows="2" placeholder="Review notes (optional)" ' +
+                  'style="width:100%;box-sizing:border-box;padding:8px;font-size:.82rem;border:1px solid #d1d5db;border-radius:4px;margin-bottom:6px;resize:vertical;"></textarea>' +
+                '<button onclick="AdminPanel._decideTemAppointmentObjection(\'' + escHtml(o.id) + '\')" ' +
+                  'style="padding:7px 12px;background:#f0f4f8;color:#1a3a5c;border:1px solid #c8d4e0;border-radius:4px;cursor:pointer;font-size:.82rem;">Mark Reviewed</button>')) +
+          '</div>';
+      });
+      box.innerHTML = html;
+    })
+    .withFailureHandler(function() {
+      var box = document.getElementById('tem-appt-objections');
+      if (box) box.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Connection error.</p>';
+    })
+    .getTEMAppointmentObjections(App.token);
+};
+
+AdminPanel._decideTemAppointmentObjection = function(objectionId) {
+  var notesEl = document.getElementById('tem-obj-notes-' + objectionId);
+  var notes = notesEl ? notesEl.value.trim() : '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { showToast((res && res.message) || 'Failed to review.', true); return; }
+      showToast('Objection marked reviewed.');
+      AdminPanel._loadTemAppointmentObjections();
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .decideTEMAppointmentObjection(App.token, objectionId, notes);
+};
+
+AdminPanel._loadVoterRollMemberObjections = function() {
+  var box = document.getElementById('vr-obj-list');
+  if (!box) return;
+  var elecId = AdminPanel._currentElectionId || '';
+  if (!elecId) { box.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">Select an election (Elections tab → Manage) to see its objections.</p>'; return; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var box = document.getElementById('vr-obj-list');
+      if (!box) return;
+      if (!res || !res.success) { box.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Error loading objections.</p>'; return; }
+      if (res.objections.length === 0) { box.innerHTML = '<p style="font-size:.85rem;color:#6b7280;">No member-filed objections for this election.</p>'; return; }
+
+      var html = '';
+      res.objections.forEach(function(o) {
+        var decColor = o.decision === 'upheld' ? '#c0392b' : o.decision === 'dismissed' ? '#6b7280' : '#92400e';
+        var decLabel = o.decision === 'upheld' ? 'Upheld' : o.decision === 'dismissed' ? 'Dismissed' : 'Pending';
+        var typeLabel = o.objectionType === 'inclusion' ? 'Inclusion' : 'Exclusion';
+        html +=
+          '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:8px;">' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+              '<div style="font-size:.85rem;font-weight:600;color:#1a3a5c;">' + typeLabel + ': ' + escHtml(o.targetName) + ' (' + escHtml(o.targetRoll) + ')</div>' +
+              '<span style="font-size:.75rem;color:' + decColor + ';font-weight:600;white-space:nowrap;">' + decLabel + '</span>' +
+            '</div>' +
+            '<div style="font-size:.78rem;color:#6b7280;margin-bottom:6px;">Filed by ' + escHtml(o.filedBy) + '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:8px;">' + escHtml(o.objectionText) + '</div>' +
+            (o.docUrl ? '<div style="margin-bottom:8px;"><a href="' + escHtml(o.docUrl) + '" target="_blank" style="font-size:.8rem;color:#1a3a5c;">📎 View Document</a></div>' : '') +
+            (o.decision === 'pending' ?
+              '<textarea id="vr-obj-notes-' + escHtml(o.id) + '" rows="2" placeholder="Decision notes — communicated to the objector" ' +
+                'style="width:100%;box-sizing:border-box;padding:8px;font-size:.82rem;border:1px solid #d1d5db;border-radius:4px;margin-bottom:8px;resize:vertical;"></textarea>' +
+              '<div style="display:flex;gap:8px;">' +
+                '<button onclick="AdminPanel._decideVoterRollMemberObjection(\'' + escHtml(o.id) + '\',\'upheld\')" ' +
+                  'style="flex:1;padding:8px;background:#fee2e2;color:#b91c1c;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Uphold</button>' +
+                '<button onclick="AdminPanel._decideVoterRollMemberObjection(\'' + escHtml(o.id) + '\',\'dismissed\')" ' +
+                  'style="flex:1;padding:8px;background:#f3f4f6;color:#374151;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Dismiss</button>' +
+              '</div>'
+              : (o.decisionNotes ? '<div style="font-size:.78rem;color:#6b7280;">Notes: ' + escHtml(o.decisionNotes) + '</div>' : '')) +
+          '</div>';
+      });
+      box.innerHTML = html;
+    })
+    .withFailureHandler(function() {
+      var box = document.getElementById('vr-obj-list');
+      if (box) box.innerHTML = '<p style="font-size:.85rem;color:#c0392b;">Connection error.</p>';
+    })
+    .getVoterRollObjections(App.token, elecId);
+};
+
+AdminPanel._decideVoterRollMemberObjection = function(objectionId, decision) {
+  var notesEl = document.getElementById('vr-obj-notes-' + objectionId);
+  var notes = notesEl ? notesEl.value.trim() : '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { showToast((res && res.message) || 'Failed to record decision.', true); return; }
+      showToast('Objection ' + decision + '. Objector notified by email.');
+      AdminPanel._loadVoterRollMemberObjections();
+      AdminPanel._loadVoterRollDraft('all', '');
+    })
+    .withFailureHandler(function() { showToast('Connection error.', true); })
+    .decideVoterRollObjection(App.token, objectionId, decision, notes, getTEMAuthId());
 };
 
 AdminPanel._toggleActionTypes = function() {

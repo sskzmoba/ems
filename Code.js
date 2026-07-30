@@ -48,10 +48,13 @@ var SHEETS = {
   ELECTION_SCHED:   'ElectionSchedule',
   TEM_AUTH:         'TEMAuth',
   RO_PANEL_LOG:     'ROPanelLog',
+  RO_PANEL_OBJ:     'ROPanelObjections',
   LANDING_CONTENT:  'LandingPageContent',
   EC_HISTORY:       'ECHistory',
   PRESEC_CHECKLIST: 'PreSecChecklist',
-  APPEALS_PANEL:    'AppealsPanel'
+  APPEALS_PANEL:    'AppealsPanel',
+  TEM_APPT_OBJ:     'TEMAppointmentObjections',
+  VOTER_ROLL_OBJ:   'VoterRollObjections'
 };
 
 // ── COL CONSTANTS — modified and frozen sheets ────────────────
@@ -260,7 +263,96 @@ var COL_ECH = {
   POST:   3   // Post — EC post held that year
 };  // 4 cols ✓
 
-var COL_RPL   = {};  // ROPanelLog — 15 cols
+// ROPanelLog — pure published roster, one row per panelist per iteration.
+// Keyed by AGMYear, not ElectionID: RO Panel selection (SOP 2.3) necessarily
+// happens before any RO exists, and createElection is RO_ADMIN/DEPUTY_RO/TEM-
+// gated, so no Elections row can exist yet to point at. Same reasoning as
+// ECHistory (keyed by Year, not ElectionID).
+var COL_RPL = {
+  PANEL_LOG_ID:    0,  // unique row ID
+  AGM_YEAR:        1,  // e.g. '2026' — disambiguates one AGM cycle's process from the next
+  PANEL_ITERATION: 2,  // 1, 2, ... — increments only if every panelist in an iteration is validly objected out
+  ROLL_NO:         3,
+  NAME:            4,
+  BATCH:           5,
+  EMAIL:           6,  // best-effort lookup against the voter roll at publish time (see publishROPanel);
+                       // blank if no electionId/roll was available. INTERNAL ONLY — never expose via
+                       // getPublicROPanel's rendered HTML, that page is unauthenticated.
+  PUBLISHED_AT:    7,  // ISO timestamp — same for every row in one publish batch
+  ENTRY_METHOD:    8,  // 'manual' for now — independent entry, not looked up against any voter roll
+  FINALIZED:       9,  // Boolean — set true on the one panelist row the EC confirms via finalizeROPanel
+  FINALIZED_AT:    10  // ISO timestamp of that confirmation
+};  // 11 cols ✓
+
+// ROPanelObjections — one row per objection (not squeezed into ROPanelLog's
+// roster rows), mirrors the Complaints/Appeals pattern. Deliberately its own
+// dedicated sheet, not a generic cross-flow "Objections" table — TEM-
+// appointment and voter-roll objections, if built later, get their own
+// equivalent sheet each rather than sharing this one.
+var COL_ROBJ = {
+  ID:              0,
+  AGM_YEAR:        1,
+  PANEL_ITERATION: 2,  // which published iteration this objection targets
+  TARGET_ROLL:     3,  // roll number of the panelist being objected to
+  TARGET_NAME:     4,
+  FILED_BY:        5,  // roll number of the objecting member
+  FILED_AT:        6,
+  OBJECTION_TEXT:  7,
+  DECISION:        8,  // 'pending' | 'valid' | 'invalid'
+  DECISION_NOTES:  9,
+  DECIDED_BY:      10,
+  DECIDED_AT:      11,
+  DOC_LINKS:       12  // optional — the direct Drive URL (one doc per objection; unlike Appeals'
+                       // comma-separated DocStore-ID scheme, no need for multiple here). See
+                       // _storeROPanelObjectionDoc, which still logs to DocStore for the audit trail.
+                       // NEW COLUMN added to an already-live sheet — add header "DocLinks" to
+                       // column M by hand in the Sheet (same treatment as TEMAuth.ConsumedActions).
+};  // 13 cols ✓
+
+// TEMAppointmentObjections — one row per objection (SOP 2A.5). Election-scoped
+// (unlike RO Panel — an RO, and therefore an election, already exists by the
+// time a TEM is appointed). Access to review/decide is RO_ADMIN/DEPUTY_RO only
+// — TEM is deliberately excluded, since TEM is the one being objected to.
+var COL_TAO = {
+  ID:             0,
+  ELEC_ID:        1,
+  TEM_ADMIN_ID:   2,  // AdminID of the TEM whose appointment is being objected to
+  TEM_NAME:       3,
+  FILED_BY:       4,  // roll number of the objecting member
+  FILED_AT:       5,
+  OBJECTION_TEXT: 6,
+  DECISION:       7,  // 'pending' | 'reviewed' — SOP 2A.5 has the RO "consider and confirm or
+                      // revise the appointment accordingly", a holistic call on the appointment
+                      // itself, not a per-objection valid/invalid gate like RO Panel's. Actually
+                      // revising/revoking the TEM uses the existing admin-disable mechanism
+                      // (2A.6) — not duplicated here.
+  DECISION_NOTES: 8,
+  DECIDED_BY:     9,
+  DECIDED_AT:     10,
+  DOC_LINKS:      11
+};  // 12 cols ✓
+
+// VoterRollObjections — one row per objection (SOP 3.5). Additive on top of
+// the existing VoterRollDraft.ObjectionStatus field/certifyVoterRoll gate —
+// not a replacement. ObjectionType distinguishes the two cases the SOP names:
+// objecting to someone's INCLUSION (they have a draft row) vs. their
+// EXCLUSION (no draft row exists to point at).
+var COL_VOBJ = {
+  ID:             0,
+  ELEC_ID:        1,
+  OBJ_TYPE:       2,  // 'inclusion' | 'exclusion'
+  TARGET_ROLL:    3,
+  TARGET_NAME:    4,
+  FILED_BY:       5,
+  FILED_AT:       6,
+  OBJECTION_TEXT: 7,
+  DECISION:       8,  // 'pending' | 'upheld' | 'dismissed'
+  DECISION_NOTES: 9,  // SOP 3.5 requires this be communicated to the objector — see
+                      // decideVoterRollObjection, which emails it to them directly.
+  DECIDED_BY:     10,
+  DECIDED_AT:     11,
+  DOC_LINKS:      12
+};  // 13 cols ✓
 
 var COL_AP = {
   ID:        0,  // unique ID
@@ -392,7 +484,8 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'recordChecklistItem',
     'resetChecklistItem',
     'resendConfirmationEmail',
-    'saveScrutinyItem'
+    'saveScrutinyItem',
+    'decideVoterRollObjection'
   ]
 };
 
@@ -1412,6 +1505,37 @@ function publishSchedule(token, electionId, authId) {
     if (sess.role === 'EC_OFFICER' && mode === 'live') {
       return { success: false, message: 'The live election schedule is managed by the Returning Officer.' };
     }
+
+    // SOP floor checks — enforced here, not just at save time, because a
+    // schedule saved as 'live_draft' bypasses the floor check entirely (see
+    // setElectionSchedule's gate, which only fires for mode==='live'). Without
+    // this, a non-compliant draft schedule could reach the public Landing
+    // Page having never been validated once. Trial modes remain exempt.
+    if (mode === 'live' || mode === 'live_draft') {
+      var schedForCheck = {
+        vDay:                 schedRows[s][COL_SCHED.VDAY],
+        voterRollCutoff:      schedRows[s][COL_SCHED.VOTER_ROLL_CUTOFF],
+        nomOpenDate:          schedRows[s][COL_SCHED.NOM_OPEN],
+        voterRollPubDate:     schedRows[s][COL_SCHED.VOTER_ROLL_PUB],
+        phase1CloseDate:      schedRows[s][COL_SCHED.PHASE1_CLOSE],
+        voterRollObjDeadline: schedRows[s][COL_SCHED.VOTER_ROLL_OBJ_CLOSE],
+        nomCloseDate:         schedRows[s][COL_SCHED.NOM_CLOSE],
+        voterRollCertDate:    schedRows[s][COL_SCHED.VOTER_ROLL_CERT],
+        candidatesPubDate:    schedRows[s][COL_SCHED.CAND_PUB],
+        withdrawalDeadline:   schedRows[s][COL_SCHED.WITHDRAWAL_DEADLINE],
+        votingOpenDate:       schedRows[s][COL_SCHED.VOTING_OPEN],
+        votingCloseDate:      schedRows[s][COL_SCHED.VOTING_CLOSE],
+        declarationDate:      schedRows[s][COL_SCHED.DECLARATION]
+      };
+      var floors = checkScheduleFloors(schedForCheck);
+      var blocks = floors.filter(function(w) { return w.severity === 'block'; });
+      if (blocks.length > 0) {
+        return { success: false,
+          message: 'Cannot publish — SOP floor violation(s): ' +
+            blocks.map(function(b) { return b.message; }).join(' | ') };
+      }
+    }
+
     var ts = now().toISOString();
     schedSh.getRange(s + 2, COL_SCHED.PUBLISHED + 1).setValue(true);
     schedSh.getRange(s + 2, COL_SCHED.PUBLISHED_AT + 1).setValue(ts);
@@ -2157,6 +2281,29 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
     return { success: false, message: 'Invalid status: ' + newStatus };
   }
 
+  // ── SOP 7.8: generic transition allow-list ──────────────────────
+  // Only the forward sequence plus active↔paused (pause/resume, SOP 7.6)
+  // may be reached through this function. Backward moves like
+  // candidates_published→scrutiny (appeal upheld / vacancy revert) and
+  // scrutiny→nominations_open_phase2 (Phase 2 extension) are legitimate
+  // but go ONLY through their own dedicated, separately-gated functions
+  // (updateAppealDecision, revertToScrutinyForVacancy, triggerPhase2Extension)
+  // — deliberately not listed here, so this function can't become a second,
+  // ungated path to the same transitions. Anything not listed is rejected
+  // before any of the per-pair gates below run, closing the previous gap
+  // where an unmatched (currentStatus, newStatus) pair fell through to an
+  // unconditional write.
+  var ALLOWED_STATUS_TRANSITIONS = {
+    'draft':                    ['nominations_open'],
+    'nominations_open':         ['nominations_open_phase2'],
+    'nominations_open_phase2':  ['scrutiny'],
+    'scrutiny':                 ['candidates_published'],
+    'candidates_published':     ['active'],
+    'active':                   ['paused', 'closed'],
+    'paused':                   ['active', 'closed'],
+    'closed':                   ['declared']
+  };
+
   var sh = getSheet(SHEETS.ELECTIONS);
   if (!sh) return { success: false, message: 'Elections sheet not found.' };
 
@@ -2166,6 +2313,14 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
       var currentStatus = rows[i][COL.ELEC_STATUS].toString();
       if (currentStatus === newStatus) {
         return { success: false, message: 'Election is already at that status.' };
+      }
+      var allowedNext = ALLOWED_STATUS_TRANSITIONS[currentStatus] || [];
+      if (allowedNext.indexOf(newStatus) === -1) {
+        return {
+          success: false,
+          message: 'Cannot change status from "' + currentStatus + '" to "' + newStatus +
+                   '" directly. This is not a recognised transition for this action.'
+        };
       }
 
       // ── GATE: scrutiny → candidates_published ─────────────────
@@ -2553,6 +2708,23 @@ function updateElectionStatus(token, electionId, newStatus, overrideNote, authId
                          'Outstanding: ' + outstanding3.join(', ') + '.'
               };
             }
+          }
+
+          // ── GATE: no post may have an unresolved tie at the seat cutoff ──
+          // tieUnresolved was already being computed (_computeElectionResults/
+          // getLiveTally) for display purposes, but nothing ever blocked on it —
+          // a tied post would silently declare a "winner" picked by array sort
+          // order. Trial-exempt, matching the co-sign-before-declare gate above.
+          var tieResults = _computeElectionResults(rows[i]);
+          var unresolvedTiePosts = tieResults.filter(function(p) { return p.tieUnresolved; })
+            .map(function(p) { return p.post; });
+          if (unresolvedTiePosts.length > 0) {
+            return {
+              success: false,
+              unresolvedTiePosts: unresolvedTiePosts,
+              message: 'Declaration blocked — unresolved tie at the seat cutoff for: ' +
+                       unresolvedTiePosts.join(', ') + '. Conduct and record a draw of lots for each before declaring.'
+            };
           }
         }
         // ─────────────────────────────────────────────────────────
@@ -3163,6 +3335,13 @@ function doGet(e) {
     if (action === 'voterroll') {
       return HtmlService.createHtmlOutput(buildVoterRollPage())
         .setTitle('Voter Roll — SSKZM OBA')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+
+    // Public RO Panel page (SOP 2.3)
+    if (action === 'ropanel') {
+      return HtmlService.createHtmlOutput(buildROPanelPage())
+        .setTitle('RO Panel — SSKZM OBA')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
 
@@ -4249,6 +4428,76 @@ function buildVoterRollPage() {
 }
 
 // ============================================================
+// buildROPanelPage — public, unauthenticated (SOP 2.3). Read-only
+// display of the most recently published RO Panel iteration.
+// Objection filing itself happens inside the logged-in member
+// portal (roll+email+OTP — same login voters already use), not here.
+// ============================================================
+function buildROPanelPage() {
+  var res = getPublicROPanel();
+
+  if (!res.success) {
+    var errBody =
+      '<div style="text-align:center;padding:32px 0;">' +
+        '<div style="font-size:2.5rem;margin-bottom:12px;">🗳️</div>' +
+        '<div style="font-size:1rem;font-weight:700;color:#1a3a5c;margin-bottom:8px;">RO Panel Not Yet Published</div>' +
+        '<div style="font-size:.88rem;color:#6b7280;line-height:1.6;">' + escHtml(res.message) + '</div>' +
+        '<div style="margin-top:24px;">' +
+          '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.85rem;color:#1a3a5c;">← Back to Election Home</a>' +
+        '</div>' +
+      '</div>';
+    return standaloneShell('RO Panel — SSKZM OBA', errBody);
+  }
+
+  var statusLine = res.finalizedRoll
+    ? '<div style="font-size:.82rem;color:#059669;font-weight:600;margin-top:4px;">Finalized — ' + escHtml(res.finalizedName) + ' (' + escHtml(res.finalizedRoll) + ') confirmed as Returning Officer designate</div>'
+    : res.windowOpen
+      ? '<div style="font-size:.82rem;color:#92400e;font-weight:600;margin-top:4px;">Objection window open until ' + escHtml(res.objDeadline) + '</div>'
+      : '<div style="font-size:.82rem;color:#6b7280;font-weight:600;margin-top:4px;">Objection window closed ' + escHtml(res.objDeadline) + '</div>';
+
+  var html =
+    '<div style="text-align:center;padding:16px 0 20px;">' +
+      '<div style="font-size:2.5rem;margin-bottom:8px;">🗳️</div>' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#1a3a5c;">RO Panel — AGM ' + escHtml(res.agmYear) + '</div>' +
+      '<div style="font-size:.8rem;color:#6b7280;">Iteration ' + res.iteration + '</div>' +
+      statusLine +
+    '</div>';
+
+  if (res.windowOpen && !res.finalizedRoll) {
+    html +=
+      '<div style="background:#f0f4f8;border:1px solid #c8d4e0;border-radius:8px;' +
+      'padding:14px 16px;margin-bottom:16px;font-size:.82rem;color:#374151;line-height:1.5;">' +
+        'Have grounds to object to a panelist below? Log in to the election portal — objections ' +
+        'are filed from within your member account, using the same login you use to vote.' +
+      '</div>' +
+      '<div style="text-align:center;margin-bottom:16px;">' +
+        '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.85rem;color:#1a3a5c;font-weight:600;">Log In to File an Objection →</a>' +
+      '</div>';
+  }
+
+  html += '<div style="font-size:.78rem;color:#9ca3af;margin-bottom:12px;">' + res.count + ' panelist(s), in seniority order</div>' +
+    '<div>';
+
+  res.rows.forEach(function(r) {
+    html +=
+      '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">' +
+        '<div style="width:70px;flex-shrink:0;font-size:.82rem;color:#374151;">' + escHtml(r.roll) + '</div>' +
+        '<div style="flex:1;min-width:0;font-size:.85rem;color:#1a3a5c;">' + escHtml(r.name) +
+          (r.finalized ? ' <span style="color:#059669;font-weight:600;">✓ Confirmed RO</span>' : '') + '</div>' +
+        '<div style="width:60px;flex-shrink:0;text-align:right;font-size:.8rem;color:#6b7280;">' + escHtml(r.batch) + '</div>' +
+      '</div>';
+  });
+
+  html +=
+    '</div>' +
+    '<div style="text-align:center;margin-top:20px;margin-bottom:8px;">' +
+      '<a href="' + DEPLOY_URL + '" target="_top" style="font-size:.83rem;color:#1a3a5c;">← Back to Election Home</a>' +
+    '</div>';
+
+  return standaloneShell('RO Panel — SSKZM OBA', html);
+}
+
+// ============================================================
 // R16 / Global — buildErrorPage
 // ============================================================
 
@@ -4325,6 +4574,31 @@ function confirmNomination(nomId, role, token, rollNo) {
     if (alreadyDone) {
       return { success: true, alreadyDone: true,
         message: 'You have already confirmed this nomination.' };
+    }
+
+    // Reject if this roll number is already CONFIRMED as proposer/seconder for
+    // a different candidate on the same post — closes the same gap as
+    // submitNomination's check, for a conflict that only became confirmed
+    // after this nomination was already submitted.
+    var thisElecId = data[i][COL.NOM_ELEC_ID].toString();
+    var thisPost   = data[i][COL.NOM_POST].toString();
+    for (var ck = 1; ck < data.length; ck++) {
+      if (ck === i) continue;
+      var ckr = data[ck];
+      if (ckr[COL.NOM_ELEC_ID].toString() !== thisElecId) continue;
+      if (ckr[COL.NOM_POST].toString() !== thisPost) continue;
+      var ckStatus = ckr[COL.NOM_STATUS].toString();
+      if (ckStatus === 'withdrawn' || ckStatus === 'rejected' ||
+          ckStatus === 'consent_declined' || ckStatus === 'deadline_lapsed') continue;
+      var ckPropConfirmed = ckr[COL.NOM_PROP_CONFIRMED].toString() === 'true' &&
+        ckr[COL.NOM_PROP_ROLL].toString().toUpperCase() === expectedRoll;
+      var ckSecConfirmed = ckr[COL.NOM_SEC_CONFIRMED].toString() === 'true' &&
+        ckr[COL.NOM_SEC_ROLL].toString().toUpperCase() === expectedRoll;
+      if (ckPropConfirmed || ckSecConfirmed) {
+        return { success: false,
+          message: 'You have already confirmed as proposer or seconder for a different candidate for ' +
+                   thisPost + '. You cannot back two candidates for the same post.' };
+      }
     }
 
     // Deadline check — bypassed if election is still nominations_open (RO extension)
@@ -4533,6 +4807,21 @@ function confirmCandidateConsent(nomId, token) {
       return { success: false, message: 'This nomination is no longer active.' };
     }
 
+    // 48-hour consent deadline (SOP 4.7: "does not respond within 48 hours,
+    // the nomination lapses immediately"). Was previously unenforced entirely —
+    // the candidate-facing email already promises this; the code never checked it.
+    var consentRequestedAt = parseDate(data[i][COL.NOM_SUBMITTED_AT]);
+    if (consentRequestedAt && now().getTime() > consentRequestedAt.getTime() + 48 * 60 * 60 * 1000) {
+      if (ns !== 'deadline_lapsed') {
+        sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('deadline_lapsed');
+        appendAdminLog(data[i][COL.NOM_CAND_ROLL].toString(), 'candidate_consent_deadline_lapsed',
+          'Phase 2 consent 48-hour window expired without response — nomination lapsed for post: ' +
+          data[i][COL.NOM_POST].toString(), ns, 'deadline_lapsed');
+      }
+      return { success: false,
+        message: 'The 48-hour consent window for this nomination has passed. It has lapsed and can no longer be accepted.' };
+    }
+
     var ts       = now().toISOString();
     var postName = data[i][COL.NOM_POST].toString();
 
@@ -4585,6 +4874,22 @@ function declineCandidateConsent(nomId, token) {
       return { success: false,
         message: 'You have already accepted this nomination. '
           + 'Please contact the Returning Officer if you wish to withdraw.' };
+    }
+
+    // Same 48-hour deadline as confirmCandidateConsent — a late decline click
+    // is recorded as a deadline lapse (no response within the window), not as
+    // a decline, to keep the record accurate about what actually happened.
+    var consentRequestedAt2 = parseDate(data[i][COL.NOM_SUBMITTED_AT]);
+    var nsForDecline = data[i][COL.NOM_STATUS].toString();
+    if (consentRequestedAt2 && now().getTime() > consentRequestedAt2.getTime() + 48 * 60 * 60 * 1000) {
+      if (nsForDecline !== 'deadline_lapsed') {
+        sh.getRange(i + 1, COL.NOM_STATUS + 1).setValue('deadline_lapsed');
+        appendAdminLog(data[i][COL.NOM_CAND_ROLL].toString(), 'candidate_consent_deadline_lapsed',
+          'Phase 2 consent 48-hour window expired without response — nomination lapsed for post: ' +
+          data[i][COL.NOM_POST].toString(), nsForDecline, 'deadline_lapsed');
+      }
+      return { success: false,
+        message: 'The 48-hour consent window for this nomination has already passed. It has lapsed.' };
     }
 
     var ts       = now().toISOString();
@@ -4907,7 +5212,8 @@ function sendOTP(rollNo, email, purpose) {
   var result = sendEmailViaSendGrid(
     voter.email,
     'SSKZM OBA — Your Login OTP',
-    buildOTPEmail((voter.name + ' ' + voter.surname).trim(), otp, purpose || 'login')
+    buildOTPEmail((voter.name + ' ' + voter.surname).trim(), otp, purpose || 'login'),
+    true
   );
 
   if (result.success) {
@@ -5020,7 +5326,8 @@ function sendAdminOTP(adminId, email) {
   var result = sendEmailViaSendGrid(
     admin.email,
     'SSKZM OBA — Admin Panel OTP',
-    buildOTPEmail(admin.name, otp, 'ro_login')
+    buildOTPEmail(admin.name, otp, 'ro_login'),
+    true
   );
 
   if (result.success) {
@@ -5107,8 +5414,30 @@ function verifyAdminOTP(adminId, otp) {
 // Function name retained as sendEmailViaSendGrid for CF compatibility.
 // ============================================================
 
-function sendEmailViaSendGrid(to, subject, htmlBody) {
+// isSensitive: set true by callers sending a secret (OTP, vote receipt
+// token) — audit finding, 29 Jul 2026 (Email Fallback Transport). When true,
+// the MailApp fallback never carries the real subject/body (which would land
+// permanently in the script owner's own Sent folder in plaintext); it sends
+// a generic "please retry" notice with no secret content instead. Brevo
+// remains the only path that ever delivers the real content — this only
+// changes what happens in the rare case Brevo itself is unavailable.
+// Non-sensitive callers (the vast majority) are completely unaffected.
+function sendEmailViaSendGrid(to, subject, htmlBody, isSensitive) {
   // Function name retained for CF compatibility — sends via Brevo
+  var fallbackSubject = subject;
+  var fallbackBody    = htmlBody;
+  if (isSensitive) {
+    fallbackSubject = 'SSKZM OBA Elections — Action Required: Please Retry';
+    fallbackBody =
+      '<p>We attempted to send you a time-sensitive message, but our primary email service ' +
+      'was temporarily unavailable.</p>' +
+      '<p>For your security, we do not resend sensitive content (such as login codes or vote ' +
+      'receipts) through this backup channel. Please return to the election portal and request ' +
+      'it again.</p>' +
+      '<p>If the problem persists, contact the Returning Officer.</p>' +
+      '<p>SSKZM OBA Elections</p>';
+  }
+
   try {
     var apiKey = PropertiesService.getScriptProperties()
                    .getProperty('BREVO_API_KEY') || '';
@@ -5135,16 +5464,28 @@ function sendEmailViaSendGrid(to, subject, htmlBody) {
       // Fall through to MailApp
     }
 
-    // MailApp fallback
-    MailApp.sendEmail({ to: to, subject: subject, htmlBody: htmlBody,
+    // MailApp fallback — sends as the script owner's own Google account, so
+    // a copy lands in that account's Sent folder (unavoidable with MailApp;
+    // this is exactly why Brevo is the default path). Logged explicitly so
+    // this is never a silent, unnoticed degradation — audit finding, 29 Jul 2026.
+    MailApp.sendEmail({ to: to, subject: fallbackSubject, htmlBody: fallbackBody,
                         name: ELECTIONS_NAME });
+    appendAdminLog('SYSTEM', 'email_mailapp_fallback_used',
+      'Brevo unavailable/unconfigured — sent via MailApp fallback to ' + to + '. Subject: ' + subject +
+      (isSensitive ? ' [sensitive — generic notice sent instead of real content]' : ''),
+      '', to);
     return { success: true, method: 'mailapp' };
 
   } catch (e) {
     Logger.log('Email error: ' + e.toString());
     try {
-      MailApp.sendEmail({ to: to, subject: subject, htmlBody: htmlBody,
+      MailApp.sendEmail({ to: to, subject: fallbackSubject, htmlBody: fallbackBody,
                           name: ELECTIONS_NAME });
+      appendAdminLog('SYSTEM', 'email_mailapp_fallback_used',
+        'Brevo threw an exception — sent via MailApp fallback to ' + to + '. Subject: ' + subject +
+        (isSensitive ? ' [sensitive — generic notice sent instead of real content]' : '') +
+        '. Original error: ' + e.toString(),
+        '', to);
       return { success: true, method: 'mailapp_fallback' };
     } catch (e2) {
       appendAdminLog('SYSTEM', 'email_send_failed',
@@ -5529,10 +5870,23 @@ function initSystemBSheets() {
       'UsedCount','Revoked','RevokedAt','Notes','ConsumedActions'
     ],   // 13 cols ✓
     'ROPanelLog': [
-      'PanelLogID','ElectionID','PanelIteration','RollNo','Name',
-      'Batch','PublishedAt','ObjectionFiled','ObjectionText','ObjectionFiledBy',
-      'ECDecision','DecisionNotes','DecidedAt','EntryMethod','ObjectionAt'
-    ],   // 15 cols ✓
+      'PanelLogID','AGMYear','PanelIteration','RollNo','Name','Batch','Email',
+      'PublishedAt','EntryMethod','Finalized','FinalizedAt'
+    ],   // 11 cols ✓ — trimmed to roster-only; objections now live in ROPanelObjections
+    'ROPanelObjections': [
+      'ID','AGMYear','PanelIteration','TargetRollNo','TargetName',
+      'FiledBy','FiledAt','ObjectionText','Decision','DecisionNotes',
+      'DecidedBy','DecidedAt','DocLinks'
+    ],   // 13 cols ✓
+    'TEMAppointmentObjections': [
+      'ID','ElectionID','TemAdminId','TemName','FiledBy','FiledAt',
+      'ObjectionText','Decision','DecisionNotes','DecidedBy','DecidedAt','DocLinks'
+    ],   // 12 cols ✓
+    'VoterRollObjections': [
+      'ID','ElectionID','ObjectionType','TargetRollNo','TargetName',
+      'FiledBy','FiledAt','ObjectionText','Decision','DecisionNotes',
+      'DecidedBy','DecidedAt','DocLinks'
+    ],   // 13 cols ✓
     'LandingPageContent': [
       'ContentKey',      // 0 — unique key e.g. 'sgm_date', 'agm_date', 'vva_url', 'announcement'
       'ContentValue',    // 1 — the value
@@ -5560,8 +5914,8 @@ function initSystemBSheets() {
     'Voters','Elections','Candidates','Admins','Nominations',
     'ScrutinyLog','NomQueries','DocStore',
     'VoterRollDraft','Complaints','Appeals','Observations','Messages',
-    'ECOfficerBoardDatabase','ElectionSchedule','TEMAuth','ROPanelLog','LandingPageContent',
-    'AppealsPanel','PreSecChecklist','ECHistory'
+    'ECOfficerBoardDatabase','ElectionSchedule','TEMAuth','ROPanelLog','ROPanelObjections','LandingPageContent',
+    'AppealsPanel','PreSecChecklist','ECHistory','TEMAppointmentObjections','VoterRollObjections'
   ];
 
   tabOrder.forEach(function(tabName) {
@@ -5848,6 +6202,28 @@ function activateDeputyRO(token, adminId, witnessNote, authId) {
         'Deputy RO activated: ' + adminId +
         (witnessNote ? ' | Witness note: ' + witnessNote : ''),
         'false', 'true');
+
+      // Audit finding #8 — keep Scrutineers and EC automatically informed of
+      // the handover itself (transparency to oversight), rather than gating
+      // activation on a Scrutineer confirmation, which would second-guess an
+      // authority the Bylaws leave entirely to the RO's own discretion.
+      var deputyName = rows[i][COL.ADMIN_NAME].toString();
+      try {
+        var notifyList = _getActiveScrutineerEmails();
+        notifyList.forEach(function(p) {
+          sendEmailViaSendGrid(p.email, 'SSKZM OBA — Deputy RO Activated: ' + deputyName,
+            '<p>Dear ' + escHtml(p.name) + ',</p>' +
+            '<p><strong>' + escHtml(deputyName) + '</strong> has been activated as Deputy Returning ' +
+            'Officer, effective immediately, and now holds full RO authority per SOP 2A.1/2A.2.</p>' +
+            (witnessNote ? '<p><strong>RO\'s note:</strong> ' + escHtml(witnessNote) + '</p>' : '') +
+            '<p>This is an informational notice — no action is required from you.</p>' +
+            '<p>SSKZM OBA Elections</p>');
+        });
+        sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Deputy RO Activated: ' + deputyName,
+          '<p><strong>' + escHtml(deputyName) + '</strong> has been activated as Deputy Returning Officer.</p>' +
+          (witnessNote ? '<p>RO\'s note: ' + escHtml(witnessNote) + '</p>' : ''));
+      } catch (e) {}
+
       return { success: true };
     }
   }
@@ -6239,6 +6615,7 @@ function deactivateDeputyRO(token, adminId, witnessNote, authId) {
   var rows = sh.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (rows[i][COL.ADMIN_ID].toString() === adminId.toString()) {
+      var deactivatedName = rows[i][COL.ADMIN_NAME].toString();
       sh.getRange(i + 1, COL.ADMIN_DEPRO_ACTIVE + 1).setValue(false);
       sh.getRange(i + 1, COL.ADMIN_ACTIVATED_AT + 1).setValue('');
       sh.getRange(i + 1, COL.ADMIN_ACTIVATED_BY + 1).setValue('');
@@ -6246,6 +6623,26 @@ function deactivateDeputyRO(token, adminId, witnessNote, authId) {
         'Deputy RO deactivated: ' + adminId +
         (witnessNote ? ' | Witness note: ' + witnessNote : ''),
         'true', 'false');
+
+      // Audit finding #8 — same transparency-not-gating notification as
+      // activateDeputyRO, for the other half of the handover.
+      try {
+        var notifyListD = _getActiveScrutineerEmails();
+        notifyListD.forEach(function(p) {
+          sendEmailViaSendGrid(p.email, 'SSKZM OBA — RO Has Resumed Direct Control',
+            '<p>Dear ' + escHtml(p.name) + ',</p>' +
+            '<p>The Returning Officer has resumed direct control. <strong>' + escHtml(deactivatedName) +
+            '</strong> is no longer acting as Deputy Returning Officer.</p>' +
+            (witnessNote ? '<p><strong>RO\'s note:</strong> ' + escHtml(witnessNote) + '</p>' : '') +
+            '<p>This is an informational notice — no action is required from you.</p>' +
+            '<p>SSKZM OBA Elections</p>');
+        });
+        sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] RO Resumed Direct Control (was: ' + deactivatedName + ')',
+          '<p>The Returning Officer has resumed direct control. <strong>' + escHtml(deactivatedName) +
+          '</strong> is no longer acting as Deputy Returning Officer.</p>' +
+          (witnessNote ? '<p>RO\'s note: ' + escHtml(witnessNote) + '</p>' : ''));
+      } catch (e) {}
+
       return { success: true };
     }
   }
@@ -6386,6 +6783,294 @@ function getTEMAuthorisations(token, electionId) {
   }
 
   return { success: true, authorisations: results };
+}
+
+// ============================================================
+// TEM APPOINTMENT OBJECTIONS MODULE (SOP 2A.5)
+// ============================================================
+
+// Reads the current TEM appointment's internal metadata off LandingPageContent
+// (key 'tem_appointment_meta', PUBLIC=false — never shown on the Landing Page
+// itself, only the human-readable 'tem_appointment_notice' key is public).
+// Returns null if no appointment has been announced yet.
+function _getTemAppointmentMeta() {
+  var rows = sheetData(SHEETS.LANDING_CONTENT);
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL_LPC.KEY].toString() === 'tem_appointment_meta') {
+      try {
+        var meta = JSON.parse(rows[i][COL_LPC.VALUE].toString());
+        meta.announcedAt = rows[i][COL_LPC.UPDATED_AT] ? rows[i][COL_LPC.UPDATED_AT].toString() : '';
+        return meta;
+      } catch (e) { return null; }
+    }
+  }
+  return null;
+}
+
+// ============================================================
+// getPublicTemAppointmentNotice — lets a logged-in member's UI know whether
+// to show the "file an objection" form at all, before they try submitting.
+// Access: any authenticated session.
+// ============================================================
+function getPublicTemAppointmentNotice(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  var meta = _getTemAppointmentMeta();
+  if (!meta) return { success: true, announced: false };
+
+  var deadline   = new Date(new Date(meta.announcedAt).getTime() + 3 * 24 * 60 * 60 * 1000);
+  var windowOpen = now().getTime() < deadline.getTime();
+  var deadlineStr = Utilities.formatDate(deadline, Session.getScriptTimeZone(), 'd MMM yyyy, h:mm a');
+
+  return {
+    success: true, announced: true, temName: meta.temName,
+    windowOpen: windowOpen, deadline: deadlineStr,
+    isSelf: meta.temAdminId === sess.identity.toString()
+  };
+}
+
+// ============================================================
+// announceTemAppointment — RO announces a TEM appointment via the public
+// Landing Page (SOP 2A.5). Starts the 3-day objection window, computed
+// reactively from the notice's own UpdatedAt — same reactive-window pattern
+// used elsewhere in this codebase (RO Panel, Phase 2 consent deadline).
+// Deliberately RO_ADMIN/DEPUTY_RO only — narrower than setLandingPageContent's
+// own access list (which also allows EC_OFFICER/TEM) — a TEM must never be
+// the one announcing their own appointment.
+// ============================================================
+function announceTemAppointment(token, electionId, temAdminId, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied. RO only.' };
+  }
+  if (!electionId || !temAdminId) {
+    return { success: false, message: 'Election ID and TEM Admin ID are required.' };
+  }
+
+  var elecRows = sheetData(SHEETS.ELECTIONS);
+  var elec = null;
+  for (var e = 0; e < elecRows.length; e++) {
+    if (elecRows[e][COL.ELEC_ID].toString() === electionId.toString()) { elec = elecRows[e]; break; }
+  }
+  if (!elec) return { success: false, message: 'Election not found.' };
+  var elecTitle = elec[COL.ELEC_TITLE].toString();
+
+  var adminRows = sheetData(SHEETS.ADMINS);
+  var temRow = null;
+  for (var a = 0; a < adminRows.length; a++) {
+    if (adminRows[a][COL.ADMIN_ID].toString() === temAdminId.toString() &&
+        adminRows[a][COL.ADMIN_ROLE].toString() === 'TEM') { temRow = adminRows[a]; break; }
+  }
+  if (!temRow) return { success: false, message: 'TEM admin account not found.' };
+  var temName = temRow[COL.ADMIN_NAME].toString();
+
+  var noticeText = temName + ' has been appointed Technical Election Manager for ' + elecTitle +
+    ', per SOP 2A.5. Any Life Member may raise a written objection to this appointment within ' +
+    '3 days of this notice.';
+
+  var pubResult = setLandingPageContent(token, 'tem_appointment_notice', noticeText, 'text',
+    'TEM Appointment Notice', true, authId);
+  if (!pubResult.success) return pubResult;
+
+  var metaResult = setLandingPageContent(token, 'tem_appointment_meta',
+    JSON.stringify({ electionId: electionId.toString(), temAdminId: temAdminId.toString(), temName: temName }),
+    'text', 'TEM Appointment Metadata (internal)', false, authId);
+  if (!metaResult.success) return metaResult;
+
+  return { success: true, temName: temName };
+}
+
+// ============================================================
+// _storeTemObjectionDoc — supporting-document upload for a TEM appointment
+// objection. Same shape as _storeROPanelObjectionDoc — can't reuse it
+// directly, different Drive folder and DocStore category/linked tab.
+// ============================================================
+function _storeTemObjectionDoc(electionId, objectionId, uploaderRoll, filename, base64Data, mimeType) {
+  var ROOT_FOLDER_NAME = 'SSKZM OBA Elections';
+  var rootIter = DriveApp.getFoldersByName(ROOT_FOLDER_NAME);
+  var rootFolder = rootIter.hasNext() ? rootIter.next() : DriveApp.createFolder(ROOT_FOLDER_NAME);
+  var subName = 'TEM Appointment Objections — ' + electionId;
+  var subIter = rootFolder.getFoldersByName(subName);
+  var folder = subIter.hasNext() ? subIter.next() : rootFolder.createFolder(subName);
+
+  var decoded  = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType || 'application/octet-stream', filename);
+  var file     = folder.createFile(decoded);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var driveUrl = file.getUrl();
+
+  var docId = 'DOC-TEMOBJ-' + Date.now();
+  var docSh = getSheet(SHEETS.DOC_STORE);
+  if (docSh) {
+    var newRow = [];
+    newRow[COL.DOC_ID]            = docId;
+    newRow[COL.DOC_ELEC_ID]       = electionId;
+    newRow[COL.DOC_CATEGORY]      = 'tem_appointment_objection_support';
+    newRow[COL.DOC_UPLOADER_ROLL] = uploaderRoll;
+    newRow[COL.DOC_UPLOADER_ROLE] = 'VOTER';
+    newRow[COL.DOC_FILENAME]      = filename;
+    newRow[COL.DOC_GDRIVE_URL]    = driveUrl;
+    newRow[COL.DOC_UPLOADED_AT]   = new Date().toISOString();
+    newRow[COL.DOC_NOTES]         = 'temObjRef:' + objectionId;
+    newRow[COL.DOC_LINKED_TAB]    = 'TEMAppointmentObjections';
+    docSh.appendRow(newRow);
+  }
+  return { docId: docId, driveUrl: driveUrl };
+}
+
+// ============================================================
+// fileTEMAppointmentObjection — logged-in member files an objection against
+// the currently-announced TEM appointment. Any authenticated session, same
+// precedent as fileObjection/fileROPanelObjection.
+// ============================================================
+function fileTEMAppointmentObjection(token, objectionText, docFilename, docBase64, docMimeType) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (!objectionText || !objectionText.toString().trim()) {
+    return { success: false, message: 'Please provide details in support of your objection.' };
+  }
+  if (docBase64 && docBase64.length > 7000000) {
+    return { success: false, message: 'Supporting document too large. Maximum size is 5MB.' };
+  }
+
+  var meta = _getTemAppointmentMeta();
+  if (!meta) return { success: false, message: 'No TEM appointment has been announced.' };
+
+  var deadline = new Date(new Date(meta.announcedAt).getTime() + 3 * 24 * 60 * 60 * 1000);
+  if (now().getTime() > deadline.getTime()) {
+    return { success: false, message: 'The 3-day objection window for this TEM appointment has closed.' };
+  }
+
+  if (meta.temAdminId === sess.identity.toString()) {
+    return { success: false, message: 'You cannot file an objection against your own appointment.' };
+  }
+
+  var existing = sheetData(SHEETS.TEM_APPT_OBJ);
+  for (var i = 0; i < existing.length; i++) {
+    var er = existing[i];
+    if (er[COL_TAO.TEM_ADMIN_ID].toString() === meta.temAdminId &&
+        er[COL_TAO.FILED_BY].toString() === sess.identity.toString()) {
+      return { success: false, message: 'You have already filed an objection to this TEM appointment.' };
+    }
+  }
+
+  var sh = getSheet(SHEETS.TEM_APPT_OBJ);
+  if (!sh) return { success: false, message: 'TEMAppointmentObjections sheet not found. Run initSystemBSheets() first.' };
+
+  var id = generateId();
+  var ts = now().toISOString();
+
+  var docUploaded = false, docUrl = '';
+  if (docFilename && docBase64) {
+    try {
+      var docResult = _storeTemObjectionDoc(meta.electionId, id, sess.identity.toString(), docFilename, docBase64, docMimeType);
+      docUploaded = true;
+      docUrl = docResult.driveUrl;
+    } catch (e) {}
+  }
+
+  var newRow = new Array(12).fill('');
+  newRow[COL_TAO.ID]             = id;
+  newRow[COL_TAO.ELEC_ID]        = meta.electionId;
+  newRow[COL_TAO.TEM_ADMIN_ID]   = meta.temAdminId;
+  newRow[COL_TAO.TEM_NAME]       = meta.temName;
+  newRow[COL_TAO.FILED_BY]       = sess.identity.toString();
+  newRow[COL_TAO.FILED_AT]       = ts;
+  newRow[COL_TAO.OBJECTION_TEXT] = objectionText.toString().trim();
+  newRow[COL_TAO.DECISION]       = 'pending';
+  newRow[COL_TAO.DOC_LINKS]      = docUploaded ? docUrl : '';
+  sh.appendRow(newRow);
+
+  appendAdminLog(sess.identity, 'tem_appointment_objection_filed',
+    'Objection filed against TEM appointment: ' + meta.temName + ' (' + meta.temAdminId + ')' +
+    (docUploaded ? ' | Document attached.' : ''), '', id);
+
+  try {
+    var roEmails = _getActiveROEmails();
+    roEmails.forEach(function(ro) {
+      sendEmailViaSendGrid(ro.email, '[TEM Appointment] Objection Filed — ' + meta.temName,
+        '<p>An objection has been filed against the TEM appointment of <strong>' + escHtml(meta.temName) + '</strong>.</p>' +
+        (docUploaded ? '<p>Supporting document: <a href="' + docUrl + '">' + escHtml(docFilename) + '</a></p>' : '') +
+        '<p>Review it in the TEM Auth screen.</p>');
+    });
+  } catch (e) {}
+
+  return { success: true, id: id, docUploaded: docUploaded };
+}
+
+// ============================================================
+// getTEMAppointmentObjections — RO review list for the current TEM
+// appointment. Access: RO_ADMIN, DEPUTY_RO only — TEM is deliberately
+// excluded, since TEM is the one being objected to.
+// ============================================================
+function getTEMAppointmentObjections(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied. RO only.' };
+  }
+
+  var meta = _getTemAppointmentMeta();
+  if (!meta) return { success: true, temName: '', temAdminId: '', objections: [] };
+
+  var rows = sheetData(SHEETS.TEM_APPT_OBJ).filter(function(r) {
+    return r[COL_TAO.TEM_ADMIN_ID].toString() === meta.temAdminId;
+  });
+
+  var objections = rows.map(function(r) {
+    return {
+      id:            r[COL_TAO.ID].toString(),
+      filedBy:       r[COL_TAO.FILED_BY].toString(),
+      filedAt:       r[COL_TAO.FILED_AT].toString(),
+      objectionText: r[COL_TAO.OBJECTION_TEXT].toString(),
+      decision:      r[COL_TAO.DECISION].toString(),
+      decisionNotes: r[COL_TAO.DECISION_NOTES] ? r[COL_TAO.DECISION_NOTES].toString() : '',
+      decidedBy:     r[COL_TAO.DECIDED_BY]     ? r[COL_TAO.DECIDED_BY].toString()     : '',
+      decidedAt:     r[COL_TAO.DECIDED_AT]     ? r[COL_TAO.DECIDED_AT].toString()     : '',
+      docUrl:        r[COL_TAO.DOC_LINKS]      ? r[COL_TAO.DOC_LINKS].toString()      : ''
+    };
+  });
+
+  return { success: true, temName: meta.temName, temAdminId: meta.temAdminId, electionId: meta.electionId, objections: objections };
+}
+
+// ============================================================
+// decideTEMAppointmentObjection — RO marks an objection reviewed, with notes.
+// Deliberately does not itself revise/revoke the appointment — SOP 2A.5
+// frames this as the RO's holistic judgment call on the appointment as a
+// whole, not a per-objection valid/invalid gate. Revocation already exists
+// (2A.6, "RO may revoke TEM access at any moment") — not duplicated here.
+// Access: RO_ADMIN, DEPUTY_RO only (same reasoning as the getter above).
+// ============================================================
+function decideTEMAppointmentObjection(token, objectionId, decisionNotes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO') {
+    return { success: false, message: 'Access denied. RO only.' };
+  }
+
+  var sh = getSheet(SHEETS.TEM_APPT_OBJ);
+  if (!sh) return { success: false, message: 'TEMAppointmentObjections sheet not found.' };
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_TAO.ID].toString() === objectionId.toString()) {
+      if (rows[i][COL_TAO.FILED_BY].toString() === sess.identity.toString()) {
+        return { success: false, message: 'You cannot review an objection you filed yourself.' };
+      }
+      sh.getRange(i + 1, COL_TAO.DECISION       + 1).setValue('reviewed');
+      sh.getRange(i + 1, COL_TAO.DECISION_NOTES + 1).setValue(decisionNotes || '');
+      sh.getRange(i + 1, COL_TAO.DECIDED_BY     + 1).setValue(sess.identity);
+      sh.getRange(i + 1, COL_TAO.DECIDED_AT     + 1).setValue(now().toISOString());
+      appendAdminLog(sess.identity, 'tem_appointment_objection_reviewed',
+        'Objection ' + objectionId + ' against TEM appointment reviewed.' +
+        (decisionNotes ? ' Notes: ' + decisionNotes : ''),
+        rows[i][COL_TAO.DECISION].toString(), 'reviewed');
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Objection not found.' };
 }
 
 // ============================================================
@@ -6919,6 +7604,15 @@ function getScrutinyData(token, nomId) {
   }
   if (!nom) return { success: false, message: 'Nomination not found.' };
 
+  // Reinstated if an appeal against this nomination was upheld (updateAppealDecision
+  // sets Appeals.Status='upheld' and reinstates the nomination to pending_scrutiny).
+  // Was previously hardcoded false with a stale "Appeals not yet built" comment —
+  // Appeals has been built for a while now; this just never got wired up here.
+  var reinstated = sheetData(SHEETS.APPEALS).some(function(a) {
+    return a[COL_APL.NOM_ID].toString() === nomId.toString() &&
+           a[COL_APL.STATUS].toString() === 'upheld';
+  });
+
   var nomination = {
     id:              nom[COL.NOM_ID].toString(),
     elecId:          nom[COL.NOM_ELEC_ID].toString(),
@@ -6931,7 +7625,7 @@ function getScrutinyData(token, nomId) {
     rejectionReason: nom[COL.NOM_REJECTION].toString(),
     bio:             nom[COL.NOM_BIO].toString(),
     entryMethod:     nom[COL.NOM_ENTRY_METHOD].toString(),
-    reinstated:      false   // Appeals not yet built — always false for now
+    reinstated:      reinstated
   };
 
   // Load ScrutinyLog rows for this nomination
@@ -7040,7 +7734,11 @@ function saveScrutinyItem(token, nomId, checkItem, checkResult, notes, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
   var role = sess.role;
-  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM' && role !== 'SCRUTINEER') {
+  // SCRUTINEER deliberately excluded — SOP 2A.9: Scrutineers have no power
+  // to override RO decisions; scrutiny checklist results are an RO/TEM
+  // executive act, not a witnessing one. Scrutineers record observations
+  // via the separate Observations mechanism instead.
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   if (!nomId || !checkItem || !checkResult) {
@@ -7319,7 +8017,10 @@ function acceptNomination(token, nomId, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired.' };
   var role = sess.role;
-  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM' && role !== 'SCRUTINEER') {
+  // SCRUTINEER deliberately excluded — SOP 2A.9: Scrutineers have no power
+  // to override RO decisions; accepting a nomination is an RO/TEM executive
+  // act, not a witnessing one.
+  if (role !== 'RO_ADMIN' && role !== 'DEPUTY_RO' && role !== 'TEM') {
     return { success: false, message: 'Access denied.' };
   }
   var temCheck = requiresTEMAuth(sess, authId, 'acceptNomination', null);
@@ -8811,7 +9512,7 @@ function castVote(token, electionId, postName, candidateId) {
         'on the election portal to confirm that a vote was recorded from your session.</p>' +
         '<p>If you did not cast this vote, contact the Returning Officer immediately.</p>' +
         '<p>SSKZM OBA Elections</p>';
-      sendEmailViaSendGrid(voterEmail, rcptSubject, rcptBody);
+      sendEmailViaSendGrid(voterEmail, rcptSubject, rcptBody, true);
     }
   } catch(emailErr) { /* non-fatal — vote is already recorded */ }
 
@@ -9247,6 +9948,550 @@ function updateComplaintStatus(token, complaintId, status, roNotes, resolution, 
 }
 
 // ============================================================
+// RO PANEL MODULE (SOP 2.3) — EC-run selection of the RO Panel,
+// ahead of any Election/RO existing. Keyed by AGMYear, not
+// ElectionID (see COL_RPL comment).
+// ============================================================
+
+// Returns true if every given roll number has a 'valid' decided objection
+// recorded against it for this AGM year + iteration. Used by publishROPanel
+// to confirm an iteration is genuinely exhausted before allowing the next
+// one to be published — not by getROPanelFinalizationSuggestion, which
+// works from the already-loaded panel.rows instead.
+function _roPanelAllObjectedOut(agmYear, iteration, rollNumbers) {
+  var validRolls = {};
+  sheetData(SHEETS.RO_PANEL_OBJ).forEach(function(r) {
+    if (r[COL_ROBJ.AGM_YEAR].toString() === agmYear &&
+        parseInt(r[COL_ROBJ.PANEL_ITERATION], 10) === iteration &&
+        r[COL_ROBJ.DECISION].toString() === 'valid') {
+      validRolls[r[COL_ROBJ.TARGET_ROLL].toString()] = true;
+    }
+  });
+  return rollNumbers.every(function(roll) { return !!validRolls[roll]; });
+}
+
+// ============================================================
+// publishROPanel — EC Officer publishes the panel of senior-most
+// willing, eligible members for a given AGM cycle. Independent
+// manual entry (roll/name/batch typed by EC) — no voter-roll
+// lookup, since the draft roll for this cycle may not exist yet.
+// Access: EC_OFFICER only. No TEM-auth check — TEM cannot call this.
+// electionId is OPTIONAL and used only to fetch a recipient list for
+// the mass notice via the existing per-election voter-roll mechanism;
+// nothing about the panel itself is stored against it. If the EC wants
+// the mass notice this cycle, the draft roll for that election must
+// already be uploaded — that's an operational precondition, not
+// something this function creates.
+// ============================================================
+function publishROPanel(token, agmYear, panelistRows, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied. EC Officer only.' };
+
+  if (!agmYear || !agmYear.toString().trim()) {
+    return { success: false, message: 'AGM year is required.' };
+  }
+  var year = agmYear.toString().trim();
+
+  if (!panelistRows || !panelistRows.length) {
+    return { success: false, message: 'At least one panelist is required.' };
+  }
+
+  // Validate rows + dedupe roll numbers within this batch
+  var seenRolls = {};
+  var cleanRows = [];
+  for (var p = 0; p < panelistRows.length; p++) {
+    var pr = panelistRows[p];
+    var roll = (pr.rollNo || '').toString().trim().toUpperCase();
+    var name = (pr.name   || '').toString().trim();
+    if (!roll) return { success: false, message: 'Roll number is required for every panelist.' };
+    if (!name) return { success: false, message: 'Name is required for every panelist (roll ' + roll + ').' };
+    if (seenRolls[roll]) return { success: false, message: 'Roll number ' + roll + ' appears more than once in this panel.' };
+    seenRolls[roll] = true;
+    cleanRows.push({ roll: roll, name: name, batch: (pr.batch || '').toString().trim() });
+  }
+
+  var sh = getSheet(SHEETS.RO_PANEL_LOG);
+  if (!sh) return { success: false, message: 'ROPanelLog sheet not found. Run initSystemBSheets() first.' };
+
+  // Next iteration = 1 + highest existing iteration already published for this AGM year
+  var existing = sheetData(SHEETS.RO_PANEL_LOG).filter(function(r) {
+    return r[COL_RPL.AGM_YEAR].toString() === year;
+  });
+  var maxIteration = 0;
+  existing.forEach(function(r) {
+    var it = parseInt(r[COL_RPL.PANEL_ITERATION], 10);
+    if (!isNaN(it) && it > maxIteration) maxIteration = it;
+  });
+
+  // Guard against publishing over a still-live iteration — accidental
+  // double-click, or premature "next 15" before the current one has actually
+  // played out. getPublicROPanel/getROPanelObjections always resolve to the
+  // highest iteration, so a second publish would otherwise silently orphan
+  // the current one and any objections already filed against it.
+  if (maxIteration > 0) {
+    var latestRows = existing.filter(function(r) {
+      return parseInt(r[COL_RPL.PANEL_ITERATION], 10) === maxIteration;
+    });
+    var latestPublishedAt  = latestRows[0][COL_RPL.PUBLISHED_AT].toString();
+    var latestDeadline     = new Date(new Date(latestPublishedAt).getTime() + 5 * 24 * 60 * 60 * 1000);
+    var latestWindowOpen   = now().getTime() < latestDeadline.getTime();
+    var latestFinalizedRow = latestRows.filter(function(r) {
+      return r[COL_RPL.FINALIZED] && r[COL_RPL.FINALIZED].toString().toLowerCase() === 'true';
+    })[0];
+
+    if (latestWindowOpen) {
+      return { success: false, message: 'Iteration ' + maxIteration + ' for AGM ' + year +
+        ' is still within its 5-day objection window (closes ' + _fmtISTServer(latestDeadline.toISOString()) +
+        '). Cannot publish a new iteration yet.' };
+    }
+    if (latestFinalizedRow) {
+      return { success: false, message: 'Iteration ' + maxIteration + ' for AGM ' + year +
+        ' has already been finalized (' + latestFinalizedRow[COL_RPL.NAME].toString() + '). No further iteration is needed.' };
+    }
+    var latestRolls = latestRows.map(function(r) { return r[COL_RPL.ROLL_NO].toString(); });
+    if (!_roPanelAllObjectedOut(year, maxIteration, latestRolls)) {
+      return { success: false, message: 'Iteration ' + maxIteration + ' for AGM ' + year +
+        ' still has at least one panelist with no valid objection recorded — finalize the panel before publishing a new iteration.' };
+    }
+  }
+
+  var iteration = maxIteration + 1;
+
+  // Best-effort email lookup against the voter roll (draft or certified), keyed
+  // by roll number — only possible if electionId is given and that election
+  // already has a roll uploaded. Blank for any panelist not found; does not
+  // block publish either way.
+  var emailByRoll = {};
+  var voterRows = [];
+  if (electionId) {
+    var vrResult = getVoterRollRows(electionId);
+    voterRows = vrResult.rows || [];
+    voterRows.forEach(function(r) {
+      var vroll = r[COL.VOTER_ROLL].toString().trim().toUpperCase();
+      if (vroll) emailByRoll[vroll] = r[COL.VOTER_EMAIL].toString().trim();
+    });
+  }
+
+  var ts = now().toISOString();
+  cleanRows.forEach(function(pr) {
+    var newRow = new Array(11).fill('');
+    newRow[COL_RPL.PANEL_LOG_ID]    = generateId();
+    newRow[COL_RPL.AGM_YEAR]        = year;
+    newRow[COL_RPL.PANEL_ITERATION] = iteration;
+    newRow[COL_RPL.ROLL_NO]         = pr.roll;
+    newRow[COL_RPL.NAME]            = pr.name;
+    newRow[COL_RPL.BATCH]           = pr.batch;
+    newRow[COL_RPL.EMAIL]           = emailByRoll[pr.roll] || '';
+    newRow[COL_RPL.PUBLISHED_AT]    = ts;
+    newRow[COL_RPL.ENTRY_METHOD]    = 'manual';
+    newRow[COL_RPL.FINALIZED]       = false;
+    sh.appendRow(newRow);
+  });
+
+  appendAdminLog(sess.identity, 'ro_panel_published',
+    'RO Panel iteration ' + iteration + ' published for AGM ' + year + ' — ' +
+    cleanRows.length + ' panelist(s).', '', year);
+
+  var noticeResult = { attempted: false, sent: 0, failed: 0 };
+  if (electionId) {
+    if (voterRows && voterRows.length > 0) {
+      noticeResult.attempted = true;
+      var deadline = new Date(new Date(ts).getTime() + 5 * 24 * 60 * 60 * 1000);
+      var deadlineStr = _fmtISTServer(deadline.toISOString());
+      for (var v = 0; v < voterRows.length; v++) {
+        var email = voterRows[v][COL.VOTER_EMAIL].toString().trim();
+        var vname = (voterRows[v][COL.VOTER_NAME].toString() + ' ' +
+                     voterRows[v][COL.VOTER_SURNAME].toString()).trim();
+        if (!email) { noticeResult.failed++; continue; }
+        var subject = 'SSKZM OBA — RO Panel Published (AGM ' + year + ') — Objection Window Open';
+        var body =
+          '<p>Dear ' + (vname || 'Member') + ',</p>' +
+          '<p>The Executive Committee has published the panel of senior-most, willing, eligible ' +
+          'members for consideration as Returning Officer for the ' + year + ' AGM, per SOP 2.3.</p>' +
+          '<p>You may view the panel and, if you wish, file an objection against any panelist before ' +
+          '<strong>' + deadlineStr + '</strong>:</p>' +
+          '<p><a href="' + DEPLOY_URL + '?action=ropanel">' + DEPLOY_URL + '?action=ropanel</a></p>' +
+          '<p>For queries, contact: <a href="mailto:' + ELECTIONS_EMAIL + '">' + ELECTIONS_EMAIL + '</a></p>' +
+          '<p>SSKZM OBA Elections</p>';
+        try { sendEmailViaSendGrid(email, subject, body); noticeResult.sent++; }
+        catch (e) { noticeResult.failed++; }
+      }
+      try {
+        sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] RO Panel Published: AGM ' + year,
+          '<p>RO Panel iteration ' + iteration + ' published for AGM ' + year + ' — ' +
+          cleanRows.length + ' panelist(s). Notice sent to ' + noticeResult.sent + ' member(s).' +
+          (noticeResult.failed > 0 ? ' ' + noticeResult.failed + ' failed.' : '') + '</p>');
+      } catch (e) {}
+    }
+  }
+
+  return { success: true, iteration: iteration, publishedCount: cleanRows.length, notice: noticeResult };
+}
+
+// ============================================================
+// _storeROPanelObjectionDoc — uploads a supporting document for an RO Panel
+// objection. Can't reuse _storeAppealSupportingDoc as-is: that helper is
+// hardcoded to an election-scoped Drive folder and writes back to the
+// Appeals sheet specifically — neither applies here (RO Panel objections
+// have no ElectionID and live in their own sheet). Same sharing choice
+// though (ANYONE_WITH_LINK/VIEW) for consistency, even though EC Officers
+// reviewing this do have EMS logins — avoids needing per-account Drive ACLs.
+// Throws on failure — caller decides whether that should be fatal.
+// ============================================================
+function _storeROPanelObjectionDoc(agmYear, objectionId, uploaderRoll, filename, base64Data, mimeType) {
+  var ROOT_FOLDER_NAME = 'SSKZM OBA Elections';
+  var rootIter = DriveApp.getFoldersByName(ROOT_FOLDER_NAME);
+  var rootFolder = rootIter.hasNext() ? rootIter.next() : DriveApp.createFolder(ROOT_FOLDER_NAME);
+  var subName = 'RO Panel — AGM ' + agmYear;
+  var subIter = rootFolder.getFoldersByName(subName);
+  var folder = subIter.hasNext() ? subIter.next() : rootFolder.createFolder(subName);
+
+  var decoded  = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType || 'application/octet-stream', filename);
+  var file     = folder.createFile(decoded);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var driveUrl = file.getUrl();
+
+  var docId  = 'DOC-ROPANEL-' + Date.now();
+  var docSh  = getSheet(SHEETS.DOC_STORE);
+  if (docSh) {
+    var newRow = [];
+    newRow[COL.DOC_ID]            = docId;
+    newRow[COL.DOC_ELEC_ID]       = '';
+    newRow[COL.DOC_CATEGORY]      = 'ropanel_objection_support';
+    newRow[COL.DOC_UPLOADER_ROLL] = uploaderRoll;
+    newRow[COL.DOC_UPLOADER_ROLE] = 'VOTER';
+    newRow[COL.DOC_FILENAME]      = filename;
+    newRow[COL.DOC_GDRIVE_URL]    = driveUrl;
+    newRow[COL.DOC_UPLOADED_AT]   = new Date().toISOString();
+    newRow[COL.DOC_NOTES]         = 'roPanelObjRef:' + objectionId;
+    newRow[COL.DOC_LINKED_TAB]    = 'ROPanelObjections';
+    docSh.appendRow(newRow);
+  }
+
+  return { docId: docId, driveUrl: driveUrl };
+}
+
+// ============================================================
+// fileROPanelObjection — logged-in member files an objection
+// against a currently-published RO Panel iteration. Uses the
+// same generic roll+email+OTP login every voter already has —
+// no new auth mechanism, and no ElectionID involved.
+// Access: any authenticated member (VOTER session).
+// ============================================================
+function fileROPanelObjection(token, targetRollNo, objectionText, docFilename, docBase64, docMimeType) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (!objectionText || !objectionText.toString().trim()) {
+    return { success: false, message: 'Please provide details in support of your objection.' };
+  }
+  if (docBase64 && docBase64.length > 7000000) {
+    return { success: false, message: 'Supporting document too large. Maximum size is 5MB.' };
+  }
+
+  var panel = getPublicROPanel();
+  if (!panel.success) return { success: false, message: panel.message };
+  if (!panel.windowOpen) {
+    return { success: false, message: 'The objection window for this RO Panel iteration has closed.' };
+  }
+
+  var target = null;
+  for (var t = 0; t < panel.rows.length; t++) {
+    if (panel.rows[t].roll === targetRollNo.toString().trim().toUpperCase()) { target = panel.rows[t]; break; }
+  }
+  if (!target) return { success: false, message: 'That roll number is not on the currently published RO Panel.' };
+
+  if (target.roll === sess.identity.toString().toUpperCase()) {
+    return { success: false, message: 'You cannot file an objection against yourself.' };
+  }
+
+  // One objection per member per panelist per iteration
+  var existing = sheetData(SHEETS.RO_PANEL_OBJ);
+  for (var i = 0; i < existing.length; i++) {
+    var er = existing[i];
+    if (er[COL_ROBJ.AGM_YEAR].toString()        === panel.agmYear &&
+        parseInt(er[COL_ROBJ.PANEL_ITERATION], 10) === panel.iteration &&
+        er[COL_ROBJ.TARGET_ROLL].toString()     === target.roll &&
+        er[COL_ROBJ.FILED_BY].toString()        === sess.identity.toString()) {
+      return { success: false, message: 'You have already filed an objection against this panelist.' };
+    }
+  }
+
+  var sh = getSheet(SHEETS.RO_PANEL_OBJ);
+  if (!sh) return { success: false, message: 'ROPanelObjections sheet not found. Run initSystemBSheets() first.' };
+
+  var id = generateId();
+  var ts = now().toISOString();
+
+  // Upload BEFORE writing the row (same order as fileAppeal/fileObjection)
+  // so the Drive link is already available to include in the EC notification.
+  var docUploaded = false, docUrl = '';
+  if (docFilename && docBase64) {
+    try {
+      var docResult = _storeROPanelObjectionDoc(panel.agmYear, id, sess.identity.toString(),
+        docFilename, docBase64, docMimeType);
+      docUploaded = true;
+      docUrl = docResult.driveUrl;
+    } catch (e) {
+      // Non-fatal — the objection itself still gets filed without the document.
+    }
+  }
+
+  var newRow = new Array(13).fill('');
+  newRow[COL_ROBJ.ID]              = id;
+  newRow[COL_ROBJ.AGM_YEAR]        = panel.agmYear;
+  newRow[COL_ROBJ.PANEL_ITERATION] = panel.iteration;
+  newRow[COL_ROBJ.TARGET_ROLL]     = target.roll;
+  newRow[COL_ROBJ.TARGET_NAME]     = target.name;
+  newRow[COL_ROBJ.FILED_BY]        = sess.identity.toString();
+  newRow[COL_ROBJ.FILED_AT]        = ts;
+  newRow[COL_ROBJ.OBJECTION_TEXT]  = objectionText.toString().trim();
+  newRow[COL_ROBJ.DECISION]        = 'pending';
+  newRow[COL_ROBJ.DOC_LINKS]       = docUploaded ? docUrl : '';
+  sh.appendRow(newRow);
+
+  appendAdminLog(sess.identity, 'ro_panel_objection_filed',
+    'Objection filed against RO Panel candidate ' + target.name + ' (' + target.roll + '), AGM ' +
+    panel.agmYear + ' iteration ' + panel.iteration + (docUploaded ? ' | Document attached.' : ''), '', id);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[RO Panel] Objection Filed — ' + target.name + ' (' + target.roll + ')',
+      '<p>An objection has been filed against RO Panel candidate <strong>' + escHtml(target.name) +
+      '</strong> (' + escHtml(target.roll) + '), AGM ' + escHtml(panel.agmYear) + ' iteration ' + panel.iteration + '.</p>' +
+      (docUploaded ? '<p>Supporting document: <a href="' + docUrl + '">' + escHtml(docFilename) + '</a></p>' : '') +
+      '<p>Review it in the RO Panel Objections screen.</p>');
+  } catch (e) {}
+
+  return { success: true, id: id, docUploaded: docUploaded };
+}
+
+// ============================================================
+// getROPanelObjections — EC review list, scoped to the currently
+// published iteration only (older iterations are closed history).
+// Access: EC_OFFICER only — same reasoning as publishROPanel: TEM
+// authorisation is issued BY an RO, and no RO exists yet at this
+// stage, so TEM cannot meaningfully act anywhere in this module.
+// ============================================================
+function getROPanelObjections(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied. EC Officer only.' };
+
+  var panel = getPublicROPanel();
+  if (!panel.success) return { success: false, message: panel.message };
+
+  var rows = sheetData(SHEETS.RO_PANEL_OBJ).filter(function(r) {
+    return r[COL_ROBJ.AGM_YEAR].toString() === panel.agmYear &&
+           parseInt(r[COL_ROBJ.PANEL_ITERATION], 10) === panel.iteration;
+  });
+
+  var objections = rows.map(function(r) {
+    return {
+      id:            r[COL_ROBJ.ID].toString(),
+      targetRoll:    r[COL_ROBJ.TARGET_ROLL].toString(),
+      targetName:    r[COL_ROBJ.TARGET_NAME].toString(),
+      filedBy:       r[COL_ROBJ.FILED_BY].toString(),
+      filedAt:       r[COL_ROBJ.FILED_AT].toString(),
+      objectionText: r[COL_ROBJ.OBJECTION_TEXT].toString(),
+      decision:      r[COL_ROBJ.DECISION].toString(),
+      decisionNotes: r[COL_ROBJ.DECISION_NOTES] ? r[COL_ROBJ.DECISION_NOTES].toString() : '',
+      decidedBy:     r[COL_ROBJ.DECIDED_BY]     ? r[COL_ROBJ.DECIDED_BY].toString()     : '',
+      decidedAt:     r[COL_ROBJ.DECIDED_AT]     ? r[COL_ROBJ.DECIDED_AT].toString()     : '',
+      docUrl:        r[COL_ROBJ.DOC_LINKS]      ? r[COL_ROBJ.DOC_LINKS].toString()      : ''
+    };
+  });
+
+  return { success: true, agmYear: panel.agmYear, iteration: panel.iteration, objections: objections };
+}
+
+// ============================================================
+// decideROPanelObjection — EC records valid/invalid + notes.
+// Access: EC_OFFICER only (see getROPanelObjections comment).
+// ============================================================
+function decideROPanelObjection(token, objectionId, decision, decisionNotes) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied. EC Officer only.' };
+
+  if (decision !== 'valid' && decision !== 'invalid') {
+    return { success: false, message: 'Decision must be valid or invalid.' };
+  }
+
+  var sh = getSheet(SHEETS.RO_PANEL_OBJ);
+  if (!sh) return { success: false, message: 'ROPanelObjections sheet not found.' };
+  var rows = sh.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_ROBJ.ID].toString() === objectionId.toString()) {
+      // Self-dealing block: an EC Officer cannot rule on an objection filed
+      // against themselves — another EC Officer (President/VP/etc. also hold
+      // EC_OFFICER access) must review it instead.
+      if (rows[i][COL_ROBJ.TARGET_ROLL].toString() === sess.identity.toString()) {
+        return { success: false, message: 'You cannot decide an objection filed against yourself. Another EC Officer must review this.' };
+      }
+      sh.getRange(i + 1, COL_ROBJ.DECISION       + 1).setValue(decision);
+      sh.getRange(i + 1, COL_ROBJ.DECISION_NOTES + 1).setValue(decisionNotes || '');
+      sh.getRange(i + 1, COL_ROBJ.DECIDED_BY     + 1).setValue(sess.identity);
+      sh.getRange(i + 1, COL_ROBJ.DECIDED_AT     + 1).setValue(now().toISOString());
+      appendAdminLog(sess.identity, 'ro_panel_objection_decided',
+        'Objection ' + objectionId + ' against ' + rows[i][COL_ROBJ.TARGET_NAME].toString() +
+        ' (' + rows[i][COL_ROBJ.TARGET_ROLL].toString() + ') decided: ' + decision,
+        rows[i][COL_ROBJ.DECISION].toString(), decision);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Objection not found.' };
+}
+
+// ============================================================
+// getROPanelFinalizationSuggestion — ranks the current iteration's
+// panelists (batch year ascending, then roll number ascending —
+// the seniority tie-break the EC asked for) and flags which ones
+// have a valid objection recorded against them. The system only
+// suggests; finalizeROPanel requires the EC to explicitly confirm.
+// Access: EC_OFFICER only.
+// ============================================================
+function getROPanelFinalizationSuggestion(token) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied. EC Officer only.' };
+
+  var panel = getPublicROPanel();
+  if (!panel.success) return { success: false, message: panel.message };
+
+  var validObjectionRolls = {};
+  sheetData(SHEETS.RO_PANEL_OBJ).forEach(function(r) {
+    if (r[COL_ROBJ.AGM_YEAR].toString() === panel.agmYear &&
+        parseInt(r[COL_ROBJ.PANEL_ITERATION], 10) === panel.iteration &&
+        r[COL_ROBJ.DECISION].toString() === 'valid') {
+      validObjectionRolls[r[COL_ROBJ.TARGET_ROLL].toString()] = true;
+    }
+  });
+
+  var ranked = panel.rows.map(function(r) {
+    return {
+      roll: r.roll, name: r.name, batch: r.batch,
+      hasValidObjection: !!validObjectionRolls[r.roll]
+    };
+  });
+  ranked.sort(function(a, b) {
+    var ba = parseInt(a.batch, 10); if (isNaN(ba)) ba = 999999;
+    var bb = parseInt(b.batch, 10); if (isNaN(bb)) bb = 999999;
+    if (ba !== bb) return ba - bb;
+    return a.roll.localeCompare(b.roll, undefined, {numeric:true});
+  });
+
+  var suggested = ranked.filter(function(r) { return !r.hasValidObjection; })[0] || null;
+
+  return {
+    success: true, agmYear: panel.agmYear, iteration: panel.iteration,
+    windowOpen: panel.windowOpen, objDeadline: panel.objDeadline,
+    alreadyFinalized: !!panel.finalizedRoll,
+    finalizedRoll: panel.finalizedRoll, finalizedName: panel.finalizedName,
+    ranked: ranked,
+    suggestedRoll: suggested ? suggested.roll : '',
+    suggestedName: suggested ? suggested.name : '',
+    allObjectedOut: !suggested
+  };
+}
+
+// ============================================================
+// finalizeROPanel — EC explicitly confirms one panelist as the
+// Returning Officer designate for this AGM cycle. Only callable
+// once the 5-day objection window has actually closed, and refuses
+// to finalize anyone with a valid objection on record — the EC can
+// pick any clear panelist, not only the top-ranked suggestion, but
+// cannot override a valid objection.
+// Does NOT create an RO_ADMIN login — that remains a separate,
+// manual admin step (see bridge note — deliberately out of scope).
+// Access: EC_OFFICER only.
+// ============================================================
+function finalizeROPanel(token, rollNo) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'EC_OFFICER') return { success: false, message: 'Access denied. EC Officer only.' };
+
+  var panel = getPublicROPanel();
+  if (!panel.success) return { success: false, message: panel.message };
+  if (panel.finalizedRoll) {
+    return { success: false, message: 'Already finalized — ' + panel.finalizedName + ' (' + panel.finalizedRoll + ').' };
+  }
+  if (panel.windowOpen) {
+    return { success: false, message: 'Cannot finalize until the 5-day objection window closes (' + panel.objDeadline + ').' };
+  }
+
+  var cleanRoll = rollNo.toString().trim().toUpperCase();
+
+  // Self-dealing block — an EC Officer cannot finalize themselves as RO
+  // designate; another EC Officer must confirm it (see decideROPanelObjection).
+  if (cleanRoll === sess.identity.toString().toUpperCase()) {
+    return { success: false, message: 'You cannot finalize yourself as RO designate. Another EC Officer must confirm this.' };
+  }
+
+  var target = null;
+  for (var t = 0; t < panel.rows.length; t++) {
+    if (panel.rows[t].roll === cleanRoll) { target = panel.rows[t]; break; }
+  }
+  if (!target) return { success: false, message: 'That roll number is not on the currently published RO Panel.' };
+
+  var hasValidObjection = sheetData(SHEETS.RO_PANEL_OBJ).some(function(r) {
+    return r[COL_ROBJ.AGM_YEAR].toString() === panel.agmYear &&
+           parseInt(r[COL_ROBJ.PANEL_ITERATION], 10) === panel.iteration &&
+           r[COL_ROBJ.TARGET_ROLL].toString() === cleanRoll &&
+           r[COL_ROBJ.DECISION].toString() === 'valid';
+  });
+  if (hasValidObjection) {
+    return { success: false, message: 'Cannot finalize ' + target.name + ' — a valid objection is on record against them.' };
+  }
+
+  var sh = getSheet(SHEETS.RO_PANEL_LOG);
+  if (!sh) return { success: false, message: 'ROPanelLog sheet not found.' };
+  var rows = sh.getDataRange().getValues();
+  var found = false;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_RPL.AGM_YEAR].toString() === panel.agmYear &&
+        parseInt(rows[i][COL_RPL.PANEL_ITERATION], 10) === panel.iteration &&
+        rows[i][COL_RPL.ROLL_NO].toString() === cleanRoll) {
+      sh.getRange(i + 1, COL_RPL.FINALIZED    + 1).setValue(true);
+      sh.getRange(i + 1, COL_RPL.FINALIZED_AT + 1).setValue(now().toISOString());
+      found = true;
+      break;
+    }
+  }
+  if (!found) return { success: false, message: 'Panelist row not found in ROPanelLog.' };
+
+  appendAdminLog(sess.identity, 'ro_panel_finalized',
+    'RO Panel finalized for AGM ' + panel.agmYear + ' iteration ' + panel.iteration + ': ' +
+    target.name + ' (' + cleanRoll + ') confirmed as Returning Officer designate.',
+    '', cleanRoll);
+
+  try {
+    sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[RO Panel] Finalized — AGM ' + panel.agmYear,
+      '<p><strong>' + escHtml(target.name) + '</strong> (' + escHtml(cleanRoll) + ') has been confirmed as ' +
+      'Returning Officer designate for AGM ' + escHtml(panel.agmYear) + '.</p>' +
+      '<p>An RO_ADMIN account must still be created for them manually — this is not automatic.</p>');
+  } catch (e) {}
+
+  var directNotified = false;
+  if (target.email) {
+    try {
+      sendEmailViaSendGrid(target.email, 'SSKZM OBA — You Have Been Confirmed as Returning Officer Designate',
+        '<p>Dear ' + escHtml(target.name) + ',</p>' +
+        '<p>Following the RO Panel objection process (SOP 2.3), you have been confirmed as Returning ' +
+        'Officer designate for the ' + escHtml(panel.agmYear) + ' AGM.</p>' +
+        '<p>The Executive Committee will be in touch to complete your appointment and account setup.</p>' +
+        '<p>SSKZM OBA Elections</p>');
+      directNotified = true;
+    } catch (e) {}
+  }
+
+  return { success: true, finalizedRoll: cleanRoll, finalizedName: target.name, directNotified: directNotified,
+    message: target.name + ' confirmed as RO designate' +
+      (directNotified ? ' and notified directly by email.' : ' — no email on file to notify them directly.') +
+      ' An RO_ADMIN account must still be created for them manually.' };
+}
+
+// ============================================================
 // APPEALS MODULE
 // ============================================================
 
@@ -9268,6 +10513,25 @@ function _getActiveROEmails() {
         name:  rows[i][COL.ADMIN_NAME].toString()
       });
     }
+  }
+  return result;
+}
+
+// Returns [{ email, name }] for every currently ACTIVE Scrutineer — used to
+// keep Scrutineers automatically informed of RO↔Deputy RO handover events
+// (audit finding #8: the intent is transparency to oversight, not gating or
+// second-guessing the RO's authority to hand over, which the Bylaws leave
+// entirely at the RO's discretion).
+function _getActiveScrutineerEmails() {
+  var rows = sheetData(SHEETS.ADMINS);
+  var result = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][COL.ADMIN_ROLE].toString() !== 'SCRUTINEER') continue;
+    if (rows[i][COL.ADMIN_STATUS].toString().toUpperCase() !== 'ACTIVE') continue;
+    result.push({
+      email: rows[i][COL.ADMIN_EMAIL].toString(),
+      name:  rows[i][COL.ADMIN_NAME].toString()
+    });
   }
   return result;
 }
@@ -10513,6 +11777,7 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
     }
   }
   if (!candRow) return { success: false, message: 'Your voter record could not be found.' };
+  var candBatch = candRow[COL.VOTER_BATCH].toString();
 
   // 5. Validate proposer and seconder are on voter roll
   if (!propRoll || propRoll.trim() === '') {
@@ -10572,6 +11837,27 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
     }
   }
 
+  // Reject a proposer/seconder already backing a different candidate for the
+  // same post — previously unchecked, so the same roll number could be
+  // entered as proposer for one candidate and seconder (or proposer again)
+  // for another candidate on the same post with no rejection.
+  for (var bn = 0; bn < nomRows.length; bn++) {
+    var bnr = nomRows[bn];
+    if (bnr[COL.NOM_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (bnr[COL.NOM_POST].toString() !== postName) continue;
+    var bnStatus = bnr[COL.NOM_STATUS].toString();
+    if (bnStatus === 'withdrawn' || bnStatus === 'rejected' ||
+        bnStatus === 'consent_declined' || bnStatus === 'deadline_lapsed') continue;
+    var bnProp = bnr[COL.NOM_PROP_ROLL].toString().toUpperCase();
+    var bnSec  = bnr[COL.NOM_SEC_ROLL].toString().toUpperCase();
+    if (bnProp === propRoll || bnSec === propRoll) {
+      return { success: false, message: 'The proposed proposer (' + propRoll + ') is already backing another candidate for ' + postName + '.' };
+    }
+    if (bnProp === secRoll || bnSec === secRoll) {
+      return { success: false, message: 'The proposed seconder (' + secRoll + ') is already backing another candidate for ' + postName + '.' };
+    }
+  }
+
   // 6. Generate nomination ID and tokens
   var nomId     = 'NOM-' + new Date().getTime();
   var propToken = Utilities.getUuid();
@@ -10580,7 +11866,6 @@ function submitNomination(token, electionId, postName, propRoll, secRoll, bio) {
 
   var candName = (candRow[COL.VOTER_NAME].toString() + ' ' +
                   candRow[COL.VOTER_SURNAME].toString()).trim();
-  var candBatch = candRow[COL.VOTER_BATCH].toString();
   var candEmail = candRow[COL.VOTER_EMAIL].toString();
 
   // 7. Write nomination row
@@ -11642,6 +12927,62 @@ function getPublicVoterRoll() {
 }
 
 // ============================================================
+// getPublicROPanel — public accessor for the most recently
+// published RO Panel iteration (highest AGMYear, then highest
+// PanelIteration within it). SOP 2.3, 5-day objection window
+// computed reactively from PublishedAt — not a stored deadline.
+// ============================================================
+function getPublicROPanel() {
+  var rows = sheetData(SHEETS.RO_PANEL_LOG);
+  if (!rows.length) return { success: false, message: 'No RO Panel has been published yet.' };
+
+  var agmYear = rows.reduce(function(max, r) {
+    var y = r[COL_RPL.AGM_YEAR].toString();
+    return (parseInt(y, 10) > parseInt(max, 10)) ? y : max;
+  }, rows[0][COL_RPL.AGM_YEAR].toString());
+
+  var yearRows = rows.filter(function(r) { return r[COL_RPL.AGM_YEAR].toString() === agmYear; });
+  var maxIteration = 0;
+  yearRows.forEach(function(r) {
+    var it = parseInt(r[COL_RPL.PANEL_ITERATION], 10);
+    if (!isNaN(it) && it > maxIteration) maxIteration = it;
+  });
+
+  var panelRows = yearRows.filter(function(r) {
+    return parseInt(r[COL_RPL.PANEL_ITERATION], 10) === maxIteration;
+  });
+  if (!panelRows.length) return { success: false, message: 'No RO Panel has been published yet.' };
+
+  var publishedAt = panelRows[0][COL_RPL.PUBLISHED_AT].toString();
+  var deadline    = new Date(new Date(publishedAt).getTime() + 5 * 24 * 60 * 60 * 1000);
+  var windowOpen  = now().getTime() < deadline.getTime();
+  var deadlineStr = Utilities.formatDate(deadline, Session.getScriptTimeZone(), 'd MMM yyyy, h:mm a');
+
+  // Order preserved exactly as entered at publishROPanel — this IS the
+  // seniority order (batch-year-then-roll, EC-confirmed), not something
+  // this function should re-derive or re-sort.
+  // NOTE: `email` is included here for internal callers (finalizeROPanel,
+  // getROPanelFinalizationSuggestion) only. This same function backs the
+  // UNAUTHENTICATED ?action=ropanel public page — buildROPanelPage's HTML
+  // must never render r.email.
+  var panelists = panelRows.map(function(r) {
+    return {
+      roll:      r[COL_RPL.ROLL_NO].toString(),
+      name:      r[COL_RPL.NAME].toString(),
+      batch:     r[COL_RPL.BATCH].toString(),
+      email:     r[COL_RPL.EMAIL] ? r[COL_RPL.EMAIL].toString() : '',
+      finalized: r[COL_RPL.FINALIZED] ? r[COL_RPL.FINALIZED].toString().toLowerCase() === 'true' : false
+    };
+  });
+
+  var finalizedRow = panelists.filter(function(p) { return p.finalized; })[0] || null;
+
+  return { success: true, agmYear: agmYear, iteration: maxIteration, publishedAt: publishedAt,
+    objDeadline: deadlineStr, windowOpen: windowOpen, rows: panelists, count: panelists.length,
+    finalizedRoll: finalizedRow ? finalizedRow.roll : '', finalizedName: finalizedRow ? finalizedRow.name : ''};
+}
+
+// ============================================================
 // purgeTrialData — clears all transactional data for a
 // trial election. Preserves Voters, Admins, Elections row,
 // and AdminLog.
@@ -11855,6 +13196,327 @@ function addVoterToDraft(token, rollNo, name, surname, batch, email, notes, auth
     '', cleanRoll);
 
   return { success: true, rollNo: cleanRoll };
+}
+
+// ============================================================
+// VOTER ROLL OBJECTIONS MODULE (SOP 3.5) — additive on top of the existing
+// VoterRollDraft.ObjectionStatus field and certifyVoterRoll gate, which
+// already work today for RO/TEM-keyed objections (SOP 3.6, already
+// compliant). This module only adds member self-service filing.
+// ============================================================
+
+// ============================================================
+// _storeVoterRollObjectionDoc — supporting-document upload for a voter roll
+// objection. Same shape as _storeROPanelObjectionDoc/_storeTemObjectionDoc —
+// each flow gets its own dedicated Drive folder/DocStore category rather
+// than sharing one.
+// ============================================================
+function _storeVoterRollObjectionDoc(electionId, objectionId, uploaderRoll, filename, base64Data, mimeType) {
+  var ROOT_FOLDER_NAME = 'SSKZM OBA Elections';
+  var rootIter = DriveApp.getFoldersByName(ROOT_FOLDER_NAME);
+  var rootFolder = rootIter.hasNext() ? rootIter.next() : DriveApp.createFolder(ROOT_FOLDER_NAME);
+  var subName = 'Voter Roll Objections — ' + electionId;
+  var subIter = rootFolder.getFoldersByName(subName);
+  var folder = subIter.hasNext() ? subIter.next() : rootFolder.createFolder(subName);
+
+  var decoded  = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType || 'application/octet-stream', filename);
+  var file     = folder.createFile(decoded);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var driveUrl = file.getUrl();
+
+  var docId = 'DOC-VROBJ-' + Date.now();
+  var docSh = getSheet(SHEETS.DOC_STORE);
+  if (docSh) {
+    var newRow = [];
+    newRow[COL.DOC_ID]            = docId;
+    newRow[COL.DOC_ELEC_ID]       = electionId;
+    newRow[COL.DOC_CATEGORY]      = 'voter_roll_objection_support';
+    newRow[COL.DOC_UPLOADER_ROLL] = uploaderRoll;
+    newRow[COL.DOC_UPLOADER_ROLE] = 'VOTER';
+    newRow[COL.DOC_FILENAME]      = filename;
+    newRow[COL.DOC_GDRIVE_URL]    = driveUrl;
+    newRow[COL.DOC_UPLOADED_AT]   = new Date().toISOString();
+    newRow[COL.DOC_NOTES]         = 'voterRollObjRef:' + objectionId;
+    newRow[COL.DOC_LINKED_TAB]    = 'VoterRollObjections';
+    docSh.appendRow(newRow);
+  }
+  return { docId: docId, driveUrl: driveUrl };
+}
+
+// ============================================================
+// fileVoterRollObjection — logged-in member files an objection to the
+// inclusion or exclusion of any person on the draft voter roll (SOP 3.5).
+// 'inclusion' requires an existing VoterRollDraft row and flips its
+// ObjectionStatus to 'objected' — the exact field/mechanism
+// updateObjectionStatus/certifyVoterRoll already rely on today, so those
+// are unaffected. 'exclusion' has no existing row to point at, so nothing
+// on VoterRollDraft changes until the RO acts (see decideVoterRollObjection).
+// Access: any authenticated member (VOTER session).
+// ============================================================
+function fileVoterRollObjection(token, electionId, objectionType, targetRollNo, targetName,
+                                 objectionText, docFilename, docBase64, docMimeType) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+
+  if (objectionType !== 'inclusion' && objectionType !== 'exclusion') {
+    return { success: false, message: 'Invalid objection type.' };
+  }
+  if (!electionId) return { success: false, message: 'Election ID is required.' };
+  if (!targetRollNo || !targetRollNo.toString().trim()) {
+    return { success: false, message: 'Roll number is required.' };
+  }
+  if (!objectionText || !objectionText.toString().trim()) {
+    return { success: false, message: 'Please provide details in support of your objection.' };
+  }
+  if (docBase64 && docBase64.length > 7000000) {
+    return { success: false, message: 'Supporting document too large. Maximum size is 5MB.' };
+  }
+
+  if (isVoterRollCertified(electionId)) {
+    return { success: false, message: 'The voter roll has already been certified. The objection window has closed.' };
+  }
+
+  // Window check — only enforced if this election actually has a schedule
+  // with a set deadline; permissive otherwise, since not every election has
+  // one (same reasoning getPublicVoterRoll already uses for display).
+  var schedRows = sheetData(SHEETS.ELECTION_SCHED);
+  for (var s = 0; s < schedRows.length; s++) {
+    if (schedRows[s][COL_SCHED.ELEC_ID].toString() !== electionId.toString()) continue;
+    var raw = schedRows[s][COL_SCHED.VOTER_ROLL_OBJ_CLOSE];
+    if (raw) {
+      var schedDeadline = new Date(raw);
+      if (!isNaN(schedDeadline.getTime()) && now().getTime() > schedDeadline.getTime()) {
+        return { success: false, message: 'The voter roll objection window has closed.' };
+      }
+    }
+    break;
+  }
+
+  var cleanRoll = targetRollNo.toString().trim().toUpperCase();
+  var draftSh = getSheet(SHEETS.VOTER_ROLL_DRAFT);
+  if (!draftSh) return { success: false, message: 'VoterRollDraft sheet not found.' };
+  var draftRowIdx = -1, draftData = draftSh.getDataRange().getValues();
+
+  if (objectionType === 'inclusion') {
+    for (var d = 1; d < draftData.length; d++) {
+      if (draftData[d][COL_VRD.ROLL].toString().trim().toUpperCase() === cleanRoll) { draftRowIdx = d; break; }
+    }
+    if (draftRowIdx === -1) {
+      return { success: false, message: 'That roll number is not on the draft voter roll — inclusion objections must reference an existing entry.' };
+    }
+    if (cleanRoll === sess.identity.toString().toUpperCase()) {
+      return { success: false, message: 'You cannot file an inclusion objection against yourself.' };
+    }
+    // Trust the sheet's own name over anything the caller might pass for an
+    // existing entry — targetName param is only actually used for exclusion.
+    targetName = (draftData[draftRowIdx][COL_VRD.NAME].toString() + ' ' +
+                  draftData[draftRowIdx][COL_VRD.SURNAME].toString()).trim();
+  } else {
+    targetName = targetName ? targetName.toString().trim() : '';
+    if (!targetName) {
+      return { success: false, message: 'Please provide the name of the member who should be included.' };
+    }
+  }
+
+  // One objection per member per target per type
+  var existing = sheetData(SHEETS.VOTER_ROLL_OBJ);
+  for (var i = 0; i < existing.length; i++) {
+    var er = existing[i];
+    if (er[COL_VOBJ.ELEC_ID].toString()    === electionId.toString() &&
+        er[COL_VOBJ.OBJ_TYPE].toString()   === objectionType &&
+        er[COL_VOBJ.TARGET_ROLL].toString() === cleanRoll &&
+        er[COL_VOBJ.FILED_BY].toString()   === sess.identity.toString()) {
+      return { success: false, message: 'You have already filed this objection.' };
+    }
+  }
+
+  var sh = getSheet(SHEETS.VOTER_ROLL_OBJ);
+  if (!sh) return { success: false, message: 'VoterRollObjections sheet not found. Run initSystemBSheets() first.' };
+
+  var id = generateId();
+  var ts = now().toISOString();
+
+  var docUploaded = false, docUrl = '';
+  if (docFilename && docBase64) {
+    try {
+      var docResult = _storeVoterRollObjectionDoc(electionId, id, sess.identity.toString(), docFilename, docBase64, docMimeType);
+      docUploaded = true;
+      docUrl = docResult.driveUrl;
+    } catch (e) {}
+  }
+
+  var newRow = new Array(13).fill('');
+  newRow[COL_VOBJ.ID]             = id;
+  newRow[COL_VOBJ.ELEC_ID]        = electionId.toString();
+  newRow[COL_VOBJ.OBJ_TYPE]       = objectionType;
+  newRow[COL_VOBJ.TARGET_ROLL]    = cleanRoll;
+  newRow[COL_VOBJ.TARGET_NAME]    = targetName;
+  newRow[COL_VOBJ.FILED_BY]       = sess.identity.toString();
+  newRow[COL_VOBJ.FILED_AT]       = ts;
+  newRow[COL_VOBJ.OBJECTION_TEXT] = objectionText.toString().trim();
+  newRow[COL_VOBJ.DECISION]       = 'pending';
+  newRow[COL_VOBJ.DOC_LINKS]      = docUploaded ? docUrl : '';
+  sh.appendRow(newRow);
+
+  // Inclusion objections flip the existing status flag — this is the whole
+  // reason certifyVoterRoll's existing "any row still 'objected'?" gate
+  // needs no changes at all to pick this up.
+  if (objectionType === 'inclusion') {
+    draftSh.getRange(draftRowIdx + 1, COL_VRD.OBJECTION_STATUS + 1).setValue('objected');
+  }
+
+  appendAdminLog(sess.identity, 'voter_roll_objection_filed',
+    'Voter roll objection filed (' + objectionType + ') against ' + targetName + ' (' + cleanRoll + ')' +
+    (docUploaded ? ' | Document attached.' : ''), '', id);
+
+  try {
+    var roEmails = _getActiveROEmails();
+    roEmails.forEach(function(ro) {
+      sendEmailViaSendGrid(ro.email, '[Voter Roll] Objection Filed — ' + targetName + ' (' + cleanRoll + ')',
+        '<p>A ' + objectionType + ' objection has been filed regarding <strong>' + escHtml(targetName) +
+        '</strong> (' + escHtml(cleanRoll) + ').</p>' +
+        (docUploaded ? '<p>Supporting document: <a href="' + docUrl + '">' + escHtml(docFilename) + '</a></p>' : '') +
+        '<p>Review it in the Roll Draft screen.</p>');
+    });
+  } catch (e) {}
+
+  return { success: true, id: id, docUploaded: docUploaded };
+}
+
+// ============================================================
+// getVoterRollObjections — RO/TEM review list for an election.
+// Access: RO_ADMIN, DEPUTY_RO, TEM (matches updateObjectionStatus's existing
+// access pattern for this same sheet's neighbouring data).
+// ============================================================
+function getVoterRollObjections(token, electionId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  if (!electionId) return { success: false, message: 'Election ID is required.' };
+
+  var rows = sheetData(SHEETS.VOTER_ROLL_OBJ).filter(function(r) {
+    return r[COL_VOBJ.ELEC_ID].toString() === electionId.toString();
+  });
+
+  var objections = rows.map(function(r) {
+    return {
+      id:            r[COL_VOBJ.ID].toString(),
+      objectionType: r[COL_VOBJ.OBJ_TYPE].toString(),
+      targetRoll:    r[COL_VOBJ.TARGET_ROLL].toString(),
+      targetName:    r[COL_VOBJ.TARGET_NAME].toString(),
+      filedBy:       r[COL_VOBJ.FILED_BY].toString(),
+      filedAt:       r[COL_VOBJ.FILED_AT].toString(),
+      objectionText: r[COL_VOBJ.OBJECTION_TEXT].toString(),
+      decision:      r[COL_VOBJ.DECISION].toString(),
+      decisionNotes: r[COL_VOBJ.DECISION_NOTES] ? r[COL_VOBJ.DECISION_NOTES].toString() : '',
+      decidedBy:     r[COL_VOBJ.DECIDED_BY]     ? r[COL_VOBJ.DECIDED_BY].toString()     : '',
+      decidedAt:     r[COL_VOBJ.DECIDED_AT]     ? r[COL_VOBJ.DECIDED_AT].toString()     : '',
+      docUrl:        r[COL_VOBJ.DOC_LINKS]      ? r[COL_VOBJ.DOC_LINKS].toString()      : ''
+    };
+  });
+
+  return { success: true, objections: objections };
+}
+
+// ============================================================
+// decideVoterRollObjection — RO/TEM records upheld/dismissed + reasons.
+// Per SOP 3.5, the decision (with reasons) is mandatorily communicated back
+// to the objecting member directly, not just logged internally. An upheld
+// inclusion objection flips ObjectionStatus to 'resolved_removed' (the exact
+// field findVoter/certifyVoterRoll already check — see prior conversation
+// confirming this takes effect immediately, not just at certification); a
+// dismissed one flips it to 'resolved_retained'. Upheld exclusion objections
+// still need the RO to separately run addVoterToDraft — deliberately not
+// automated here, same "decide vs. act" split as the rest of this codebase.
+// Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated).
+// ============================================================
+function decideVoterRollObjection(token, objectionId, decision, decisionNotes, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'decideVoterRollObjection', null);
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  if (decision !== 'upheld' && decision !== 'dismissed') {
+    return { success: false, message: 'Decision must be upheld or dismissed.' };
+  }
+
+  var sh = getSheet(SHEETS.VOTER_ROLL_OBJ);
+  if (!sh) return { success: false, message: 'VoterRollObjections sheet not found.' };
+  var rows = sh.getDataRange().getValues();
+  var objRowIdx = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][COL_VOBJ.ID].toString() === objectionId.toString()) { objRowIdx = i; break; }
+  }
+  if (objRowIdx === -1) return { success: false, message: 'Objection not found.' };
+
+  var objRow = rows[objRowIdx];
+  if (objRow[COL_VOBJ.FILED_BY].toString() === sess.identity.toString()) {
+    return { success: false, message: 'You cannot decide an objection you filed yourself.' };
+  }
+
+  var objType    = objRow[COL_VOBJ.OBJ_TYPE].toString();
+  var targetRoll = objRow[COL_VOBJ.TARGET_ROLL].toString();
+  var targetName = objRow[COL_VOBJ.TARGET_NAME].toString();
+  var filedBy    = objRow[COL_VOBJ.FILED_BY].toString();
+  var prevDecision = objRow[COL_VOBJ.DECISION].toString();
+
+  sh.getRange(objRowIdx + 1, COL_VOBJ.DECISION       + 1).setValue(decision);
+  sh.getRange(objRowIdx + 1, COL_VOBJ.DECISION_NOTES + 1).setValue(decisionNotes || '');
+  sh.getRange(objRowIdx + 1, COL_VOBJ.DECIDED_BY     + 1).setValue(sess.identity);
+  sh.getRange(objRowIdx + 1, COL_VOBJ.DECIDED_AT     + 1).setValue(now().toISOString());
+
+  if (objType === 'inclusion') {
+    var draftSh = getSheet(SHEETS.VOTER_ROLL_DRAFT);
+    if (draftSh) {
+      var draftData = draftSh.getDataRange().getValues();
+      for (var d = 1; d < draftData.length; d++) {
+        if (draftData[d][COL_VRD.ROLL].toString().trim().toUpperCase() === targetRoll) {
+          draftSh.getRange(d + 1, COL_VRD.OBJECTION_STATUS + 1)
+            .setValue(decision === 'upheld' ? 'resolved_removed' : 'resolved_retained');
+          break;
+        }
+      }
+    }
+  }
+
+  appendAdminLog(sess.identity, 'voter_roll_objection_decided',
+    'Voter roll objection ' + objectionId + ' (' + objType + ', target ' + targetRoll + ') decided: ' + decision +
+    (decisionNotes ? ' | Notes: ' + decisionNotes : ''),
+    prevDecision, decision);
+
+  // Mandatory reply to the objector, per SOP 3.5 — "communicate the decision
+  // ... in writing ... stating reasons."
+  try {
+    var objectorVoter = findVoter(filedBy);
+    if (objectorVoter && objectorVoter.email) {
+      sendEmailViaSendGrid(objectorVoter.email, 'SSKZM OBA — Decision on Your Voter Roll Objection',
+        '<p>Your objection regarding ' + escHtml(targetName || targetRoll) + ' (Roll No ' + escHtml(targetRoll) +
+        ') has been <strong>' + (decision === 'upheld' ? 'upheld' : 'dismissed') + '</strong>.</p>' +
+        (decisionNotes ? '<p><strong>Reasons:</strong> ' + escHtml(decisionNotes) + '</p>' : '') +
+        '<p>SSKZM OBA Elections</p>');
+    }
+  } catch (e) {}
+
+  // EC copy only when the decision actually changes something — dismissed
+  // objections leave the roll as-is, nothing for EC to act on.
+  if (decision === 'upheld') {
+    try {
+      sendEmailViaSendGrid(EC_OFFICIAL_EMAIL, '[EC COPY] Voter Roll Objection Upheld — ' + targetName,
+        '<p>A ' + objType + ' objection regarding <strong>' + escHtml(targetName) + '</strong> (' +
+        escHtml(targetRoll) + ') has been upheld.</p>' +
+        (objType === 'inclusion'
+          ? '<p>This entry will be excluded when the roll is certified.</p>'
+          : '<p>The RO still needs to add this member to the draft roll manually.</p>') +
+        (decisionNotes ? '<p>Reasons: ' + escHtml(decisionNotes) + '</p>' : ''));
+    } catch (e) {}
+  }
+
+  return { success: true };
 }
 
 // ============================================================
@@ -12653,15 +14315,21 @@ function getElectionRecordData(token, electionId) {
     tallyResult.posts.forEach(function(post) {
       var cands = post.candidates || []; // already sorted desc by getLiveTally
       var seats = post.seatCount || 1;
-      var winners = cands.slice(0, seats).filter(function(c) { return c.votes > 0; });
-      // Tie check at the actual seat-cutoff boundary, not 1st vs 2nd place
-      var tie = !!(cands[seats - 1] && cands[seats] && cands[seats - 1].votes === cands[seats].votes);
+      // Use the elected/tied flags getLiveTally already computes — these
+      // correctly account for a recorded draw-of-lots resolution. A raw
+      // positional slice of the sorted array ignored that resolution and
+      // could report a "winner" who was never actually declared the winner
+      // of a tie (see Code.js declaration gate above, which now blocks
+      // declaration entirely while post.tieUnresolved is true).
+      var winners = cands.filter(function(c) { return c.elected; });
+      var tied    = cands.filter(function(c) { return c.tied; });
       record.winnersSummary.push({
         post:      post.post,
         seatCount: seats,
         winners:   winners.map(function(c) { return { name: c.name, roll: c.roll, votes: c.votes }; }),
         nota:      post.nota,
-        tie:       tie
+        tie:       !!post.tieUnresolved,
+        tied:      tied.map(function(c) { return { name: c.name, roll: c.roll, votes: c.votes }; })
       });
     });
   }
@@ -12721,6 +14389,37 @@ function getElectionRecordData(token, electionId) {
   record.adminLog = electionScopedLog.map(_alogRow);
   record.adminLogTotalSystemWide = allLog.length;
 
+  // ── 9. Pre-Election Security Verification Checklist (Appendix H) ──
+  // Was previously omitted from this record entirely — a real gap, since
+  // the checklist is the system's own security sign-off and belongs in the
+  // official archive alongside everything else, not just referenced in a
+  // "known gaps" footnote.
+  var checklistRows = sheetData(SHEETS.PRESEC_CHECKLIST).filter(function(r) {
+    return r[COL_PRESEC.ELEC_ID].toString() === electionId.toString();
+  });
+  var checklistByCode = {};
+  checklistRows.forEach(function(r) {
+    checklistByCode[r[COL_PRESEC.ITEM_CODE].toString()] = r;
+  });
+  record.preSecChecklist = PRESEC_ITEMS.map(function(item) {
+    var r = checklistByCode[item.code];
+    return {
+      code: item.code, part: item.part, label: item.label, star: item.star,
+      completed:     !!r,
+      completedBy:   r ? r[COL_PRESEC.COMPLETED_BY].toString()   : '',
+      completedRole: r ? r[COL_PRESEC.COMPLETED_ROLE].toString() : '',
+      completedAt:   r ? r[COL_PRESEC.COMPLETED_AT].toString()   : '',
+      sc1By:         r ? r[COL_PRESEC.SC1_BY].toString()         : '',
+      sc1At:         r ? r[COL_PRESEC.SC1_AT].toString()         : '',
+      sc2By:         r ? r[COL_PRESEC.SC2_BY].toString()         : '',
+      sc2At:         r ? r[COL_PRESEC.SC2_AT].toString()         : '',
+      notes:         r ? r[COL_PRESEC.NOTES].toString()          : ''
+    };
+  });
+  record.preSecChecklistComplete = record.preSecChecklist.every(function(i) {
+    return i.completed && (!i.star || (i.sc1By && i.sc2By));
+  });
+
   // ── 10. CoC complaints (item 12) ─────────────────────────────
   var complaintsResult = getComplaints(token, electionId);
   record.complaints = complaintsResult.success ? complaintsResult.complaints : [];
@@ -12754,7 +14453,7 @@ function getElectionRecordData(token, electionId) {
     technicalInterruptions: 'Not separately logged — see AdminLog entries for paused/active transitions during the voting window.',
     adminLogScope: 'AdminLog entries shown are filtered to this election on a best-effort basis (matched by election reference in the log entry). Some older or system-level action types do not carry an explicit election reference and may not appear here even if related. Total system-wide log size at time of compilation: ' + record.adminLogTotalSystemWide + ' entries.',
     vvaVerificationSummary: 'Voter Verification App summary lives in the standalone VVA project — attach separately if required.',
-    handoverChecklistRestructured: 'This election record no longer includes a separate "Handover Checklist" section. EC-officer lockout is independently enforced by a hard gate before nominations can open; sheet-protection status and voter-roll certification are independently verified in the Pre-Election Security Verification Checklist (Appendix H) and the Settings tab; version/GitHub verification is recorded solely in the Settings tab. See AdminLog action types ec_officers_locked, sheet_protections_applied, version_verified, and github_org_transferred for the underlying records.'
+    handoverChecklistRestructured: 'This election record no longer includes a separate "Handover Checklist" section. EC-officer lockout is independently enforced by a hard gate before nominations can open; the Pre-Election Security Verification Checklist (Appendix H) is reproduced in full in Section 9 below; version/GitHub verification is recorded solely in the Settings tab. See AdminLog action types ec_officers_locked, sheet_protections_applied, version_verified, and github_org_transferred for the underlying records.'
   };
 
   return { success: true, record: record };
@@ -12853,7 +14552,9 @@ function _buildElectionRecordHtml(record, generatedBy) {
       votesCell  = '—';
     } else {
       winnerCell = w.winners.map(function(win) { return escHtml(win.name); }).join('<br>') +
-        (w.tie ? ' <strong style="color:#c0392b;">(TIE for final seat - see Draw of Lots)</strong>' : '');
+        (w.tie ? ' <strong style="color:#c0392b;">(TIE for final seat between ' +
+          w.tied.map(function(t) { return escHtml(t.name); }).join(', ') +
+          ' — see Draw of Lots)</strong>' : '');
       votesCell  = w.winners.map(function(win) { return win.votes; }).join('<br>');
     }
     html += '<tr><td>' + escHtml(w.post) + (w.seatCount > 1 ? ' (' + w.seatCount + ' seats)' : '') +
@@ -12943,7 +14644,25 @@ function _buildElectionRecordHtml(record, generatedBy) {
   });
   html += '</table>';
 
-  html += '<h2>10. AdminLog - Entries for This Election (' + record.adminLog.length +
+  html += '<h2>10. Pre-Election Security Verification Checklist (Appendix H)' +
+    (record.preSecChecklistComplete ? '' : ' <span style="color:#c0392b;">(INCOMPLETE)</span>') + '</h2>';
+  html += '<table><tr><th>Item</th><th>Part</th><th>Completed By</th><th>Completed At</th><th>Scrutineer Confirmations</th><th>Notes</th></tr>';
+  record.preSecChecklist.forEach(function(item) {
+    var status = item.completed
+      ? escHtml(item.label)
+      : '<span style="color:#c0392b;">' + escHtml(item.label) + ' — NOT COMPLETED</span>';
+    var sc = item.star
+      ? (item.sc1By && item.sc2By ? escHtml(item.sc1By) + ', ' + escHtml(item.sc2By)
+                                   : '<span style="color:#c0392b;">Incomplete</span>')
+      : '—';
+    html += '<tr><td>' + item.code + ': ' + status + '</td><td>' + escHtml(item.part) + '</td><td>' +
+      escHtml(item.completedBy) + (item.completedRole ? ' (' + escHtml(item.completedRole) + ')' : '') +
+      '</td><td>' + (item.completedAt ? _fmtISTServer(item.completedAt) : '—') + '</td><td>' + sc +
+      '</td><td>' + escHtml(item.notes) + '</td></tr>';
+  });
+  html += '</table>';
+
+  html += '<h2>11. AdminLog - Entries for This Election (' + record.adminLog.length +
     ' of ' + record.adminLogTotalSystemWide + ' total system-wide entries)</h2>';
   html += '<table><tr><th>Timestamp</th><th>Admin</th><th>Action</th><th>Description</th></tr>';
   record.adminLog.forEach(function(l) {
@@ -12952,7 +14671,7 @@ function _buildElectionRecordHtml(record, generatedBy) {
   });
   html += '</table>';
 
-  html += '<h2>11. Known Gaps in This Record</h2>' +
+  html += '<h2>12. Known Gaps in This Record</h2>' +
     '<div class="note">Technical interruptions: ' + escHtml(record.notes.technicalInterruptions) + '</div>' +
     '<div class="note" style="margin-top:6px;">VVA verification summary: ' + escHtml(record.notes.vvaVerificationSummary) + '</div>' +
     '<div class="note" style="margin-top:6px;">AdminLog scope: ' + escHtml(record.notes.adminLogScope) + '</div>' +

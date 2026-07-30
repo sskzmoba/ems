@@ -12,14 +12,18 @@ var ECOfficerPanel = (function() {
     { id: 'overview',     label: 'Overview' },
     { id: 'voterroll',    label: 'Voter Roll' },
     { id: 'messages',     label: 'Messages' },
-    { id: 'landingpage',  label: 'Landing Page' }
+    { id: 'landingpage',  label: 'Landing Page' },
+    { id: 'ropanel',      label: 'RO Panel' }
   ];
 
-  // GS sees all tabs; PRESIDENT and VP see Overview + Messages only
+  // GS sees all tabs; PRESIDENT and VP see Overview + Messages + RO Panel.
+  // RO Panel is deliberately visible to every EC_OFFICER sub-type, not just
+  // GS — the self-dealing blocks in decideROPanelObjection/finalizeROPanel
+  // only mean something if more than one person can actually reach this screen.
   function _getTabsForType(type) {
     if (type === 'GS') return TABS;
     return TABS.filter(function(t) {
-      return t.id === 'overview' || t.id === 'messages';
+      return t.id === 'overview' || t.id === 'messages' || t.id === 'ropanel';
     });
   }
 
@@ -44,6 +48,7 @@ var ECOfficerPanel = (function() {
     if (tabId === 'voterroll')   return _renderVoterRoll();
     if (tabId === 'messages')    { _loadMessages();    return _spinner(); }
     if (tabId === 'landingpage') { _loadLandingPage(); return _spinner(); }
+    if (tabId === 'ropanel')     { _loadROPanel();     return _spinner(); }
     return _comingSoon(tabId);
   }
 
@@ -536,6 +541,162 @@ var ECOfficerPanel = (function() {
     );
   }
 
+  // ── RO PANEL (SOP 2.3) ───────────────────────────────────────
+  // publishROPanel / decideROPanelObjection / finalizeROPanel are all
+  // EC_OFFICER-only with a self-dealing block on the latter two — this tab
+  // is deliberately visible to every EC_OFFICER sub-type (see _getTabsForType)
+  // so that block actually means something rather than locking one person out
+  // of their own screen.
+
+  function _loadROPanel() {
+    var pending = 2, suggestion = null, objections = null;
+    function done() {
+      pending--;
+      if (pending > 0) return;
+      var content = document.getElementById('ec-content');
+      if (!content) return;
+      content.innerHTML = _renderROPanel(suggestion, objections);
+    }
+    google.script.run
+      .withSuccessHandler(function(res) { suggestion = res; done(); })
+      .withFailureHandler(function() { suggestion = { success: false, message: 'Connection error.' }; done(); })
+      .getROPanelFinalizationSuggestion(App.token);
+    google.script.run
+      .withSuccessHandler(function(res) { objections = res; done(); })
+      .withFailureHandler(function() { objections = { success: false, message: 'Connection error.' }; done(); })
+      .getROPanelObjections(App.token);
+  }
+
+  function _roPanelPanelistRowHtml() {
+    return '<div class="ropanel-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">' +
+      '<input type="text" class="rp-roll" placeholder="Roll No" ' +
+        'style="width:90px;padding:8px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+      '<input type="text" class="rp-name" placeholder="Name" ' +
+        'style="flex:1;padding:8px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;min-width:0;" />' +
+      '<input type="text" class="rp-batch" placeholder="Batch" ' +
+        'style="width:70px;padding:8px;font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;" />' +
+      '<button type="button" onclick="this.parentElement.remove()" ' +
+        'style="padding:8px 10px;background:#fee2e2;color:#b91c1c;border:none;border-radius:4px;cursor:pointer;">×</button>' +
+    '</div>';
+  }
+
+  function _renderROPanel(suggestion, objections) {
+    var html =
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Publish RO Panel</div>' +
+        '<div class="panel-card-body" style="padding:14px 16px;">' +
+          '<p style="font-size:.85rem;color:#374151;margin-bottom:12px;">' +
+            'Independent manual entry — roll/name/batch, not looked up against any voter roll. ' +
+            'Enter the senior-most willing, eligible members in seniority order (SOP 2.3).' +
+          '</p>' +
+          '<label style="font-size:.82rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">AGM Year</label>' +
+          '<input type="text" id="rp-agm-year" placeholder="e.g. 2026" ' +
+            'style="width:100%;box-sizing:border-box;padding:10px;font-size:.9rem;' +
+            'border:1px solid #d1d5db;border-radius:4px;margin-bottom:12px;" />' +
+          '<label style="font-size:.82rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">' +
+            'Election ID (optional — only needed to send a mass notice via an already-uploaded voter roll)</label>' +
+          '<input type="text" id="rp-election-id" placeholder="Leave blank to skip the mass notice" ' +
+            'style="width:100%;box-sizing:border-box;padding:10px;font-size:.9rem;' +
+            'border:1px solid #d1d5db;border-radius:4px;margin-bottom:14px;" />' +
+          '<label style="font-size:.82rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Panelists</label>' +
+          '<div id="ropanel-rows">' +
+            new Array(15).fill(0).map(_roPanelPanelistRowHtml).join('') +
+          '</div>' +
+          '<button type="button" onclick="ECOfficerPanel._addROPanelRow()" ' +
+            'style="padding:8px 12px;background:#f0f4f8;color:#1a3a5c;border:1px solid #c8d4e0;' +
+            'border-radius:4px;cursor:pointer;font-size:.82rem;margin-bottom:14px;">+ Add Row</button>' +
+          '<div id="rp-publish-error" style="color:#c0392b;font-size:.85rem;margin-bottom:10px;display:none;"></div>' +
+          '<button class="btn btn-primary" onclick="ECOfficerPanel._publishROPanel()" ' +
+            'style="width:100%;padding:14px;font-size:1rem;">Publish Panel</button>' +
+        '</div>' +
+      '</div>';
+
+    if (suggestion && suggestion.success) {
+      var statusLine = suggestion.alreadyFinalized
+        ? '<div style="font-size:.82rem;color:#059669;font-weight:600;">Finalized — ' + escHtml(suggestion.finalizedName) + ' (' + escHtml(suggestion.finalizedRoll) + ')</div>'
+        : suggestion.windowOpen
+          ? '<div style="font-size:.82rem;color:#92400e;font-weight:600;">Objection window open until ' + escHtml(suggestion.objDeadline) + '</div>'
+          : '<div style="font-size:.82rem;color:#6b7280;font-weight:600;">Objection window closed ' + escHtml(suggestion.objDeadline) + '</div>';
+
+      html +=
+        '<div class="panel-card" style="margin-bottom:12px;">' +
+          '<div class="panel-card-header">Current Panel — AGM ' + escHtml(suggestion.agmYear) + ', Iteration ' + suggestion.iteration + '</div>' +
+          '<div class="panel-card-body" style="padding:14px 16px;">' +
+            statusLine +
+            '<div style="margin-top:10px;">';
+
+      suggestion.ranked.forEach(function(r) {
+        var isSuggested = (r.roll === suggestion.suggestedRoll);
+        html +=
+          '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;' +
+            (isSuggested ? 'background:#f0fdf4;' : '') + '">' +
+            '<div style="width:70px;flex-shrink:0;font-size:.82rem;color:#374151;">' + escHtml(r.roll) + '</div>' +
+            '<div style="flex:1;min-width:0;font-size:.85rem;color:#1a3a5c;">' + escHtml(r.name) +
+              (isSuggested ? ' <span style="color:#059669;font-weight:600;">★ Suggested</span>' : '') +
+              (r.hasValidObjection ? ' <span style="color:#c0392b;">— valid objection recorded</span>' : '') +
+            '</div>' +
+            '<div style="width:60px;flex-shrink:0;text-align:right;font-size:.8rem;color:#6b7280;">' + escHtml(r.batch) + '</div>' +
+            (!suggestion.windowOpen && !suggestion.alreadyFinalized && !r.hasValidObjection ?
+              '<button onclick="ECOfficerPanel._finalizeROPanel(\'' + escHtml(r.roll) + '\',\'' + escHtml(r.name).replace(/'/g,"\\'") + '\')" ' +
+                'style="padding:7px 12px;background:#059669;color:#fff;border:none;border-radius:4px;' +
+                'cursor:pointer;font-size:.78rem;white-space:nowrap;">Finalize as RO</button>'
+              : '') +
+          '</div>';
+      });
+
+      html += '</div>';
+
+      if (!suggestion.windowOpen && !suggestion.alreadyFinalized && suggestion.allObjectedOut) {
+        html += '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;' +
+          'padding:10px 14px;margin-top:10px;font-size:.82rem;color:#92400e;">' +
+          'Every panelist in this iteration has a valid objection recorded. Publish the next 15 in ' +
+          'seniority order above as the next iteration.</div>';
+      }
+
+      html += '</div></div>';
+    }
+
+    html +=
+      '<div class="panel-card">' +
+        '<div class="panel-card-header">Objections</div>' +
+        '<div class="panel-card-body" style="padding:14px 16px;">';
+
+    var objList = (objections && objections.success) ? objections.objections : [];
+    if (objList.length === 0) {
+      html += '<div style="color:#6b7280;font-size:.85rem;">No objections filed for the current iteration.</div>';
+    } else {
+      objList.forEach(function(o) {
+        var decColor = o.decision === 'valid' ? '#c0392b' : o.decision === 'invalid' ? '#6b7280' : '#92400e';
+        var decLabel = o.decision === 'valid' ? 'Valid' : o.decision === 'invalid' ? 'Invalid' : 'Pending';
+        html +=
+          '<div style="padding:12px 0;border-bottom:1px solid #f3f4f6;">' +
+            '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;">' +
+              '<div style="font-size:.85rem;font-weight:600;color:#1a3a5c;">Against: ' + escHtml(o.targetName) + ' (' + escHtml(o.targetRoll) + ')</div>' +
+              '<span style="font-size:.75rem;color:' + decColor + ';font-weight:600;white-space:nowrap;">' + decLabel + '</span>' +
+            '</div>' +
+            '<div style="font-size:.78rem;color:#6b7280;margin-bottom:6px;">Filed by ' + escHtml(o.filedBy) + '</div>' +
+            '<div style="font-size:.85rem;color:#374151;margin-bottom:8px;">' + escHtml(o.objectionText) + '</div>' +
+            (o.docUrl ? '<div style="margin-bottom:8px;"><a href="' + escHtml(o.docUrl) + '" target="_blank" ' +
+              'style="font-size:.8rem;color:#1a3a5c;">📎 View Supporting Document</a></div>' : '') +
+            (o.decision === 'pending' ?
+              '<textarea id="ropanel-obj-notes-' + escHtml(o.id) + '" rows="2" placeholder="Decision notes (optional)" ' +
+                'style="width:100%;box-sizing:border-box;padding:8px;font-size:.82rem;' +
+                'border:1px solid #d1d5db;border-radius:4px;margin-bottom:8px;resize:vertical;"></textarea>' +
+              '<div style="display:flex;gap:8px;">' +
+                '<button onclick="ECOfficerPanel._decideROPanelObj(\'' + escHtml(o.id) + '\',\'valid\')" ' +
+                  'style="flex:1;padding:8px;background:#fee2e2;color:#b91c1c;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Mark Valid</button>' +
+                '<button onclick="ECOfficerPanel._decideROPanelObj(\'' + escHtml(o.id) + '\',\'invalid\')" ' +
+                  'style="flex:1;padding:8px;background:#f3f4f6;color:#374151;border:none;border-radius:4px;cursor:pointer;font-size:.82rem;">Mark Invalid</button>' +
+              '</div>'
+              : (o.decisionNotes ? '<div style="font-size:.78rem;color:#6b7280;">Notes: ' + escHtml(o.decisionNotes) + '</div>' : '')) +
+          '</div>';
+      });
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
   // ── ACTION HANDLERS ──────────────────────────────────────────
 
   return {
@@ -916,6 +1077,95 @@ var ECOfficerPanel = (function() {
         .withSuccessHandler(function() { done(true); })
         .withFailureHandler(function() { done(false); })
         .setLandingPageContent(App.token, 'techspec_url', techspecUrl, 'url', 'Technical Specification', true, '');
+    },
+
+    _addROPanelRow: function() {
+      var c = document.getElementById('ropanel-rows');
+      if (c) c.insertAdjacentHTML('beforeend', _roPanelPanelistRowHtml());
+    },
+
+    _publishROPanel: function() {
+      var errEl = document.getElementById('rp-publish-error');
+      if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = ''; }
+
+      var agmYear    = (document.getElementById('rp-agm-year')    || {}).value || '';
+      var electionId = (document.getElementById('rp-election-id') || {}).value || '';
+      agmYear = agmYear.trim();
+      electionId = electionId.trim();
+
+      if (!agmYear) {
+        if (errEl) { errEl.innerHTML = 'AGM year is required.'; errEl.style.display = 'block'; }
+        return;
+      }
+
+      var panelistRows = [];
+      document.querySelectorAll('#ropanel-rows .ropanel-row').forEach(function(row) {
+        var roll  = (row.querySelector('.rp-roll')  || {}).value || '';
+        var name  = (row.querySelector('.rp-name')  || {}).value || '';
+        var batch = (row.querySelector('.rp-batch') || {}).value || '';
+        roll = roll.trim(); name = name.trim(); batch = batch.trim();
+        if (!roll && !name) return; // skip blank rows
+        panelistRows.push({ rollNo: roll, name: name, batch: batch });
+      });
+
+      if (panelistRows.length === 0) {
+        if (errEl) { errEl.innerHTML = 'At least one panelist is required.'; errEl.style.display = 'block'; }
+        return;
+      }
+
+      ECOfficerPanel._showConfirmModal(
+        'Publish this panel of ' + panelistRows.length + ' panelist(s) for AGM ' + agmYear + '? ' +
+        'This starts the 5-day objection window and cannot be undone from here.',
+        function() {
+          google.script.run
+            .withSuccessHandler(function(res) {
+              if (!res || !res.success) {
+                if (errEl) { errEl.innerHTML = escHtml((res && res.message) || 'Publish failed.'); errEl.style.display = 'block'; }
+                return;
+              }
+              showToast('RO Panel iteration ' + res.iteration + ' published (' + res.publishedCount + ' panelist(s)).');
+              _loadROPanel();
+            })
+            .withFailureHandler(function() {
+              if (errEl) { errEl.innerHTML = 'Connection error.'; errEl.style.display = 'block'; }
+            })
+            .publishROPanel(App.token, agmYear, panelistRows, electionId || null);
+        }, 'Publish');
+    },
+
+    _decideROPanelObj: function(objectionId, decision) {
+      var notesEl = document.getElementById('ropanel-obj-notes-' + objectionId);
+      var notes = notesEl ? notesEl.value.trim() : '';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            showToast((res && res.message) || 'Failed to record decision.', true);
+            return;
+          }
+          showToast('Objection marked ' + decision + '.');
+          _loadROPanel();
+        })
+        .withFailureHandler(function() { showToast('Connection error.', true); })
+        .decideROPanelObjection(App.token, objectionId, decision, notes);
+    },
+
+    _finalizeROPanel: function(rollNo, name) {
+      ECOfficerPanel._showConfirmModal(
+        'Confirm ' + name + ' (' + rollNo + ') as Returning Officer designate for this AGM cycle? ' +
+        'An RO_ADMIN account must still be created for them manually afterward.',
+        function() {
+          google.script.run
+            .withSuccessHandler(function(res) {
+              if (!res || !res.success) {
+                showToast((res && res.message) || 'Finalize failed.', true);
+                return;
+              }
+              showToast(res.message || (res.finalizedName + ' confirmed as RO designate.'));
+              _loadROPanel();
+            })
+            .withFailureHandler(function() { showToast('Connection error.', true); })
+            .finalizeROPanel(App.token, rollNo);
+        }, 'Confirm');
     }
   };
 
