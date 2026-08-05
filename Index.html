@@ -546,9 +546,14 @@ background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:cente
     el.style.top = (window.scrollY + window.innerHeight - approxHeight - margin) + 'px';
     el.className   = 'show' + (isError ? ' error' : '');
     clearTimeout(_toastTimer);
+    // Shortened from 3000ms — during a fast sequence of admin actions
+    // (e.g. accepting/rejecting several nominations in a row), each new
+    // toast was re-extending before the previous one faded, making it
+    // look like it never disappeared. 1800ms is short enough to keep up
+    // with rapid actions but still readable for a single one.
     _toastTimer = setTimeout(function() {
       el.className = '';
-    }, duration || 3000);
+    }, duration || 1800);
   };
 
   var NavMenu = {

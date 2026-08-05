@@ -150,6 +150,9 @@ body{font-family:Arial,sans-serif;background:#f0f2f5;color:#222;font-size:16px;l
   <div id="voterroll-btn-area" style="display:none;">
     <button class="btn-results" onclick="goVoterRoll()">📋 View Voter Roll</button>
   </div>
+  <div id="ropanel-btn-area" style="display:none;">
+    <button class="btn-results" onclick="goROPanel()">👥 RO Panel &amp; Objections</button>
+  </div>
   <a class="btn-tutorial" onclick="window.top.location.href=DEPLOY_URL+'?action=tutorial'">📖 How the Election Works &nbsp;(Tutorial)</a>
 
   <!-- VVA card -->
@@ -206,6 +209,7 @@ var _currentElectionId = '';
 function goVoterLogin() { window.top.location.href = DEPLOY_URL + '?action=login'; }
 function goResults()    { window.top.location.href = DEPLOY_URL + '?action=results' + (_currentElectionId ? '&electionId=' + encodeURIComponent(_currentElectionId) : ''); }
 function goVoterRoll()  { window.top.location.href = DEPLOY_URL + '?action=voterroll'; }
+function goROPanel()    { window.top.location.href = DEPLOY_URL + '?action=ropanel'; }
 
 // ── Date helpers ──────────────────────────────────────────────
 
@@ -329,7 +333,13 @@ function schedRow(label, dateVal, cls, isLast, isNow) {
 // ── Render official tab (V-Day basis) ─────────────────────────
 
 function renderOfficialTab(ls, elecStatus) {
-  var vDaySet = isDateSet(ls.vDay) && ls.mode === 'live';
+  // These are deliberately separate: hasRealDate asks whether the EC/RO
+  // has actually set a V-Day; isLive asks whether it's been confirmed
+  // official by the RO. A draft schedule (EC-saved, not yet RO-confirmed)
+  // has a real date but isn't live — it deserves its own middle state,
+  // not to be shown identically to "nothing has been decided at all".
+  var hasRealDate = isDateSet(ls.vDay);
+  var isLive      = ls.mode === 'live';
 
   // V-day relative labels — SOP floor values
   var milestones = [
@@ -348,15 +358,27 @@ function renderOfficialTab(ls, elecStatus) {
   // Current phase label — always shown
   html += '<div class="sched-current-phase">Currently: ' + statusToPhase(elecStatus) + '</div>';
 
-  if (!vDaySet) {
-    // V-Day not set — show relative labels, all grey, no highlight
+  if (!hasRealDate) {
+    // Genuinely nothing set yet — show relative labels, all grey, no highlight
     for (var i = 0; i < milestones.length; i++) {
       var m = milestones[i];
       html += schedRow(m.label, m.vref, 'future', i === milestones.length - 1, false);
     }
     html += '<div class="sched-note">AGM date (V-Day) is not yet confirmed. All milestones will show actual dates once the AGM is scheduled. Intervals shown are per the Elections SOP.</div>';
+  } else if (!isLive) {
+    // A real date exists as an EC-prepared draft, not yet confirmed by the
+    // RO — show the actual dates (the draft schedule is genuinely
+    // informative), but mark each one provisional rather than implying
+    // nothing has been decided.
+    for (var k = 0; k < milestones.length; k++) {
+      var mp    = milestones[k];
+      var dvalP = ls[mp.key] || '';
+      var shown = dvalP ? ((fmtDate(dvalP) || dvalP) + ' (provisional)') : mp.vref;
+      html += schedRow(mp.label, shown, 'future', k === milestones.length - 1, false);
+    }
+    html += '<div class="sched-note">A provisional schedule has been set by the Election Committee and is pending confirmation by the Returning Officer. Dates above are provisional, not yet official.</div>';
   } else {
-    // V-Day set — highlight by election status, fall back to date class
+    // V-Day set and confirmed live — highlight by election status, fall back to date class
     var nowKey = statusToMilestone(elecStatus);
     for (var j = 0; j < milestones.length; j++) {
       var mv    = milestones[j];
@@ -635,6 +657,21 @@ google.script.run
     console.log('getPublicSchedule failed:', e);
   })
   .getPublicSchedule();
+
+// ── Load 4: RO Panel — button only shown once a panel is actually
+// published (getPublicROPanel returns success:false with no panel or
+// once the AGM's panel process hasn't started, e.g. nothing yet). No
+// backend change — getPublicROPanel already exists and is already
+// safe to call unauthenticated. ─────────────────────────────────
+
+google.script.run
+  .withSuccessHandler(function(res) {
+    if (res && res.success) {
+      document.getElementById('ropanel-btn-area').style.display = 'block';
+    }
+  })
+  .withFailureHandler(function() {})
+  .getPublicROPanel();
 
 </script>
 </body>

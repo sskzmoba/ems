@@ -433,6 +433,7 @@ var TEM_AUTHORISABLE_ACTIONS = {
     'lockECOfficers',
     'recordVersionVerified',
     'recordGithubTransferred',
+    'logCodeDeployment',
     'sendScrutineerAcceptanceLink',
     'addAppealsPanelContact',
     'removeAppealsPanelContact'
@@ -8665,29 +8666,32 @@ function getLiveTally(token, electionId) {
 
     var seats = group.seatCount || 1;
     var tieUnresolved = false;
+    var seatsAtCutoffOut = 0;
 
     // Sort by votes descending (only when not blackout). Tie detection is
-    // resolved only by an actual recorded draw of lots — same logic as
-    // _computeElectionResults — kept separate here since this function also
-    // serves live/blackout tally monitoring, not just declared results.
+    // resolved only by an actual recorded draw of lots — same shared cutoff
+    // helper as _computeElectionResults (_getContestedSeatsAtCutoff), kept
+    // separate here since this function also serves live/blackout tally
+    // monitoring, not just declared results.
     if (!blackout) {
       cands.sort(function(a, b) { return b.votes - a.votes; });
 
-      var cutoffVotes   = cands.length > 0 ? cands[Math.min(seats, cands.length) - 1].votes : 0;
-      var aboveCutoff   = cands.filter(function(cd) { return cd.votes > cutoffVotes; }).length;
-      var seatsAtCutoff = seats - aboveCutoff;
-      var tiedAtCutoff  = cands.filter(function(cd) { return cd.votes === cutoffVotes; });
-      var isTie = cands.length > 0 && seatsAtCutoff > 0 && tiedAtCutoff.length > seatsAtCutoff;
-      var resolvedWinner = isTie ? _findRecordedDrawWinner(electionId.toString(), postName) : null;
-      var normResolvedWinner = resolvedWinner ? resolvedWinner.trim().toLowerCase() : null;
-      tieUnresolved = isTie && !resolvedWinner;
+      var cutoffInfo    = _getContestedSeatsAtCutoff(electionId.toString(), postName);
+      var cutoffVotes   = cutoffInfo.cutoffVotes;
+      var seatsAtCutoff = cutoffInfo.seatsAtCutoff;
+      seatsAtCutoffOut  = seatsAtCutoff;
+      var isTie         = seatsAtCutoff > 0;
+      var resolvedWinners = isTie ? _findRecordedDrawWinners(electionId.toString(), postName) : [];
+      var resolvedSet = {};
+      resolvedWinners.forEach(function(n) { resolvedSet[n.trim().toLowerCase()] = true; });
+      tieUnresolved = isTie && resolvedWinners.length !== seatsAtCutoff;
 
       for (var ci = 0; ci < cands.length; ci++) {
         var cd = cands[ci];
         if (cd.votes > cutoffVotes) {
           cd.elected = true; cd.tied = false;
         } else if (isTie && cd.votes === cutoffVotes) {
-          if (normResolvedWinner) { cd.elected = (cd.name.trim().toLowerCase() === normResolvedWinner); cd.tied = false; }
+          if (resolvedWinners.length) { cd.elected = !!resolvedSet[cd.name.trim().toLowerCase()]; cd.tied = false; }
           else { cd.elected = false; cd.tied = true; }
         } else {
           cd.elected = (ci < seats); cd.tied = false;
@@ -8702,6 +8706,7 @@ function getLiveTally(token, electionId) {
       participated:  participated,
       nota:          blackout ? null : nota,
       tieUnresolved: tieUnresolved,
+      seatsAtCutoff: seatsAtCutoffOut, // how many winners a draw of lots must produce, if tieUnresolved
       candidates:    cands,
       candCount:     cands.length
     };
@@ -9192,6 +9197,56 @@ function recordGithubTransferred(token, authId) {
   appendAdminLog(sess.identity, 'github_org_transferred',
     'RO confirmed: GitHub organisation sskzmoba ownership transferred. ' +
     'Outgoing custodian removed from organisation.', '', '');
+
+  return { success: true };
+}
+
+// ============================================================
+// logCodeDeployment — records a code deployment directly into AdminLog,
+// so the live audit trail shows exactly when the code changed,
+// interleaved chronologically with the data actions (votes, nominations,
+// decisions) it may have affected — not just "what changed" in the
+// abstract on a separate document, but correlated against what was
+// actually happening in the election at that moment.
+//
+// Deployments themselves happen entirely outside this app (via clasp /
+// the Apps Script editor) — AdminLog has no way to see them on its own.
+// This is a deliberate, manual bridge: called once, right after each
+// `clasp deploy`, not automatically (Apps Script has no hook into its
+// own deployment event). Distinct from recordVersionVerified/
+// recordGithubTransferred above — those are one-time, per-election-cycle
+// attestations with no structured data; this is a running, per-deployment
+// log entry carrying the actual version number, commit hash, and a
+// description each time.
+// Access: RO_ADMIN, DEPUTY_RO, TEM
+// ============================================================
+function logCodeDeployment(token, versionNumber, commitHash, description, authId) {
+  var sess = getSession(token);
+  if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
+  if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
+    return { success: false, message: 'Access denied.' };
+  }
+  var temCheck = requiresTEMAuth(sess, authId, 'logCodeDeployment');
+  if (!temCheck.pass) return { success: false, message: temCheck.message };
+
+  if (!versionNumber || !versionNumber.toString().trim()) {
+    return { success: false, message: 'Deployment version number is required.' };
+  }
+  if (!description || !description.toString().trim()) {
+    return { success: false, message: 'A description of what changed is required.' };
+  }
+
+  var ver  = versionNumber.toString().trim();
+  var hash = commitHash ? commitHash.toString().trim() : '';
+  var desc = description.toString().trim();
+
+  var summary = 'Deployed @' + ver + (hash ? ' (commit ' + hash + ')' : '') + ' — ' + desc;
+
+  // OLD_VALUE holds the commit hash, NEW_VALUE holds the version number —
+  // same flexible-field convention already used elsewhere (draw_of_lots_conducted,
+  // tally_cosign) — structured enough to filter/report on later without a
+  // dedicated sheet just for this.
+  appendAdminLog(sess.identity, 'code_deployed', summary, hash, ver);
 
   return { success: true };
 }
@@ -12676,6 +12731,56 @@ function candidateAddSeconder(token, nomId, secRoll) {
 // getDeclaredResults, which is how the draw-of-lots tie fix almost only
 // landed in one of the two. Now there is exactly one implementation.
 // ============================================================
+// ============================================================
+// _getContestedSeatsAtCutoff(electionId, postName) — shared tie-cutoff
+// math. Used by _computeElectionResults, getLiveTally (tie detection)
+// and both draw-of-lots functions (to know exactly how many winners a
+// draw must produce), so "how many seats are actually contested" can
+// never disagree between where a tie is detected and where it's
+// resolved. SOP 8.4 multi-seat tie fix — previously a single-winner
+// draw against an N-tied-for-K>1-seats post (e.g. 3 candidates tied
+// for both VP seats) would satisfy the old single-name resolution
+// check and let declaration through with one seat silently unfilled.
+// ============================================================
+function _getContestedSeatsAtCutoff(electionId, postName) {
+  var candRows = sheetData(SHEETS.CANDIDATES);
+  var seats = 1;
+  var cands = [];
+  for (var c = 0; c < candRows.length; c++) {
+    var cr = candRows[c];
+    if (cr[COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (cr[COL.CAND_POST].toString() !== postName.toString()) continue;
+    seats = parseInt(cr[COL.CAND_SEAT_COUNT].toString()) || 1;
+    cands.push({ id: cr[COL.CAND_ID].toString(), name: cr[COL.CAND_NAME].toString(), votes: 0 });
+  }
+  if (!cands.length) return { cutoffVotes: 0, seatsAtCutoff: 0, tiedNames: [] };
+
+  var voteRows = sheetData(SHEETS.VOTES);
+  for (var v = 0; v < voteRows.length; v++) {
+    var vr = voteRows[v];
+    if (vr[COL.VOTE_ELEC_ID].toString() !== electionId.toString()) continue;
+    if (vr[COL.VOTE_POST].toString() !== postName.toString()) continue;
+    var vcid = vr[COL.VOTE_CAND_ID].toString();
+    if (vcid === 'NOTA') continue;
+    for (var k = 0; k < cands.length; k++) {
+      if (cands[k].id === vcid) { cands[k].votes++; break; }
+    }
+  }
+
+  cands.sort(function(a, b) { return b.votes - a.votes; });
+  var cutoffVotes   = cands[Math.min(seats, cands.length) - 1].votes;
+  var aboveCutoff   = cands.filter(function(cd) { return cd.votes > cutoffVotes; }).length;
+  var seatsAtCutoff = seats - aboveCutoff;
+  var tiedAtCutoff  = cands.filter(function(cd) { return cd.votes === cutoffVotes; });
+  var isTie = seatsAtCutoff > 0 && tiedAtCutoff.length > seatsAtCutoff;
+
+  return {
+    cutoffVotes:    cutoffVotes,
+    seatsAtCutoff:  isTie ? seatsAtCutoff : 0,
+    tiedNames:      isTie ? tiedAtCutoff.map(function(cd) { return cd.name; }) : []
+  };
+}
+
 function _computeElectionResults(elec) {
   var candRows = sheetData(SHEETS.CANDIDATES);
   var postMap = {};
@@ -12741,20 +12846,23 @@ function _computeElectionResults(elec) {
     // Detect a genuine tie at the seat cutoff — JS sort is stable, so
     // "whoever sorts first" on equal votes is just insertion order, never
     // a real decision. Only an actual recorded draw of lots resolves it.
-    var cutoffVotes   = cands.length > 0 ? cands[Math.min(seats, cands.length) - 1].votes : 0;
-    var aboveCutoff   = cands.filter(function(cd) { return cd.votes > cutoffVotes; }).length;
-    var seatsAtCutoff = seats - aboveCutoff;
-    var tiedAtCutoff  = cands.filter(function(cd) { return cd.votes === cutoffVotes; });
-    var isTie = cands.length > 0 && seatsAtCutoff > 0 && tiedAtCutoff.length > seatsAtCutoff;
-    var resolvedWinner = isTie ? _findRecordedDrawWinner(elec[COL.ELEC_ID].toString(), postName) : null;
-    var normResolvedWinner = resolvedWinner ? resolvedWinner.trim().toLowerCase() : null;
+    // Cutoff math shared with the draw-of-lots functions via
+    // _getContestedSeatsAtCutoff, so "how many seats are contested" can
+    // never disagree between detecting a tie here and resolving one there.
+    var cutoffInfo    = _getContestedSeatsAtCutoff(elec[COL.ELEC_ID].toString(), postName);
+    var cutoffVotes   = cutoffInfo.cutoffVotes;
+    var seatsAtCutoff = cutoffInfo.seatsAtCutoff;
+    var isTie         = seatsAtCutoff > 0;
+    var resolvedWinners = isTie ? _findRecordedDrawWinners(elec[COL.ELEC_ID].toString(), postName) : [];
+    var resolvedSet = {};
+    resolvedWinners.forEach(function(n) { resolvedSet[n.trim().toLowerCase()] = true; });
 
     for (var ci = 0; ci < cands.length; ci++) {
       var cd = cands[ci];
       if (cd.votes > cutoffVotes) {
         cd.elected = true; cd.tied = false;
       } else if (isTie && cd.votes === cutoffVotes) {
-        if (normResolvedWinner) { cd.elected = (cd.name.trim().toLowerCase() === normResolvedWinner); cd.tied = false; }
+        if (resolvedWinners.length) { cd.elected = !!resolvedSet[cd.name.trim().toLowerCase()]; cd.tied = false; }
         else { cd.elected = false; cd.tied = true; }
       } else {
         cd.elected = (ci < seats); cd.tied = false;
@@ -12766,7 +12874,8 @@ function _computeElectionResults(elec) {
       seatCount: seats,
       turnout:   turnout,
       nota:      nota,
-      tieUnresolved: isTie && !resolvedWinner,
+      tieUnresolved: isTie && resolvedWinners.length !== seatsAtCutoff,
+      seatsAtCutoff: seatsAtCutoff, // how many winners a draw of lots must produce, if isTie/tieUnresolved
       candidates: cands.map(function(cd) {
         return { name: cd.name, batch: cd.batch, votes: cd.votes, elected: cd.elected, tied: cd.tied };
       })
@@ -13989,7 +14098,7 @@ function deleteDocument(token, docId, authId) {
 //   records what happened, with full attribution.
 // Access: RO_ADMIN, DEPUTY_RO, TEM (AuthID-gated)
 // ============================================================
-function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, personsPresent, outcome, winnerName, authId) {
+function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, personsPresent, outcome, winnerNames, authId) {
   var sess = getSession(token);
   if (!sess) return { success: false, message: 'Session expired. Please log in again.' };
   if (sess.role !== 'RO_ADMIN' && sess.role !== 'DEPUTY_RO' && sess.role !== 'TEM') {
@@ -14010,24 +14119,44 @@ function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, p
   if (!outcome || outcome.trim() === '') {
     return { success: false, message: 'Outcome of the draw is required.' };
   }
-  if (!winnerName || winnerName.toString().trim() === '') {
-    return { success: false, message: 'Winner name is required — must exactly match one of the tied candidates, so the results page can reflect this draw.' };
+  if (!winnerNames || winnerNames.toString().trim() === '') {
+    return { success: false, message: 'Winner name(s) required — must exactly match tied candidates, comma-separated if more than one, so the results page can reflect this draw.' };
   }
 
-  // Validate the winner against the actual candidates for this post, so a
+  var requestedNames = winnerNames.toString().split(',').map(function(n) { return n.trim(); }).filter(Boolean);
+
+  // How many winners this draw must produce — same shared helper the
+  // in-system draw and results computation both use, so a mismatched count
+  // is rejected here rather than silently under-resolving the tie.
+  // SOP 8.4 multi-seat fix.
+  var cutoffInfo  = _getContestedSeatsAtCutoff(electionId, postName);
+  var seatsToFill = cutoffInfo.seatsAtCutoff || 1;
+  if (requestedNames.length !== seatsToFill) {
+    return { success: false, message: 'This post has ' + seatsToFill + ' contested seat(s) among the tied candidates — ' +
+      'provide exactly ' + seatsToFill + ' winner name(s) in this one draw, not separate draws.' };
+  }
+
+  // Validate each winner against the actual candidates for this post, so a
   // typo can't silently fail to resolve the tie on the results page later.
   var candRows = sheetData(SHEETS.CANDIDATES);
-  var matchedWinner = null;
-  for (var c = 0; c < candRows.length; c++) {
-    if (candRows[c][COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
-    if (candRows[c][COL.CAND_POST].toString().trim().toLowerCase() !== postName.trim().toLowerCase()) continue;
-    if (candRows[c][COL.CAND_NAME].toString().trim().toLowerCase() === winnerName.toString().trim().toLowerCase()) {
-      matchedWinner = candRows[c][COL.CAND_NAME].toString().trim();
-      break;
+  var matchedWinners = [];
+  for (var n = 0; n < requestedNames.length; n++) {
+    var matched = null;
+    for (var c = 0; c < candRows.length; c++) {
+      if (candRows[c][COL.CAND_ELEC_ID].toString() !== electionId.toString()) continue;
+      if (candRows[c][COL.CAND_POST].toString().trim().toLowerCase() !== postName.trim().toLowerCase()) continue;
+      if (candRows[c][COL.CAND_NAME].toString().trim().toLowerCase() === requestedNames[n].toLowerCase()) {
+        matched = candRows[c][COL.CAND_NAME].toString().trim();
+        break;
+      }
     }
-  }
-  if (!matchedWinner) {
-    return { success: false, message: 'Winner name does not match any candidate on record for this post. Check spelling exactly matches the candidate list.' };
+    if (!matched) {
+      return { success: false, message: 'Winner name "' + requestedNames[n] + '" does not match any candidate on record for this post. Check spelling exactly matches the candidate list.' };
+    }
+    if (matchedWinners.indexOf(matched) !== -1) {
+      return { success: false, message: 'Winner name "' + matched + '" was entered more than once.' };
+    }
+    matchedWinners.push(matched);
   }
 
   var summary =
@@ -14036,13 +14165,13 @@ function recordDrawOfLots(token, electionId, postName, tiedCandidates, method, p
     ' | Method: ' + method.trim() +
     ' | Persons present: ' + personsPresent.trim() +
     ' | Outcome: ' + outcome.trim() +
-    ' | Winner: ' + matchedWinner;
+    ' | Winners: ' + matchedWinners.join(', ');
 
-  // Structured winner/post pair in OLD_VALUE (parsed by getPublicResults to
+  // Structured winners/post pair in OLD_VALUE (parsed by getPublicResults to
   // resolve ties), electionId in NEW_VALUE — same flexible-field convention
   // already used by draw_of_lots_conducted/tally_cosign.
   appendAdminLog(sess.identity, 'draw_of_lots', summary,
-    JSON.stringify({ post: postName.trim(), winner: matchedWinner }), electionId.toString());
+    JSON.stringify({ post: postName.trim(), winners: matchedWinners }), electionId.toString());
 
   return { success: true };
 }
@@ -14081,18 +14210,38 @@ function conductDrawOfLots(token, electionId, postName, tiedCandidates, authId) 
     return { success: false, message: 'At least two tied candidates are required for a draw.' };
   }
 
-  var randomValue  = Math.random();
-  var winnerIndex  = Math.floor(randomValue * cleanCandidates.length);
-  var winner       = cleanCandidates[winnerIndex];
-  var drawId       = 'DRAW-' + new Date().getTime();
+  // How many winners this draw must produce — derived server-side from live
+  // vote data, never trusted from the client, so a multi-seat tie (e.g. 3
+  // candidates tied for 2 VP seats) can't be resolved by picking only one
+  // winner and silently leaving a seat undecided. SOP 8.4 multi-seat fix.
+  var cutoffInfo  = _getContestedSeatsAtCutoff(electionId, postName);
+  var seatsToFill = cutoffInfo.seatsAtCutoff || 1;
+  if (seatsToFill > cleanCandidates.length) {
+    return { success: false, message: 'This post has ' + seatsToFill + ' contested seat(s) but only ' +
+      cleanCandidates.length + ' tied candidate(s) were provided.' };
+  }
 
+  // Sample `seatsToFill` distinct winners — pick-and-remove, a fresh
+  // Math.random() per pick, all raw values logged for auditability, same
+  // transparency as the original single-winner draw.
+  var pool = cleanCandidates.slice();
+  var winners = [];
+  var randomValues = [];
+  for (var s = 0; s < seatsToFill; s++) {
+    var rv = Math.random();
+    randomValues.push(rv);
+    var idx = Math.floor(rv * pool.length);
+    winners.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+
+  var drawId = 'DRAW-' + new Date().getTime();
   var record = {
     drawId: drawId,
     post: postName.toString().trim(),
     tiedCandidates: cleanCandidates,
-    winnerIndex: winnerIndex,
-    winner: winner,
-    randomValue: randomValue
+    winners: winners,
+    randomValues: randomValues
   };
 
   // OLD_VALUE holds the drawId (for exact-match lookup by
@@ -14105,8 +14254,8 @@ function conductDrawOfLots(token, electionId, postName, tiedCandidates, authId) 
     drawId: drawId,
     post: record.post,
     tiedCandidates: record.tiedCandidates,
-    winner: winner,
-    randomValue: randomValue
+    winners: winners,
+    randomValues: randomValues
   };
 }
 
@@ -14153,21 +14302,26 @@ function confirmDrawOfLotsScrutineer(token, electionId, drawId) {
 }
 
 // ============================================================
-// _findRecordedDrawWinner — looks up whether a tie for this exact
+// _findRecordedDrawWinners — looks up whether a tie for this exact
 // election+post has actually been resolved by a real draw of lots,
 // checking both mechanisms:
 //   - conductDrawOfLots (in-system random draw) — only counts once
 //     witnessed by 2 Scrutineers, per SOP 2A.8.
 //   - recordDrawOfLots (manual/physical draw) — the personsPresent
 //     field IS its witnessing record, already required non-blank.
-// Returns the winning candidate's name, or null if no resolved draw
-// exists for this post — used by getPublicResults to avoid ever
-// silently declaring a "winner" that was just sort-order luck.
+// Returns an ARRAY of winning candidate names (one per contested seat —
+// SOP 8.4 multi-seat fix; a single-seat tie just returns a 1-element
+// array), or [] if no resolved draw exists for this post — used by
+// _computeElectionResults/getLiveTally to avoid ever silently declaring
+// a "winner" that was just sort-order luck, and to avoid a multi-seat
+// tie looking resolved when only one of several seats was actually drawn.
+// Reads both the new winners[] record shape and old single-winner
+// records (pre-fix — winner string) so historical draws stay readable.
 // ============================================================
-function _findRecordedDrawWinner(electionId, postName) {
+function _findRecordedDrawWinners(electionId, postName) {
   var logRows = sheetData(SHEETS.ADMIN_LOG);
-  var inSystemDraws = {}; // drawId -> { winner, post, confirmed }
-  var manualWinner = null;
+  var inSystemDraws = {}; // drawId -> { winners: [...], confirmed: N }
+  var manualWinners = null;
   var normPost = postName.toString().trim().toLowerCase();
 
   for (var i = 0; i < logRows.length; i++) {
@@ -14180,7 +14334,8 @@ function _findRecordedDrawWinner(electionId, postName) {
         var rec = JSON.parse(logRows[i][COL.ALOG_DESCRIPTION].toString());
         if (rec.post && rec.post.toString().trim().toLowerCase() === normPost) {
           var drawId = logRows[i][COL.ALOG_OLD_VALUE].toString();
-          inSystemDraws[drawId] = { winner: rec.winner, confirmed: 0 };
+          var winnersArr = Array.isArray(rec.winners) ? rec.winners : (rec.winner ? [rec.winner] : []);
+          inSystemDraws[drawId] = { winners: winnersArr, confirmed: 0 };
         }
       } catch (e) { /* not a recognisable record — ignore */ }
     } else if (action === 'draw_of_lots_scrutineer_confirmed') {
@@ -14189,9 +14344,12 @@ function _findRecordedDrawWinner(electionId, postName) {
     } else if (action === 'draw_of_lots') {
       try {
         var rec2 = JSON.parse(logRows[i][COL.ALOG_OLD_VALUE].toString());
-        if (rec2.post && rec2.winner &&
-            rec2.post.toString().trim().toLowerCase() === normPost) {
-          manualWinner = rec2.winner.toString();
+        if (rec2.post && rec2.post.toString().trim().toLowerCase() === normPost) {
+          if (Array.isArray(rec2.winners) && rec2.winners.length) {
+            manualWinners = rec2.winners;
+          } else if (rec2.winner) {
+            manualWinners = [rec2.winner];
+          }
         }
       } catch (e) { /* pre-fix record with no structured winner — ignore */ }
     }
@@ -14208,8 +14366,8 @@ function _findRecordedDrawWinner(electionId, postName) {
     var ts = parseInt(d.replace('DRAW-', ''), 10) || 0;
     if (ts > latestTs) { latestTs = ts; latestDrawId = d; }
   }
-  if (latestDrawId) return inSystemDraws[latestDrawId].winner;
-  return manualWinner;
+  if (latestDrawId) return inSystemDraws[latestDrawId].winners;
+  return manualWinners || [];
 }
 
 // ============================================================
@@ -14239,8 +14397,10 @@ function getDrawOfLotsRecords(token, electionId) {
       try { rec = JSON.parse(logRows[i][COL.ALOG_DESCRIPTION].toString()); } catch (e) { rec = {}; }
       draws[drawId].post           = rec.post || '';
       draws[drawId].tiedCandidates = rec.tiedCandidates || [];
-      draws[drawId].winner         = rec.winner || '';
-      draws[drawId].randomValue    = rec.randomValue;
+      // New records store winners[]/randomValues[]; old pre-fix records
+      // store a single winner/randomValue — read either shape.
+      draws[drawId].winners        = Array.isArray(rec.winners) ? rec.winners : (rec.winner ? [rec.winner] : []);
+      draws[drawId].randomValues   = Array.isArray(rec.randomValues) ? rec.randomValues : (rec.randomValue !== undefined ? [rec.randomValue] : []);
       draws[drawId].conductedBy    = logRows[i][COL.ALOG_ADMIN_ID].toString();
       draws[drawId].conductedAtRaw = logRows[i][COL.ALOG_TIMESTAMP] ? new Date(logRows[i][COL.ALOG_TIMESTAMP]).toISOString() : '';
       draws[drawId].conductedAt    = logRows[i][COL.ALOG_TIMESTAMP] ? fmtIST(logRows[i][COL.ALOG_TIMESTAMP]) : '';

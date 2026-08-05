@@ -4034,6 +4034,37 @@ _confirmP2Ext: function(elecId) {
         '</div>' +
       '</div>';
 
+    // Deployment log — a running, per-deployment record (version, commit,
+    // what changed), written directly into AdminLog so it sits in the same
+    // append-only trail as every other action, interleaved chronologically
+    // with the data actions it may have affected. Call once, right after
+    // each `clasp deploy` — separate from the one-time Version Verification
+    // attestation below.
+    html +=
+      '<div class="panel-card" style="margin-bottom:12px;">' +
+        '<div class="panel-card-header">Deployment Log</div>' +
+        '<div class="panel-card-body">' +
+          '<div style="font-size:.85rem;color:#555;margin-bottom:12px;">' +
+            'Record each deployment here, right after running <code>clasp deploy</code> — version, commit, and what changed. ' +
+            'This writes directly into the audit log, alongside everything else.' +
+          '</div>' +
+          '<input id="dep-version" placeholder="Version (e.g. 334)" style="width:100%;padding:9px;' +
+            'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+          '<input id="dep-commit" placeholder="Git commit hash (optional)" style="width:100%;padding:9px;' +
+            'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;">' +
+          '<textarea id="dep-desc" rows="2" placeholder="What changed and why" style="width:100%;padding:9px;' +
+            'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;resize:vertical;"></textarea>' +
+          '<div id="dep-err" style="color:#c0392b;font-size:.83rem;margin-bottom:8px;display:none;"></div>' +
+          '<button onclick="AdminPanel._logCodeDeployment()" id="btn-dep-log" ' +
+            'style="width:100%;padding:12px;font-size:.9rem;background:#1a3a5c;color:#fff;' +
+            'border:none;border-radius:4px;cursor:pointer;font-weight:600;margin-bottom:10px;">Log This Deployment</button>' +
+          '<button onclick="AdminPanel._loadDeploymentLog()" ' +
+            'style="width:100%;padding:8px;font-size:.8rem;background:#fff;color:#1a3a5c;' +
+            'border:1px solid #1a3a5c;border-radius:4px;cursor:pointer;">🔄 Load Recent Deployments</button>' +
+          '<div id="dep-history"></div>' +
+        '</div>' +
+      '</div>';
+
     // Version verification
     var verDone = !!res.versionVerifiedAt;
     html +=
@@ -4354,6 +4385,70 @@ _confirmP2Ext: function(elecId) {
       }, 'Confirm');
   },
 
+  _logCodeDeployment: function() {
+    var version = (document.getElementById('dep-version') || {}).value || '';
+    var commit  = (document.getElementById('dep-commit')  || {}).value || '';
+    var desc    = (document.getElementById('dep-desc')    || {}).value || '';
+    var errEl   = document.getElementById('dep-err');
+    var btn     = document.getElementById('btn-dep-log');
+
+    if (!version.trim() || !desc.trim()) {
+      if (errEl) { errEl.textContent = 'Version and description are both required.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.textContent = 'Recording…'; btn.disabled = true; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (btn) { btn.textContent = 'Log This Deployment'; btn.disabled = false; }
+        if (res && res.success) {
+          showToast('Deployment logged.');
+          ['dep-version', 'dep-commit', 'dep-desc'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '';
+          });
+          AdminPanel._loadDeploymentLog();
+        } else {
+          if (errEl) { errEl.textContent = (res && res.message) || 'Failed.'; errEl.style.display = 'block'; }
+        }
+      })
+      .withFailureHandler(function() {
+        if (btn) { btn.textContent = 'Log This Deployment'; btn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
+      })
+      .logCodeDeployment(App.token, version.trim(), commit.trim(), desc.trim(), getTEMAuthId());
+  },
+
+  _loadDeploymentLog: function() {
+    var area = document.getElementById('dep-history');
+    if (!area) return;
+    area.innerHTML = '<div style="text-align:center;padding:10px;color:#6b7280;font-size:.82rem;">Loading…</div>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          area.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Failed to load.</div>';
+          return;
+        }
+        var entries = res.entries || [];
+        if (entries.length === 0) {
+          area.innerHTML = '<div style="font-size:.82rem;color:#9ca3af;padding:8px 0;">No deployments logged yet.</div>';
+          return;
+        }
+        area.innerHTML = entries.map(function(e) {
+          return '<div style="border-top:1px solid #e5e7eb;padding:8px 0;font-size:.8rem;">' +
+            '<div style="color:#1a3a5c;">' + escHtml(e.description) + '</div>' +
+            '<div style="color:#9ca3af;margin-top:2px;">' + escHtml(e.adminId) + ' — ' + escHtml(fmtIST(e.timestamp)) + '</div>' +
+          '</div>';
+        }).join('');
+      })
+      .withFailureHandler(function() {
+        area.innerHTML = '<div style="color:#c0392b;font-size:.82rem;">Connection error.</div>';
+      })
+      .getAdminLogPaginated(App.token, 1, 'code_deployed');
+  },
+
   _applySheetProtections: function() {
     AdminPanel._showConfirmModal(
       'Apply sheet protections now?\n\nThis will protect critical sheets against manual editing. This action is logged to the audit record.',
@@ -4560,12 +4655,11 @@ _confirmP2Ext: function(elecId) {
         '<textarea id="dol-outcome" rows="2" placeholder="Outcome of the draw" style="width:100%;padding:9px;' +
         'font-size:.85rem;border:1px solid #d1d5db;border-radius:4px;box-sizing:border-box;margin-bottom:6px;' +
         'resize:vertical;"></textarea>' +
-        '<select id="dol-winner" style="width:100%;padding:9px;font-size:.85rem;border:1px solid #d1d5db;' +
-        'border-radius:4px;box-sizing:border-box;margin-bottom:6px;background:#fff;">' +
-        '<option value="">— Select post above first —</option>' +
-        '</select>' +
-        '<div style="font-size:.76rem;color:#6b7280;margin-bottom:6px;">Required — this is what lets the ' +
-        'results page actually show the resolved winner instead of a pending tie.</div>' +
+        '<div id="dol-winner-area" style="border:1px solid #d1d5db;border-radius:4px;padding:9px;' +
+        'margin-bottom:6px;background:#fff;font-size:.85rem;color:#9ca3af;">— Select post above first —</div>' +
+        '<div id="dol-winner-hint" style="font-size:.76rem;color:#6b7280;margin-bottom:6px;">Required — check ' +
+        'exactly as many winners as this post has contested seats. This is what lets the ' +
+        'results page actually show the resolved winner(s) instead of a pending tie.</div>' +
         '<div id="dol-err" style="color:#c0392b;font-size:.82rem;margin-bottom:6px;display:none;"></div>' +
         '<button id="btn-dol" onclick="AdminPanel._recordDrawOfLots(\'' + escHtml(elecId) + '\')" ' +
         'style="width:100%;padding:11px;font-size:.88rem;background:#1a3a5c;color:#fff;' +
@@ -4586,6 +4680,7 @@ _confirmP2Ext: function(elecId) {
   // match into — that mismatch (e.g. "Batch Rep" vs "Batch Representative")
   // is exactly what silently broke tie resolution before this fix.
   _tiedPostsForDraw: {},
+  _seatsAtCutoffForDraw: {},
 
   _loadTiedPostsForDraw: function(elecId) {
     google.script.run
@@ -4593,8 +4688,10 @@ _confirmP2Ext: function(elecId) {
         if (!res || !res.success) return;
         var tiedPosts = (res.posts || []).filter(function(p) { return p.tieUnresolved; });
         AdminPanel._tiedPostsForDraw = {};
+        AdminPanel._seatsAtCutoffForDraw = {};
         tiedPosts.forEach(function(p) {
           AdminPanel._tiedPostsForDraw[p.post] = (p.candidates || []).filter(function(c) { return c.tied; });
+          AdminPanel._seatsAtCutoffForDraw[p.post] = p.seatsAtCutoff || 1;
         });
         ['idol-post', 'dol-post'].forEach(function(selId) {
           var sel = document.getElementById(selId);
@@ -4613,17 +4710,55 @@ _confirmP2Ext: function(elecId) {
 
   _onDrawPostSelect: function(prefix, postName) {
     var cands = AdminPanel._tiedPostsForDraw[postName] || [];
+    var seatsNeeded = AdminPanel._seatsAtCutoffForDraw[postName] || 1;
     if (prefix === 'idol') {
       var ta = document.getElementById('idol-candidates');
-      if (ta) ta.value = cands.map(function(c) { return c.name; }).join('\n');
+      if (ta) {
+        ta.value = cands.map(function(c) { return c.name; }).join('\n');
+        var idolHint = document.getElementById('idol-seats-hint');
+        if (!idolHint) {
+          idolHint = document.createElement('div');
+          idolHint.id = 'idol-seats-hint';
+          idolHint.style.cssText = 'font-size:.76rem;color:#6b7280;margin-bottom:6px;';
+          ta.insertAdjacentElement('afterend', idolHint);
+        }
+        idolHint.textContent = seatsNeeded > 1
+          ? 'This post has ' + seatsNeeded + ' contested seats — the draw will pick ' + seatsNeeded + ' distinct winners.'
+          : 'This post has 1 contested seat — the draw will pick 1 winner.';
+      }
     } else {
       var tiedInput = document.getElementById('dol-tied');
       if (tiedInput) tiedInput.value = cands.map(function(c) { return c.name; }).join(', ');
-      var winnerSel = document.getElementById('dol-winner');
-      if (winnerSel) {
-        winnerSel.innerHTML = '<option value="">— Select winner —</option>' +
-          cands.map(function(c) { return '<option value="' + escHtml(c.name) + '">' + escHtml(c.name) + '</option>'; }).join('');
+      var winnerArea = document.getElementById('dol-winner-area');
+      if (winnerArea) {
+        winnerArea.innerHTML = cands.map(function(c) {
+          return '<label style="display:block;padding:4px 0;font-size:.85rem;color:#374151;cursor:pointer;">' +
+            '<input type="checkbox" class="dol-winner-cb" value="' + escHtml(c.name) + '" ' +
+            'onchange="AdminPanel._checkDolWinnerCount(' + seatsNeeded + ')" style="margin-right:8px;">' +
+            escHtml(c.name) + '</label>';
+        }).join('');
       }
+      var hintEl = document.getElementById('dol-winner-hint');
+      if (hintEl) {
+        hintEl.textContent = seatsNeeded > 1
+          ? 'This post has ' + seatsNeeded + ' contested seats — check exactly ' + seatsNeeded + ' winners.'
+          : 'This post has 1 contested seat — check exactly 1 winner.';
+      }
+    }
+  },
+
+  // Purely a UX nudge — the actual count is validated server-side
+  // regardless (recordDrawOfLots rejects a mismatched count outright).
+  _checkDolWinnerCount: function(seatsNeeded) {
+    var checked = document.querySelectorAll('#dol-winner-area .dol-winner-cb:checked');
+    var hintEl = document.getElementById('dol-winner-hint');
+    if (!hintEl) return;
+    if (checked.length === seatsNeeded) {
+      hintEl.style.color = '#059669';
+      hintEl.textContent = '✓ ' + seatsNeeded + ' winner(s) selected.';
+    } else {
+      hintEl.style.color = '#6b7280';
+      hintEl.textContent = 'Selected ' + checked.length + ' of ' + seatsNeeded + ' required winner(s).';
     }
   },
 
@@ -4633,13 +4768,23 @@ _confirmP2Ext: function(elecId) {
     var method   = (document.getElementById('dol-method')  || {}).value || '';
     var persons  = (document.getElementById('dol-persons') || {}).value || '';
     var outcome  = (document.getElementById('dol-outcome') || {}).value || '';
-    var winner   = (document.getElementById('dol-winner')  || {}).value || '';
+    var checked  = document.querySelectorAll('#dol-winner-area .dol-winner-cb:checked');
+    var winners  = Array.prototype.map.call(checked, function(cb) { return cb.value; });
+    var seatsNeeded = AdminPanel._seatsAtCutoffForDraw[post] || 1;
     var errEl    = document.getElementById('dol-err');
     var btn      = document.getElementById('btn-dol');
 
-    if (!post.trim() || !method.trim() || !persons.trim() || !outcome.trim() || !winner.trim()) {
+    if (!post.trim() || !method.trim() || !persons.trim() || !outcome.trim() || winners.length === 0) {
       if (errEl) {
-        errEl.textContent = 'Post, method, persons present, outcome, and winner are all required.';
+        errEl.textContent = 'Post, method, persons present, outcome, and at least one winner are all required.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    if (winners.length !== seatsNeeded) {
+      if (errEl) {
+        errEl.textContent = 'This post has ' + seatsNeeded + ' contested seat(s) — check exactly ' +
+          seatsNeeded + ' winner(s), not ' + winners.length + '.';
         errEl.style.display = 'block';
       }
       return;
@@ -4661,7 +4806,7 @@ _confirmP2Ext: function(elecId) {
         if (btn) { btn.textContent = 'Record Draw of Lots'; btn.disabled = false; }
         if (errEl) { errEl.textContent = 'Error — please try again.'; errEl.style.display = 'block'; }
       })
-      .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), winner.trim(), getTEMAuthId());
+      .recordDrawOfLots(App.token, elecId, post.trim(), tied.trim(), method.trim(), persons.trim(), outcome.trim(), winners.join(','), getTEMAuthId());
   },
 
   _conductDrawOfLots: function(elecId) {
@@ -4682,36 +4827,49 @@ _confirmP2Ext: function(elecId) {
       return;
     }
     if (errEl) errEl.style.display = 'none';
-    if (resDiv) resDiv.innerHTML = '';
-    if (btn) { btn.textContent = 'Drawing\u2026'; btn.disabled = true; }
 
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
-        if (!res || !res.success) {
-          if (errEl) { errEl.textContent = (res && res.message) || 'Draw failed.'; errEl.style.display = 'block'; }
-          return;
-        }
-        if (resDiv) {
-          resDiv.innerHTML =
-            '<div style="padding:14px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:6px;">' +
-              '<div style="font-size:.8rem;color:#065f46;margin-bottom:4px;">WINNER OF DRAW \u2014 ' + escHtml(res.post) + '</div>' +
-              '<div style="font-size:1.1rem;font-weight:700;color:#065f46;">' + escHtml(res.winner) + '</div>' +
-              '<div style="font-size:.76rem;color:#6b7280;margin-top:6px;">' +
-                'Drawn from: ' + escHtml(res.tiedCandidates.join(', ')) + '<br>' +
-                'Draw ID: ' + escHtml(res.drawId) +
-              '</div>' +
-              '<div style="font-size:.78rem;color:#374151;margin-top:8px;">' +
-                'Both Scrutineers must confirm they witnessed this \u2014 click "Load Draw History" below and use their own logins.' +
-              '</div>' +
-            '</div>';
-        }
-      })
-      .withFailureHandler(function() {
-        if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
-        if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
-      })
-      .conductDrawOfLots(App.token, elecId, post.trim(), candidates, getTEMAuthId());
+    // Confirm before actually running the draw \u2014 nothing previously stopped
+    // a second, accidental click from conducting a second draw for a post
+    // that already had one (which would then silently supersede the first
+    // once both are witnessed). This is the one moment that can't be undone,
+    // so it's the one moment that gets an explicit "are you sure".
+    AdminPanel._showConfirmModal(
+      'Conduct a random draw of lots for "' + post.trim() + '" among:\n' + candidates.join(', ') +
+      '\n\nThis is logged and witnessed, and cannot be undone. If a draw has already been conducted for ' +
+      'this post, running another will replace it as the recorded outcome once witnessed.\n\nProceed?',
+      function() {
+        if (resDiv) resDiv.innerHTML = '';
+        if (btn) { btn.textContent = 'Drawing\u2026'; btn.disabled = true; }
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
+            if (!res || !res.success) {
+              if (errEl) { errEl.textContent = (res && res.message) || 'Draw failed.'; errEl.style.display = 'block'; }
+              return;
+            }
+            if (resDiv) {
+              var winnersLabel = (res.winners.length > 1 ? 'WINNERS OF DRAW' : 'WINNER OF DRAW');
+              resDiv.innerHTML =
+                '<div style="padding:14px;background:#ecfdf5;border:1.5px solid #86efac;border-radius:6px;">' +
+                  '<div style="font-size:.8rem;color:#065f46;margin-bottom:4px;">' + winnersLabel + ' \u2014 ' + escHtml(res.post) + '</div>' +
+                  '<div style="font-size:1.1rem;font-weight:700;color:#065f46;">' + escHtml(res.winners.join(', ')) + '</div>' +
+                  '<div style="font-size:.76rem;color:#6b7280;margin-top:6px;">' +
+                    'Drawn from: ' + escHtml(res.tiedCandidates.join(', ')) + '<br>' +
+                    'Draw ID: ' + escHtml(res.drawId) +
+                  '</div>' +
+                  '<div style="font-size:.78rem;color:#374151;margin-top:8px;">' +
+                    'Both Scrutineers must confirm they witnessed this \u2014 click "Load Draw History" below and use their own logins.' +
+                  '</div>' +
+                '</div>';
+            }
+          })
+          .withFailureHandler(function() {
+            if (btn) { btn.textContent = '\u26a1 Draw Now'; btn.disabled = false; }
+            if (errEl) { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+          })
+          .conductDrawOfLots(App.token, elecId, post.trim(), candidates, getTEMAuthId());
+      }, 'Draw Now', true);
   },
 
   _drawHistoryReqId: 0,
@@ -4748,7 +4906,9 @@ _confirmP2Ext: function(elecId) {
           return (
             '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin-top:8px;">' +
               '<div style="font-size:.85rem;font-weight:600;color:#1a3a5c;">' + escHtml(d.post) + '</div>' +
-              '<div style="font-size:.8rem;color:#059669;margin:4px 0;">Winner: ' + escHtml(d.winner) + '</div>' +
+              '<div style="font-size:.8rem;color:#059669;margin:4px 0;">' +
+                (d.winners.length > 1 ? 'Winners: ' : 'Winner: ') + escHtml(d.winners.join(', ')) +
+              '</div>' +
               '<div style="font-size:.74rem;color:#9ca3af;">' +
                 'Tied: ' + escHtml((d.tiedCandidates || []).join(', ')) + ' \u2014 ' +
                 'by ' + escHtml(d.conductedBy) + ' at ' + escHtml(d.conductedAt || '') +
