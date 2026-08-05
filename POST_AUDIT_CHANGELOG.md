@@ -11,18 +11,18 @@ Each entry here also has a matching, machine-readable log entry in the live syst
 ---
 
 ## @333 — 4 August 2026
-**Commit:** *pending — not yet committed as of this entry*
+**Commit:** `69add58`
 
 - Landing Page: RO Panel discoverability fix. The public `?action=ropanel` page existed but had no visible link from the main Landing Page (unlike Tutorial/Results/Voter Roll, which all do) — a member who missed the announcement email had no way to discover the panel or its objection window. Added a conditional button, shown only once a panel is actually published for the current AGM year. Purely additive — no existing function modified.
 
 ## @334 — 5 August 2026
-**Commit:** *pending — not yet committed as of this entry*
+**Commit:** `69add58`
 
 - Draw of lots: multi-winner support for SOP 8.4. Previously, a tie affecting more than one seat (e.g. three candidates exactly tied for both VP seats) could be "resolved" by recording a single winner, satisfying the tie-detection check while silently leaving one seat's outcome undetermined. New shared helper `_getContestedSeatsAtCutoff` computes exactly how many winners a draw must produce; both `conductDrawOfLots` (in-system random draw) and `recordDrawOfLots` (manual/physical draw record) now require and produce that many distinct winners, rejecting a mismatched count outright. `_findRecordedDrawWinners` (renamed, plural) reads both the new and old record shapes, so historical single-winner draws stay valid.
 - Verified via a dedicated mock-harness test (19/19 passing) covering the single-seat backward-compatible case, the exact multi-seat bug scenario end to end, the in-system random draw, Scrutineer witnessing, and rejection of a mismatched winner count.
 
 ## @335 — 5 August 2026
-**Commit:** *pending — not yet committed as of this entry*
+**Commit:** `69add58`
 
 - `logCodeDeployment` — new function writing a deployment record (version, commit hash, description) directly into `AdminLog`, plus a matching "Deployment Log" card in the Admin Settings tab. This is the mechanism this changelog file itself refers to in its own introduction — going forward, every entry here has a matching `AdminLog` entry, not just a file on disk.
 - Landing Page schedule note fix: the public schedule widget showed "AGM date (V-Day) is not yet confirmed... once the AGM is scheduled" even when a real, EC-set V-Day existed in draft (not yet RO-confirmed) form — conflating "not yet officially confirmed" with "not yet decided at all." Now shows the actual provisional dates, clearly marked, when a draft schedule exists; the fully-unset case is unchanged.
